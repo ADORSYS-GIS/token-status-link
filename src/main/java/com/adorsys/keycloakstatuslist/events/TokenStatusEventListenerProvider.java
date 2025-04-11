@@ -13,31 +13,23 @@ import org.keycloak.models.RealmModel;
 
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import com.adorsys.keycloakstatuslist.model.TokenStatus;
+import com.adorsys.keycloakstatuslist.service.StatusListService;
 
-/**
- * Event listener provider that reacts to Keycloak token events and publishes token status
- * to the status list server.
- */
 public class TokenStatusEventListenerProvider implements EventListenerProvider {
     private static final Logger logger = Logger.getLogger(TokenStatusEventListenerProvider.class);
-    
+
     private final KeycloakSession session;
-    private final com.adorsys.keycloakstatuslist.service.StatusListService statusListService;
-    
+    private final StatusListService statusListService;
+
     public TokenStatusEventListenerProvider(KeycloakSession session) {
         this.session = session;
-        
-        // Initialize config for current realm
         RealmModel realm = session.getContext().getRealm();
         StatusListConfig config = new StatusListConfig(session, realm);
-        
-        // Initialize status list service
-        this.statusListService = new com.adorsys.keycloakstatuslist.service.StatusListService(config);
+        this.statusListService = new StatusListService(config);
     }
 
     @Override
     public void onEvent(Event event) {
-        // Skip events that don't pertain to tokens
         if (!isTokenRelatedEvent(event.getType())) {
             return;
         }
@@ -47,17 +39,16 @@ public class TokenStatusEventListenerProvider implements EventListenerProvider {
         try {
             RealmModel realm = session.realms().getRealm(event.getRealmId());
             Map<String, String> details = event.getDetails();
-
-            // Create token status based on the event
             TokenStatus tokenStatus = createTokenStatus(event, realm);
 
-            // Publish token status
             if (tokenStatus != null) {
-                boolean published = statusListService.publishTokenStatus(tokenStatus);
-                if (published) {
-                    logger.debug("Successfully published token status for event: " + event.getType().name());
+                boolean success;
+                if (isUpdateEvent(event.getType())) {
+                    success = statusListService.updateTokenStatus(tokenStatus);
+                    logger.debug(success ? "Successfully updated token status" : "Failed to update token status");
                 } else {
-                    logger.warn("Failed to publish token status for event: " + event.getType().name());
+                    success = statusListService.publishTokenStatus(tokenStatus);
+                    logger.debug(success ? "Successfully published token status" : "Failed to publish token status");
                 }
             }
         } catch (Exception e) {
@@ -67,7 +58,7 @@ public class TokenStatusEventListenerProvider implements EventListenerProvider {
 
     @Override
     public void onEvent(AdminEvent adminEvent, boolean includeRepresentation) {
-        // We don't process admin events in this plugin
+        // Not handling admin events
     }
 
     @Override
@@ -76,32 +67,36 @@ public class TokenStatusEventListenerProvider implements EventListenerProvider {
     }
 
     private boolean isTokenRelatedEvent(EventType eventType) {
-        return eventType == EventType.LOGIN 
-                || eventType == EventType.LOGOUT 
-                || eventType == EventType.REFRESH_TOKEN 
-                || eventType == EventType.REVOKE_GRANT 
-                || eventType == EventType.LOGOUT_ERROR 
-                || eventType == EventType.CLIENT_LOGIN 
+        return eventType == EventType.LOGIN
+                || eventType == EventType.LOGOUT
+                || eventType == EventType.REFRESH_TOKEN
+                || eventType == EventType.REVOKE_GRANT
+                || eventType == EventType.LOGOUT_ERROR
+                || eventType == EventType.CLIENT_LOGIN
                 || eventType == EventType.TOKEN_EXCHANGE;
     }
-    
+
+    private boolean isUpdateEvent(EventType eventType) {
+        return eventType == EventType.LOGOUT
+                || eventType == EventType.REVOKE_GRANT
+                || eventType == EventType.LOGOUT_ERROR;
+    }
+
     private TokenStatus createTokenStatus(Event event, RealmModel realm) {
         Map<String, String> details = event.getDetails();
         String tokenId = details.get("token_id");
-        
-        // Skip if token_id is not available
+
         if (tokenId == null) {
             logger.debug("No token_id in event details, skipping");
             return null;
         }
-        
+
         TokenStatus tokenStatus = new TokenStatus();
         tokenStatus.setTokenId(tokenId);
         tokenStatus.setUserId(event.getUserId());
         tokenStatus.setClientId(event.getClientId());
         tokenStatus.setIssuer(realm.getName());
-        
-        // Set status based on event type
+
         switch (event.getType()) {
             case LOGIN:
             case REFRESH_TOKEN:
@@ -109,7 +104,6 @@ public class TokenStatusEventListenerProvider implements EventListenerProvider {
             case TOKEN_EXCHANGE:
                 tokenStatus.setStatus("ACTIVE");
                 tokenStatus.setIssuedAt(Instant.now());
-                // Try to get expiration from details
                 String exp = details.get("exp");
                 if (exp != null) {
                     try {
@@ -119,18 +113,18 @@ public class TokenStatusEventListenerProvider implements EventListenerProvider {
                     }
                 }
                 break;
-                
+
             case LOGOUT:
             case REVOKE_GRANT:
+            case LOGOUT_ERROR:
                 tokenStatus.setStatus("REVOKED");
                 tokenStatus.setRevokedAt(Instant.now());
                 break;
-                
+
             default:
-                // Skip unsupported event types
                 return null;
         }
-        
+
         return tokenStatus;
     }
 }

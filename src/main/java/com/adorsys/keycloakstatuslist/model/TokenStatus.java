@@ -2,9 +2,6 @@ package com.adorsys.keycloakstatuslist.model;
 
 import java.time.Instant;
 
-/**
- * Represents a token's status information to be published to the statuslist server.
- */
 public class TokenStatus {
     private String tokenId;
     private String userId;
@@ -26,39 +23,68 @@ public class TokenStatus {
     }
 
     public TokenStatus() {
+    }
 
+    // Proper getters and setters
+    public String getTokenId() {
+        return tokenId;
     }
 
     public void setTokenId(String tokenId) {
         this.tokenId = tokenId;
     }
 
+    public String getUserId() {
+        return userId;
+    }
+
     public void setUserId(String userId) {
         this.userId = userId;
+    }
+
+    public String getStatus() {
+        return status;
     }
 
     public void setStatus(String status) {
         this.status = status;
     }
 
+    public Instant getIssuedAt() {
+        return issuedAt;
+    }
+
     public void setIssuedAt(Instant issuedAt) {
         this.issuedAt = issuedAt;
+    }
+
+    public Instant getExpiresAt() {
+        return expiresAt;
     }
 
     public void setExpiresAt(Instant expiresAt) {
         this.expiresAt = expiresAt;
     }
 
+    public Instant getRevokedAt() {
+        return revokedAt;
+    }
 
     public void setRevokedAt(Instant revokedAt) {
         this.revokedAt = revokedAt;
     }
 
+    public String getIssuer() {
+        return issuer;
+    }
 
     public void setIssuer(String issuer) {
         this.issuer = issuer;
     }
 
+    public String getClientId() {
+        return clientId;
+    }
 
     public void setClientId(String clientId) {
         this.clientId = clientId;

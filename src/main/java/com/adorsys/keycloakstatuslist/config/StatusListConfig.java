@@ -11,7 +11,7 @@ public class StatusListConfig {
 
     // Configuration keys
     public static final String STATUS_LIST_ENABLED = "status-list-enabled";
-    public static final String STATUS_LIST_SERVER_URL = "status-list-serzver-url";
+    public static final String STATUS_LIST_SERVER_URL = "status-list-server-url";
     public static final String STATUS_LIST_AUTH_TOKEN = "status-list-auth-token";
     public static final String STATUS_LIST_CONNECT_TIMEOUT = "status-list-connect-timeout";
     public static final String STATUS_LIST_READ_TIMEOUT = "status-list-read-timeout";
