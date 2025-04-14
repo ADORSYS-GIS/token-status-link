@@ -1,6 +1,0 @@
-com/adorsys/keycloakstatuslist/config/StatusListConfig.class
-com/adorsys/keycloakstatuslist/model/TokenStatus.class
-com/adorsys/keycloakstatuslist/service/StatusListService.class
-com/adorsys/keycloakstatuslist/events/TokenStatusEventListenerProvider$1.class
-com/adorsys/keycloakstatuslist/events/TokenStatusEventListenerProviderFactory.class
-com/adorsys/keycloakstatuslist/events/TokenStatusEventListenerProvider.class
