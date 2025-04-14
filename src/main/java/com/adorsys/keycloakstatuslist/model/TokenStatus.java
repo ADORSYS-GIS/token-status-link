@@ -95,7 +95,7 @@ public class TokenStatus {
         return "TokenStatus{" +
                 "tokenId='" + tokenId + '\'' +
                 ", userId='" + userId + '\'' +
-                ", status='" + status + '\'' +
+                ", status='" + status + '\'' + 
                 ", issuedAt=" + issuedAt +
                 ", expiresAt=" + expiresAt +
                 ", revokedAt=" + revokedAt +

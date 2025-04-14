@@ -93,7 +93,7 @@ public class StatusListService {
         int attempt = 0;
 
         while (attempt <= retryCount) {
-            try {
+            try { 
                 attempt++;
                 logger.debug("Attempt " + attempt + " for " + request.getMethod() + " request");
 

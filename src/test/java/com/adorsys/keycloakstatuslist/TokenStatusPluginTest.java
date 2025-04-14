@@ -19,7 +19,7 @@ import org.keycloak.events.EventType;
 import org.keycloak.models.KeycloakContext;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
-import org.keycloak.models.RealmProvider;
+import org.keycloak.models.RealmProvider; 
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;

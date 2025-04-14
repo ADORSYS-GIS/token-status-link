@@ -11,7 +11,7 @@
 
     <name>Keycloak Token Status Plugin</name>
     <description>A Keycloak plugin that publishes token status to a statuslist server</description>
-
+ 
     <properties>
         <keycloak.version>22.0.1</keycloak.version>
         <jackson.version>2.15.2</jackson.version>

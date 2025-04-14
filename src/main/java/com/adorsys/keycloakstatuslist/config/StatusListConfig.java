@@ -55,7 +55,7 @@ public class StatusListConfig {
      * @return the authentication token
      */
     public String getAuthToken() {
-        return getStringAttribute(STATUS_LIST_AUTH_TOKEN, DEFAULT_AUTH_TOKEN);
+        return getStringAttribute(STATUS_LIST_AUTH_TOKEN, DEFAULT_AUTH_TOKEN); 
     }
 
     /**

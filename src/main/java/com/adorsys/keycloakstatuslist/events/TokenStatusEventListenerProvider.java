@@ -26,7 +26,7 @@ public class TokenStatusEventListenerProvider implements EventListenerProvider {
         RealmModel realm = session.getContext().getRealm();
         StatusListConfig config = new StatusListConfig(session, realm);
         this.statusListService = new StatusListService(config);
-    }
+    } 
 
     @Override
     public void onEvent(Event event) {
