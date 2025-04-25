@@ -18,12 +18,12 @@ public class StatusListConfig {
     public static final String STATUS_LIST_RETRY_COUNT = "status-list-retry-count";
 
     // Default values
-    private static final boolean DEFAULT_ENABLED = true;
-    private static final String DEFAULT_SERVER_URL = "http://localhost:8000/";
-    private static final String DEFAULT_AUTH_TOKEN = "";
-    private static final int DEFAULT_CONNECT_TIMEOUT = 5000;
-    private static final int DEFAULT_READ_TIMEOUT = 5000;
-    private static final int DEFAULT_RETRY_COUNT = 3;
+        private static final boolean DEFAULT_ENABLED = false;
+        private static final String DEFAULT_SERVER_URL = "http://localhost:8000/";
+        private static final String DEFAULT_AUTH_TOKEN = "";
+        private static final int DEFAULT_CONNECT_TIMEOUT = 5000;
+        private static final int DEFAULT_READ_TIMEOUT = 5000;
+        private static final int DEFAULT_RETRY_COUNT = 3;
 
     private final RealmModel realm;
 
@@ -37,7 +37,11 @@ public class StatusListConfig {
      * @return true if enabled, false otherwise
      */
     public boolean isEnabled() {
-        return getBooleanAttribute();
+        String value = realm.getAttribute(STATUS_LIST_ENABLED);
+        if (value == null) {
+            value = System.getenv("STATUS_LIST_ENABLED");
+        }
+        return value != null ? Boolean.parseBoolean(value) : DEFAULT_ENABLED;
     }
 
     /**
@@ -46,7 +50,11 @@ public class StatusListConfig {
      * @return the status list server URL
      */
     public String getServerUrl() {
-        return getStringAttribute(STATUS_LIST_SERVER_URL, DEFAULT_SERVER_URL);
+        String value = realm.getAttribute(STATUS_LIST_SERVER_URL);
+        if (value == null) {
+            value = System.getenv("STATUS_LIST_SERVER_URL");
+        }
+        return value != null ? value : DEFAULT_SERVER_URL;
     }
 
     /**
@@ -55,7 +63,11 @@ public class StatusListConfig {
      * @return the authentication token
      */
     public String getAuthToken() {
-        return getStringAttribute(STATUS_LIST_AUTH_TOKEN, DEFAULT_AUTH_TOKEN); 
+        String value = realm.getAttribute(STATUS_LIST_AUTH_TOKEN);
+        if (value == null) {
+            value = System.getenv("STATUS_LIST_AUTH_TOKEN");
+        }
+        return value != null ? value : DEFAULT_AUTH_TOKEN;
     }
 
     /**
@@ -64,7 +76,18 @@ public class StatusListConfig {
      * @return connection timeout in milliseconds
      */
     public int getConnectTimeout() {
-        return getIntAttribute(STATUS_LIST_CONNECT_TIMEOUT, DEFAULT_CONNECT_TIMEOUT);
+        String value = realm.getAttribute(STATUS_LIST_CONNECT_TIMEOUT);
+        if (value == null) {
+            value = System.getenv("STATUS_LIST_CONNECT_TIMEOUT");
+        }
+        if (value != null) {
+            try {
+                return Integer.parseInt(value);
+            } catch (NumberFormatException e) {
+                return DEFAULT_CONNECT_TIMEOUT;
+            }
+        }
+        return DEFAULT_CONNECT_TIMEOUT;
     }
 
     /**
@@ -73,7 +96,18 @@ public class StatusListConfig {
      * @return read timeout in milliseconds
      */
     public int getReadTimeout() {
-        return getIntAttribute(STATUS_LIST_READ_TIMEOUT, DEFAULT_READ_TIMEOUT);
+        String value = realm.getAttribute(STATUS_LIST_READ_TIMEOUT);
+        if (value == null) {
+            value = System.getenv("STATUS_LIST_READ_TIMEOUT");
+        }
+        if (value != null) {
+            try {
+                return Integer.parseInt(value);
+            } catch (NumberFormatException e) {
+                return DEFAULT_READ_TIMEOUT;
+            }
+        }
+        return DEFAULT_READ_TIMEOUT;
     }
 
     /**
@@ -82,7 +116,18 @@ public class StatusListConfig {
      * @return number of retry attempts
      */
     public int getRetryCount() {
-        return getIntAttribute(STATUS_LIST_RETRY_COUNT, DEFAULT_RETRY_COUNT);
+        String value = realm.getAttribute(STATUS_LIST_RETRY_COUNT);
+        if (value == null) {
+            value = System.getenv("STATUS_LIST_RETRY_COUNT");
+        }
+        if (value != null) {
+            try {
+                return Integer.parseInt(value);
+            } catch (NumberFormatException e) {
+                return DEFAULT_RETRY_COUNT;
+            }
+        }
+        return DEFAULT_RETRY_COUNT;
     }
 
     private String getStringAttribute(String name, String defaultValue) {
@@ -106,4 +151,5 @@ public class StatusListConfig {
         }
         return defaultValue;
     }
+
 }

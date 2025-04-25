@@ -1,0 +1,27 @@
+version: "3.2"
+
+services:
+  keycloak_admin_ui:
+    image: quay.io/keycloak/keycloak:24.0.2
+    container_name: keycloak_admin_ui
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: keycloak
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloakdb:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak
+      KC_LOG_LEVEL: info
+      KC_METRICS_ENABLED: 'true'
+      KC_HEALTH_ENABLED: 'true'
+    command:
+      - "start-dev"
+      - --import-realm
+    volumes:
+      - ./providers/keycloak-token-status-plugin-1.0.0-SNAPSHOT.jar:/opt/keycloak/keycloak-26.2.0/providers/keycloak-token-status-plugin-1.0.0-SNAPSHOT.jar
+    depends_on:
+      - keycloakdb
+    ports:
+      - '9090:8080'
+    networks:
+      - backend
