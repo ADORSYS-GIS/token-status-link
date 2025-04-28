@@ -19,7 +19,7 @@ public class StatusListConfig {
 
     // Default values
         private static final boolean DEFAULT_ENABLED = false;
-        private static final String DEFAULT_SERVER_URL = "http://localhost:8000/";
+        private static final String DEFAULT_SERVER_URL = "https://statuslist.eudi-adorsys.com/";
         private static final String DEFAULT_AUTH_TOKEN = "";
         private static final int DEFAULT_CONNECT_TIMEOUT = 5000;
         private static final int DEFAULT_READ_TIMEOUT = 5000;

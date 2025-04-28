@@ -16,7 +16,7 @@ This plugin integrates with Keycloak to publish token status information to a st
 | Property | Description | Default Value |
 |----------|-------------|---------------|
 | `status-list-enabled` | Enables or disables the status list service | `false` |
-| `status-list-server-url` | URL of the status list server | `http://localhost:8090/api/v1/token-status` |
+| `status-list-server-url` | URL of the status list server | `https://statuslist.eudi-adorsys.com/` |
 | `status-list-auth-token` | Authentication token for the status list server | (empty) |
 | `status-list-connect-timeout` | Connection timeout in milliseconds | `5000` |
 | `status-list-read-timeout` | Read timeout in milliseconds | `5000` |

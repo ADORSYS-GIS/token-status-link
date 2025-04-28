@@ -92,7 +92,7 @@ public class TokenStatusPluginTest {
     @Test
     public void testStatusListConfigLoading() {
         when(realm.getAttribute(eq("status-list-enabled"))).thenReturn("true");
-        when(realm.getAttribute(eq("status-list-server-url"))).thenReturn("http://localhost:8000/");
+        when(realm.getAttribute(eq("status-list-server-url"))).thenReturn("https://statuslist.eudi-adorsys.com/");
         when(realm.getAttribute(eq("status-list-auth-token"))).thenReturn("secret-token");
         when(realm.getAttribute(eq("status-list-connect-timeout"))).thenReturn("2000");
         when(realm.getAttribute(eq("status-list-read-timeout"))).thenReturn("3000");
@@ -101,7 +101,7 @@ public class TokenStatusPluginTest {
         StatusListConfig config = new StatusListConfig(session, realm);
 
         assertTrue(config.isEnabled());
-        assertEquals("http://localhost:8000/", config.getServerUrl());
+        assertEquals("https://statuslist.eudi-adorsys.com/", config.getServerUrl());
         assertEquals("secret-token", config.getAuthToken());
         assertEquals(2000, config.getConnectTimeout());
         assertEquals(3000, config.getReadTimeout());
@@ -115,7 +115,7 @@ public class TokenStatusPluginTest {
         StatusListConfig config = new StatusListConfig(session, realm);
     
         assertFalse(config.isEnabled());
-        assertEquals("http://localhost:8000/", config.getServerUrl());
+        assertEquals("https://statuslist.eudi-adorsys.com/", config.getServerUrl());
         assertEquals("", config.getAuthToken());
         assertEquals(5000, config.getConnectTimeout());
         assertEquals(5000, config.getReadTimeout());
