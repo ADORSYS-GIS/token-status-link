@@ -18,15 +18,18 @@ public class TokenStatusEventListenerProviderFactory implements EventListenerPro
     public static final String PROVIDER_ID = "token-status-event-listener";
     
     // Set of supported event types
-    private static final Set<EventType> SUPPORTED_EVENTS;
-    
-    static {
-        SUPPORTED_EVENTS = Set.of(EventType.LOGIN, EventType.LOGOUT, EventType.REFRESH_TOKEN, EventType.REVOKE_GRANT, EventType.CLIENT_LOGIN, EventType.TOKEN_EXCHANGE);
-    }
+    private static final Set<EventType> SUPPORTED_EVENTS = Set.of(
+        EventType.LOGIN, 
+        EventType.LOGOUT, 
+        EventType.REFRESH_TOKEN, 
+        EventType.REVOKE_GRANT, 
+        EventType.CLIENT_LOGIN, 
+        EventType.TOKEN_EXCHANGE
+    );
      
     @Override
     public EventListenerProvider create(KeycloakSession session) {
-        return new com.adorsys.keycloakstatuslist.events.TokenStatusEventListenerProvider(session);
+        return new TokenStatusEventListenerProvider(session);
     }
 
     @Override

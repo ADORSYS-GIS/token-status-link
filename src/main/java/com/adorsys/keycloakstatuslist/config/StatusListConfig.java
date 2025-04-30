@@ -18,12 +18,12 @@ public class StatusListConfig {
     public static final String STATUS_LIST_RETRY_COUNT = "status-list-retry-count";
 
     // Default values
-        private static final boolean DEFAULT_ENABLED = false;
-        private static final String DEFAULT_SERVER_URL = "https://statuslist.eudi-adorsys.com/";
-        private static final String DEFAULT_AUTH_TOKEN = "";
-        private static final int DEFAULT_CONNECT_TIMEOUT = 5000;
-        private static final int DEFAULT_READ_TIMEOUT = 5000;
-        private static final int DEFAULT_RETRY_COUNT = 3;
+    private static final boolean DEFAULT_ENABLED = false;
+    private static final String DEFAULT_SERVER_URL = "https://statuslist.eudi-adorsys.com/";
+    private static final String DEFAULT_AUTH_TOKEN = "";
+    private static final int DEFAULT_CONNECT_TIMEOUT = 5000;
+    private static final int DEFAULT_READ_TIMEOUT = 5000;
+    private static final int DEFAULT_RETRY_COUNT = 3;
 
     private final RealmModel realm;
 
@@ -38,9 +38,6 @@ public class StatusListConfig {
      */
     public boolean isEnabled() {
         String value = realm.getAttribute(STATUS_LIST_ENABLED);
-        if (value == null) {
-            value = System.getenv("STATUS_LIST_ENABLED");
-        }
         return value != null ? Boolean.parseBoolean(value) : DEFAULT_ENABLED;
     }
 
@@ -51,9 +48,6 @@ public class StatusListConfig {
      */
     public String getServerUrl() {
         String value = realm.getAttribute(STATUS_LIST_SERVER_URL);
-        if (value == null) {
-            value = System.getenv("STATUS_LIST_SERVER_URL");
-        }
         return value != null ? value : DEFAULT_SERVER_URL;
     }
 
@@ -64,9 +58,6 @@ public class StatusListConfig {
      */
     public String getAuthToken() {
         String value = realm.getAttribute(STATUS_LIST_AUTH_TOKEN);
-        if (value == null) {
-            value = System.getenv("STATUS_LIST_AUTH_TOKEN");
-        }
         return value != null ? value : DEFAULT_AUTH_TOKEN;
     }
 
@@ -77,9 +68,6 @@ public class StatusListConfig {
      */
     public int getConnectTimeout() {
         String value = realm.getAttribute(STATUS_LIST_CONNECT_TIMEOUT);
-        if (value == null) {
-            value = System.getenv("STATUS_LIST_CONNECT_TIMEOUT");
-        }
         if (value != null) {
             try {
                 return Integer.parseInt(value);
@@ -97,9 +85,6 @@ public class StatusListConfig {
      */
     public int getReadTimeout() {
         String value = realm.getAttribute(STATUS_LIST_READ_TIMEOUT);
-        if (value == null) {
-            value = System.getenv("STATUS_LIST_READ_TIMEOUT");
-        }
         if (value != null) {
             try {
                 return Integer.parseInt(value);
@@ -117,9 +102,6 @@ public class StatusListConfig {
      */
     public int getRetryCount() {
         String value = realm.getAttribute(STATUS_LIST_RETRY_COUNT);
-        if (value == null) {
-            value = System.getenv("STATUS_LIST_RETRY_COUNT");
-        }
         if (value != null) {
             try {
                 return Integer.parseInt(value);
@@ -129,27 +111,4 @@ public class StatusListConfig {
         }
         return DEFAULT_RETRY_COUNT;
     }
-
-    private String getStringAttribute(String name, String defaultValue) {
-        String value = realm.getAttribute(name);
-        return value != null ? value : defaultValue;
-    }
-
-    private boolean getBooleanAttribute() {
-        String value = realm.getAttribute(StatusListConfig.STATUS_LIST_ENABLED);
-        return value != null ? Boolean.parseBoolean(value) : StatusListConfig.DEFAULT_ENABLED;
-    }
-
-    private int getIntAttribute(String name, int defaultValue) {
-        String value = realm.getAttribute(name);
-        if (value != null) {
-            try {
-                return Integer.parseInt(value);
-            } catch (NumberFormatException e) {
-                return defaultValue;
-            }
-        }
-        return defaultValue;
-    }
-
 }

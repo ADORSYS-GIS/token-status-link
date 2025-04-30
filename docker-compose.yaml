@@ -2,7 +2,7 @@ version: "3.2"
 
 services:
   keycloak_admin_ui:
-    image: quay.io/keycloak/keycloak:24.0.2
+    image: quay.io/keycloak/keycloak:26.2.0
     container_name: keycloak_admin_ui
     environment:
       KEYCLOAK_ADMIN: admin
@@ -18,10 +18,29 @@ services:
       - "start-dev"
       - --import-realm
     volumes:
-      - ./providers/keycloak-token-status-plugin-1.0.0-SNAPSHOT.jar:/opt/keycloak/keycloak-26.2.0/providers/keycloak-token-status-plugin-1.0.0-SNAPSHOT.jar
+      - ./target/keycloak-token-status-plugin-1.0.0-SNAPSHOT.jar:/opt/keycloak/providers/keycloak-token-status-plugin-1.0.0-SNAPSHOT.jar
     depends_on:
       - keycloakdb
     ports:
       - '9090:8080'
     networks:
       - backend
+      
+  keycloakdb:
+    image: postgres:15
+    container_name: keycloakdb
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: keycloak
+    volumes:
+      - keycloak_data:/var/lib/postgresql/data
+    networks:
+      - backend
+
+volumes:
+  keycloak_data:
+
+networks:
+  backend:
+    driver: bridge
