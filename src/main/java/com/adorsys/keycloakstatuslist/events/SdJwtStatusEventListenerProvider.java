@@ -6,7 +6,6 @@ import java.util.Map;
 import org.jboss.logging.Logger;
 import org.keycloak.events.Event;
 import org.keycloak.events.EventListenerProvider;
-import org.keycloak.events.EventType;
 import org.keycloak.events.admin.AdminEvent;
 import org.keycloak.events.admin.OperationType;
 import org.keycloak.events.admin.ResourceType;
@@ -14,7 +13,6 @@ import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
-import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.model.TokenStatus;
 import com.adorsys.keycloakstatuslist.model.TokenStatusRecord;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
@@ -59,7 +57,7 @@ public class SdJwtStatusEventListenerProvider implements EventListenerProvider {
                             statusListService.registerCredential(statusRecord);
                             logger.info("Successfully registered SD-JWT credential: " + statusRecord.getCredentialId());
                         }
-                    } catch (StatusListException e) {
+                    } catch (com.adorsys.keycloakstatuslist.exception.StatusListException e) {
                         logger.error("Error publishing credential status: " + e.getMessage(), e);
                     }
                 }

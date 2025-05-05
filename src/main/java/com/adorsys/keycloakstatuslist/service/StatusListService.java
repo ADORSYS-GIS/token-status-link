@@ -122,6 +122,7 @@ public class StatusListService {
         } catch (IOException e) {
             throw new StatusListCommunicationException("Failed to communicate with status list server", e);
         }
+        return null;
     }
 
     /**

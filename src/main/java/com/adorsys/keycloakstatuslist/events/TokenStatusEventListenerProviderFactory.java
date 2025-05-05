@@ -29,7 +29,7 @@ public class TokenStatusEventListenerProviderFactory implements EventListenerPro
      
     @Override
     public EventListenerProvider create(KeycloakSession session) {
-        return new TokenStatusEventListenerProvider(session);
+        return new SdJwtStatusEventListenerProvider(session);
     }
 
     @Override
