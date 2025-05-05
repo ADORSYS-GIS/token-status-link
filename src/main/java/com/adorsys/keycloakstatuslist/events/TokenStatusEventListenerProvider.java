@@ -57,6 +57,9 @@ public class TokenStatusEventListenerProvider implements EventListenerProvider {
                 TokenStatusRecord statusRecord = createStatusRecord(event, realm);
                 if (statusRecord != null) {
                     try {
+                        logger.info("Processing token status for event type: " + event.getType().name());
+                        logger.debug("Status record: " + statusRecord);
+
                         if (isRevocationEvent(event.getType())) {
                             statusListService.revokeCredential(statusRecord);
                             logger.info("Successfully revoked token: " + statusRecord.getCredentialId());
@@ -123,23 +126,31 @@ public class TokenStatusEventListenerProvider implements EventListenerProvider {
         if (event.getClientId() != null) {
             String clientId = event.getClientId();
             logger.debug("Setting client ID: " + clientId);
+            // Store client ID in status reason or add a separate field if needed
+            statusRecord.setStatusReason("Client: " + clientId);
         }
 
         // Set user ID if available
         if (event.getUserId() != null) {
             String userId = event.getUserId();
             logger.debug("User ID: " + userId);
+            // You could add this to the status reason if needed
+            if (statusRecord.getStatusReason() != null) {
+                statusRecord.setStatusReason(statusRecord.getStatusReason() + ", User: " + userId);
+            } else {
+                statusRecord.setStatusReason("User: " + userId);
+            }
         }
 
         EventType eventType = event.getType();
+        Instant now = Instant.now();
 
         if (isRevocationEvent(eventType)) {
             statusRecord.setStatus(TokenStatus.REVOKED);
-            statusRecord.setRevokedAt(Instant.now());
-            statusRecord.setStatusReason("User logout or token revocation");
-        } else {
-            statusRecord.setStatus(TokenStatus.ACTIVE);
-            statusRecord.setIssuedAt(Instant.now());
+            statusRecord.setRevokedAt(now);
+
+            // Make sure we include issuedAt and expiresAt even for revoked tokens
+            statusRecord.setIssuedAt(now.minusSeconds(60)); // Set to 1 minute ago as a fallback
 
             // Try to get expiration from token details
             String exp = details.get("exp");
@@ -149,11 +160,35 @@ public class TokenStatusEventListenerProvider implements EventListenerProvider {
                 } catch (NumberFormatException e) {
                     logger.warn("Invalid expiration time format: " + exp);
                     // Set a default expiration of 1 hour
-                    statusRecord.setExpiresAt(Instant.now().plusSeconds(3600));
+                    statusRecord.setExpiresAt(now.plusSeconds(3600));
                 }
             } else {
                 // Set a default expiration of 1 hour
-                statusRecord.setExpiresAt(Instant.now().plusSeconds(3600));
+                statusRecord.setExpiresAt(now.plusSeconds(3600));
+            }
+
+            if (statusRecord.getStatusReason() == null) {
+                statusRecord.setStatusReason("User logout or token revocation");
+            } else {
+                statusRecord.setStatusReason(statusRecord.getStatusReason() + ", Reason: User logout or token revocation");
+            }
+        } else {
+            statusRecord.setStatus(TokenStatus.ACTIVE);
+            statusRecord.setIssuedAt(now);
+
+            // Try to get expiration from token details
+            String exp = details.get("exp");
+            if (exp != null) {
+                try {
+                    statusRecord.setExpiresAt(Instant.ofEpochSecond(Long.parseLong(exp)));
+                } catch (NumberFormatException e) {
+                    logger.warn("Invalid expiration time format: " + exp);
+                    // Set a default expiration of 1 hour
+                    statusRecord.setExpiresAt(now.plusSeconds(3600));
+                }
+            } else {
+                // Set a default expiration of 1 hour
+                statusRecord.setExpiresAt(now.plusSeconds(3600));
             }
         }
 

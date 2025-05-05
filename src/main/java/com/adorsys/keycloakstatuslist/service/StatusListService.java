@@ -6,6 +6,7 @@ import java.util.concurrent.TimeUnit;
 
 import org.apache.hc.client5.http.classic.methods.HttpGet;
 import org.apache.hc.client5.http.classic.methods.HttpPost;
+import org.apache.hc.client5.http.classic.methods.HttpPut;
 import org.apache.hc.client5.http.config.RequestConfig;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpResponse;
@@ -51,8 +52,15 @@ public class StatusListService {
             throw new StatusListServiceDisabledException("Status list service is disabled");
         }
 
+        // Ensure all required fields are set
+        validateStatusRecord(statusRecord);
+
         logger.debug("Registering credential: " + statusRecord.getCredentialId());
-        String endpoint = config.getServerUrl() + "/credentials";
+        // Normalize URL to ensure it ends with /
+        String baseUrl = config.getServerUrl().endsWith("/") ?
+                config.getServerUrl() : config.getServerUrl() + "/";
+        String endpoint = baseUrl + "credentials";
+
         executeRequest(new HttpPost(endpoint), statusRecord);
     }
 
@@ -67,10 +75,55 @@ public class StatusListService {
             throw new StatusListServiceDisabledException("Status list service is disabled");
         }
 
-        // According to specification, revocation is a POST to a specific endpoint
+        // Make sure status is set to REVOKED
+        statusRecord.setStatus(TokenStatus.REVOKED);
+        if (statusRecord.getRevokedAt() == null) {
+            statusRecord.setRevokedAt(java.time.Instant.now());
+        }
+
+        validateStatusRecord(statusRecord);
+
+        // Update the credential instead of using a specific revoke endpoint
         logger.debug("Revoking credential: " + statusRecord.getCredentialId());
-        String endpoint = config.getServerUrl() + "/credentials/" + statusRecord.getCredentialId() + "/revoke";
+        String baseUrl = config.getServerUrl().endsWith("/") ?
+                config.getServerUrl() : config.getServerUrl() + "/";
+        String endpoint = baseUrl + "credentials";
+
         executeRequest(new HttpPost(endpoint), statusRecord);
+    }
+
+    /**
+     * Validates that required fields are set in the status record.
+     *
+     * @param statusRecord the record to validate
+     * @throws StatusListException if validation fails
+     */
+    private void validateStatusRecord(TokenStatusRecord statusRecord) throws StatusListException {
+        if (statusRecord.getCredentialId() == null || statusRecord.getCredentialId().isEmpty()) {
+            throw new StatusListException("Credential ID is required");
+        }
+
+        if (statusRecord.getIssuerId() == null || statusRecord.getIssuerId().isEmpty()) {
+            throw new StatusListException("Issuer ID is required");
+        }
+
+        if (statusRecord.getStatus() == null) {
+            throw new StatusListException("Status is required");
+        }
+
+        if (statusRecord.getStatus() == TokenStatus.ACTIVE) {
+            if (statusRecord.getIssuedAt() == null) {
+                statusRecord.setIssuedAt(java.time.Instant.now());
+            }
+            if (statusRecord.getExpiresAt() == null) {
+                // Default to 1 hour if not specified
+                statusRecord.setExpiresAt(java.time.Instant.now().plusSeconds(3600));
+            }
+        } else if (statusRecord.getStatus() == TokenStatus.REVOKED) {
+            if (statusRecord.getRevokedAt() == null) {
+                statusRecord.setRevokedAt(java.time.Instant.now());
+            }
+        }
     }
 
     /**
@@ -86,7 +139,9 @@ public class StatusListService {
         }
 
         logger.debug("Checking status of credential: " + credentialId);
-        String endpoint = config.getServerUrl() + "/credentials/" + credentialId + "/status";
+        String baseUrl = config.getServerUrl().endsWith("/") ?
+                config.getServerUrl() : config.getServerUrl() + "/";
+        String endpoint = baseUrl + "credentials/" + credentialId;
 
         RequestConfig requestConfig = RequestConfig.custom()
                 .setConnectTimeout(Timeout.of(config.getConnectTimeout(), TimeUnit.MILLISECONDS))
@@ -114,7 +169,8 @@ public class StatusListService {
                     return record.getStatus();
                 } else if (statusCode == 404) {
                     // Credential not found
-
+                    logger.warn("Credential not found: " + credentialId);
+                    return null;
                 } else {
                     throw new StatusListServerException("Failed to check credential status. Status code: " + statusCode, statusCode);
                 }
@@ -122,7 +178,6 @@ public class StatusListService {
         } catch (IOException e) {
             throw new StatusListCommunicationException("Failed to communicate with status list server", e);
         }
-        return null;
     }
 
     /**
@@ -148,12 +203,19 @@ public class StatusListService {
             }
 
             String jsonPayload = objectMapper.writeValueAsString(statusRecord);
+            logger.debug("Sending payload: " + jsonPayload);
             request.setEntity(new StringEntity(jsonPayload, ContentType.APPLICATION_JSON));
 
             try (CloseableHttpResponse response = executeWithRetry(httpClient, request)) {
                 int statusCode = response.getCode();
 
                 if (statusCode < 200 || statusCode >= 300) {
+                    try {
+                        String responseBody = new String(response.getEntity().getContent().readAllBytes());
+                        logger.error("Request failed. Status code: " + statusCode + ", Response: " + responseBody);
+                    } catch (Exception e) {
+                        logger.error("Request failed. Status code: " + statusCode);
+                    }
                     throw new StatusListServerException(
                             "Request failed. Status code: " + statusCode,
                             statusCode);
@@ -184,6 +246,15 @@ public class StatusListService {
                     return response;
                 } else {
                     logger.warn("Request failed. Status code: " + statusCode);
+
+                    // Attempt to log response body for better diagnostics
+                    try {
+                        String responseBody = new String(response.getEntity().getContent().readAllBytes());
+                        logger.warn("Response body: " + responseBody);
+                    } catch (Exception e) {
+                        logger.warn("Could not read response body", e);
+                    }
+
                     response.close();
 
                     if (attempt > retryCount || !isRetryable(statusCode)) {

@@ -70,14 +70,20 @@ public class StatusListClient {
         statusRecord.setIssuerId("test-issuer");
         statusRecord.setCredentialType("JWT");
 
+        Instant now = Instant.now();
+
         // Set status based on event type
         if ("LOGOUT".equals(eventType) || "REVOKE_GRANT".equals(eventType)) {
             statusRecord.setStatus(TokenStatus.REVOKED);
-            statusRecord.setRevokedAt(Instant.now());
+            statusRecord.setRevokedAt(now);
+            // Also set issuedAt for revoked tokens
+            statusRecord.setIssuedAt(now.minusSeconds(60)); // 1 minute ago
+            statusRecord.setExpiresAt(now.plusSeconds(3600)); // 1 hour
+            statusRecord.setStatusReason("User logout or token revocation");
         } else {
             statusRecord.setStatus(TokenStatus.ACTIVE);
-            statusRecord.setIssuedAt(Instant.now());
-            statusRecord.setExpiresAt(Instant.now().plusSeconds(3600)); // 1 hour
+            statusRecord.setIssuedAt(now);
+            statusRecord.setExpiresAt(now.plusSeconds(3600)); // 1 hour
         }
 
         return publishRecord(statusRecord);
@@ -107,17 +113,55 @@ public class StatusListClient {
                 request.setHeader("Authorization", "Bearer " + authToken);
             }
 
+            // Ensure all required fields are set
+            validateStatusRecord(statusRecord);
+
             String jsonPayload = objectMapper.writeValueAsString(statusRecord);
+            System.out.println("Sending payload: " + jsonPayload);
             request.setEntity(new StringEntity(jsonPayload, ContentType.APPLICATION_JSON));
 
             try (CloseableHttpResponse response = httpClient.execute(request)) {
                 int statusCode = response.getCode();
                 System.out.println("Status code: " + statusCode);
+
+                if (statusCode < 200 || statusCode >= 300) {
+                    try {
+                        String responseBody = new String(response.getEntity().getContent().readAllBytes());
+                        System.out.println("Response body: " + responseBody);
+                    } catch (Exception e) {
+                        System.out.println("Could not read response body: " + e.getMessage());
+                    }
+                }
+
                 return statusCode >= 200 && statusCode < 300;
             }
         } catch (IOException e) {
             e.printStackTrace();
             return false;
+        }
+    }
+
+    /**
+     * Validates that all required fields are set in the status record.
+     *
+     * @param statusRecord The record to validate
+     */
+    private void validateStatusRecord(TokenStatusRecord statusRecord) {
+        Instant now = Instant.now();
+
+        // Ensure issuedAt is set
+        if (statusRecord.getIssuedAt() == null) {
+            statusRecord.setIssuedAt(now);
+        }
+
+        // Ensure expiresAt is set
+        if (statusRecord.getExpiresAt() == null) {
+            statusRecord.setExpiresAt(now.plusSeconds(3600)); // 1 hour
+        }
+
+        // For revoked tokens, ensure revokedAt is set
+        if (statusRecord.getStatus() == TokenStatus.REVOKED && statusRecord.getRevokedAt() == null) {
+            statusRecord.setRevokedAt(now);
         }
     }
 }
