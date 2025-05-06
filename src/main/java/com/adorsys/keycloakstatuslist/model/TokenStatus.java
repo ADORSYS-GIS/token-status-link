@@ -1,26 +1,21 @@
 package com.adorsys.keycloakstatuslist.model;
 
-/**
- * Represents the possible states of a token or credential.
- */
+import com.fasterxml.jackson.annotation.JsonValue;
+
 public enum TokenStatus {
-    /**
-     * The token is active and can be used for authentication.
-     */
-    ACTIVE,
+    VALID("valid"),
+    REVOKED("revoked"),
+    SUSPENDED("suspended"),
+    EXPIRED("expired");
 
-    /**
-     * The token has been revoked by the user or administrator.
-     */
-    REVOKED,
+    private final String value;
 
-    /**
-     * The token has expired and can no longer be used.
-     */
-    EXPIRED,
+    TokenStatus(String value) {
+        this.value = value;
+    }
 
-    /**
-     * The token is temporarily suspended and cannot be used.
-     */
-    SUSPENDED
+    @JsonValue
+    public String getValue() {
+        return value;
+    }
 }

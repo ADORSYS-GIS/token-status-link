@@ -68,7 +68,7 @@ public class StatusListClient {
         TokenStatusRecord statusRecord = new TokenStatusRecord();
         statusRecord.setCredentialId(tokenId);
         statusRecord.setIssuerId("test-issuer");
-        statusRecord.setCredentialType("JWT");
+        statusRecord.setCredentialType("SD-JWT");
 
         Instant now = Instant.now();
 
@@ -81,7 +81,7 @@ public class StatusListClient {
             statusRecord.setExpiresAt(now.plusSeconds(3600)); // 1 hour
             statusRecord.setStatusReason("User logout or token revocation");
         } else {
-            statusRecord.setStatus(TokenStatus.ACTIVE);
+            statusRecord.setStatus(TokenStatus.VALID);
             statusRecord.setIssuedAt(now);
             statusRecord.setExpiresAt(now.plusSeconds(3600)); // 1 hour
         }
@@ -149,6 +149,21 @@ public class StatusListClient {
     private void validateStatusRecord(TokenStatusRecord statusRecord) {
         Instant now = Instant.now();
 
+        // Ensure credentialId is set
+        if (statusRecord.getCredentialId() == null || statusRecord.getCredentialId().isEmpty()) {
+            throw new IllegalArgumentException("Credential ID is required");
+        }
+
+        // Ensure issuerId is set
+        if (statusRecord.getIssuerId() == null || statusRecord.getIssuerId().isEmpty()) {
+            throw new IllegalArgumentException("Issuer ID is required");
+        }
+
+        // Ensure status is set
+        if (statusRecord.getStatus() == null) {
+            statusRecord.setStatus(TokenStatus.VALID);
+        }
+
         // Ensure issuedAt is set
         if (statusRecord.getIssuedAt() == null) {
             statusRecord.setIssuedAt(now);
@@ -159,9 +174,19 @@ public class StatusListClient {
             statusRecord.setExpiresAt(now.plusSeconds(3600)); // 1 hour
         }
 
-        // For revoked tokens, ensure revokedAt is set
-        if (statusRecord.getStatus() == TokenStatus.REVOKED && statusRecord.getRevokedAt() == null) {
-            statusRecord.setRevokedAt(now);
+        // For revoked tokens, ensure revokedAt and statusReason are set
+        if (statusRecord.getStatus() == TokenStatus.REVOKED) {
+            if (statusRecord.getRevokedAt() == null) {
+                statusRecord.setRevokedAt(now);
+            }
+            if (statusRecord.getStatusReason() == null || statusRecord.getStatusReason().isEmpty()) {
+                statusRecord.setStatusReason("Token revoked");
+            }
+        }
+
+        // Ensure credentialType is set
+        if (statusRecord.getCredentialType() == null || statusRecord.getCredentialType().isEmpty()) {
+            statusRecord.setCredentialType("SD-JWT");
         }
     }
 }

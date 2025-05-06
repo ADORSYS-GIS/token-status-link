@@ -1,116 +1,57 @@
 package com.adorsys.keycloakstatuslist.model;
 
+import com.fasterxml.jackson.annotation.JsonValue;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.time.Instant;
 
-/**
- * Represents a token status record that follows the SD-JWT Status List specification.
- * This is the model that will be sent to the status list server.
- */
 public class TokenStatusRecord {
-    // The unique identifier for the SD-JWT credential
+    @JsonProperty("credential_id")
     private String credentialId;
 
-    // The ID of the issuer of the credential
+    @JsonProperty("iss")
     private String issuerId;
 
-    // The current status of the credential
+    @JsonProperty("status")
     private TokenStatus status;
 
-    // When the credential was issued
+    @JsonProperty("iat")
     private Instant issuedAt;
 
-    // When the credential expires
+    @JsonProperty("exp")
     private Instant expiresAt;
 
-    // When the credential was revoked (if applicable)
+    @JsonProperty("revoked_at")
     private Instant revokedAt;
 
-    // Optional reason for status change (especially for revocation)
-    private String statusReason;
-
-    // Optional type of the credential (e.g., "VerifiableCredential")
+    @JsonProperty("credential_type")
     private String credentialType;
 
-    public TokenStatusRecord() {
-    }
-
+    @JsonProperty("status_reason")
+    private String statusReason;
 
     // Getters and setters
-    public String getCredentialId() {
-        return credentialId;
-    }
+    public String getCredentialId() { return credentialId; }
+    public void setCredentialId(String credentialId) { this.credentialId = credentialId; }
 
-    public void setCredentialId(String credentialId) {
-        this.credentialId = credentialId;
-    }
+    public String getIssuerId() { return issuerId; }
+    public void setIssuerId(String issuerId) { this.issuerId = issuerId; }
 
-    public String getIssuerId() {
-        return issuerId;
-    }
+    public TokenStatus getStatus() { return status; }
+    public void setStatus(TokenStatus status) { this.status = status; }
 
-    public void setIssuerId(String issuerId) {
-        this.issuerId = issuerId;
-    }
+    public Instant getIssuedAt() { return issuedAt; }
+    public void setIssuedAt(Instant issuedAt) { this.issuedAt = issuedAt; }
 
-    public TokenStatus getStatus() {
-        return status;
-    }
+    public Instant getExpiresAt() { return expiresAt; }
+    public void setExpiresAt(Instant expiresAt) { this.expiresAt = expiresAt; }
 
-    public void setStatus(TokenStatus status) {
-        this.status = status;
-    }
+    public Instant getRevokedAt() { return revokedAt; }
+    public void setRevokedAt(Instant revokedAt) { this.revokedAt = revokedAt; }
 
-    public Instant getIssuedAt() {
-        return issuedAt;
-    }
+    public String getCredentialType() { return credentialType; }
+    public void setCredentialType(String credentialType) { this.credentialType = credentialType; }
 
-    public void setIssuedAt(Instant issuedAt) {
-        this.issuedAt = issuedAt;
-    }
-
-    public Instant getExpiresAt() {
-        return expiresAt;
-    }
-
-    public void setExpiresAt(Instant expiresAt) {
-        this.expiresAt = expiresAt;
-    }
-
-    public Instant getRevokedAt() {
-        return revokedAt;
-    }
-
-    public void setRevokedAt(Instant revokedAt) {
-        this.revokedAt = revokedAt;
-    }
-
-    public String getStatusReason() {
-        return statusReason;
-    }
-
-    public void setStatusReason(String statusReason) {
-        this.statusReason = statusReason;
-    }
-
-    public String getCredentialType() {
-        return credentialType;
-    }
-
-    public void setCredentialType(String credentialType) {
-        this.credentialType = credentialType;
-    }
-
-    @Override
-    public String toString() {
-        return "TokenStatusRecord{" +
-                "credentialId='" + credentialId + '\'' +
-                ", issuerId='" + issuerId + '\'' +
-                ", status=" + status +
-                ", issuedAt=" + issuedAt +
-                ", expiresAt=" + expiresAt +
-                ", revokedAt=" + revokedAt +
-                ", statusReason='" + statusReason + '\'' +
-                ", credentialType='" + credentialType + '\'' +
-                '}';
-    }
+    public String getStatusReason() { return statusReason; }
+    public void setStatusReason(String statusReason) { this.statusReason = statusReason; }
 }
+
