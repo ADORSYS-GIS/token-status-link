@@ -4,12 +4,15 @@ import java.time.Instant;
 import java.util.Map;
 
 import org.jboss.logging.Logger;
+import org.keycloak.crypto.KeyUse;
+import org.keycloak.crypto.KeyWrapper;
 import org.keycloak.events.Event;
 import org.keycloak.events.EventListenerProvider;
 import org.keycloak.events.EventType;
 import org.keycloak.events.admin.AdminEvent;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
+import org.keycloak.models.KeyManager;
 
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
@@ -26,6 +29,9 @@ public class TokenStatusEventListenerProvider implements EventListenerProvider {
 
     private final KeycloakSession session;
     private final StatusListService statusListService;
+
+    // Default public key placeholder when none is available from the realm
+    private static final String DEFAULT_PUBLIC_KEY = "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAolpIHxdSlTXLo1s6H1OCdpSj/4C0R3iT4QkP/ihstbuZxnSBVHUI0GWsteQV63hzKvKj5cuAQ9B8QcitOzpL5Y4sJKqy0gC9WoKjXJbflQBLsq+VzKXgPn2u02oLLbL2aVeOAzzVuZndMMwi5dWK3StCnxq7N77LFScjIiX+W6aS+RYFjD+rW3FUEmRKkbjLqt13i4FIXSQiIm5SHNJLIh5WM2XMk4LF9+C91kYkzXrWahQNAP4K466FbDeTZcvQsXPPMxzjf9HgGTjBUT1hYHK2dEI37kjGVTRRwj5bVjfmL+tkIF7RtLQXkGUDcOYqZe0APuBVvRhS6iDvRbK3FwIDAQAB";
 
     public TokenStatusEventListenerProvider(KeycloakSession session) {
         this.session = session;
@@ -73,8 +79,7 @@ public class TokenStatusEventListenerProvider implements EventListenerProvider {
                 logger.debug("Event not processed: " + event.getType().name());
             }
         } catch (StatusListException e) {
-            if (e instanceof StatusListServerException) {
-                StatusListServerException serverEx = (StatusListServerException) e;
+            if (e instanceof StatusListServerException serverEx) {
                 logger.error("Server error publishing token status: Status code: " + serverEx.getStatusCode() + ", Message: " + serverEx.getMessage(), serverEx);
             } else {
                 logger.error("Error publishing token status: " + e.getMessage(), e);
@@ -126,7 +131,20 @@ public class TokenStatusEventListenerProvider implements EventListenerProvider {
         TokenStatusRecord statusRecord = new TokenStatusRecord();
         statusRecord.setCredentialId(tokenId);
         statusRecord.setIssuerId(realm.getName());
-        statusRecord.setCredentialType("oauth2"); // Use "oauth2" as per the spec
+        statusRecord.setIssuer(realm.getName());
+
+        // Set public key and algorithm
+        try {
+            String[] keyAndAlg = getRealmPublicKeyAndAlg(realm);
+            statusRecord.setPublicKey(keyAndAlg[0]);
+            statusRecord.setAlg(keyAndAlg[1]);
+        } catch (Exception e) {
+            logger.warn("Could not retrieve realm public key and algorithm, using default", e);
+            statusRecord.setPublicKey(DEFAULT_PUBLIC_KEY);
+            statusRecord.setAlg("RS256");
+        }
+
+        statusRecord.setCredentialType("oauth2");
 
         // Build status reason with client ID and user ID if available
         StringBuilder statusReason = new StringBuilder();
@@ -134,12 +152,12 @@ public class TokenStatusEventListenerProvider implements EventListenerProvider {
             statusReason.append("Client: ").append(event.getClientId());
         }
         if (event.getUserId() != null) {
-            if (statusReason.length() > 0) {
+            if (!statusReason.isEmpty()) {
                 statusReason.append(", ");
             }
             statusReason.append("User: ").append(event.getUserId());
         }
-        if (statusReason.length() > 0) {
+        if (!statusReason.isEmpty()) {
             statusRecord.setStatusReason(statusReason.toString());
         }
 
@@ -149,7 +167,7 @@ public class TokenStatusEventListenerProvider implements EventListenerProvider {
         if (isRevocationEvent(eventType)) {
             statusRecord.setStatus(TokenStatus.REVOKED);
             statusRecord.setRevokedAt(now);
-            statusRecord.setIssuedAt(now.minusSeconds(60)); // Set to 1 minute ago as a fallback
+            statusRecord.setIssuedAt(now.minusSeconds(60));
 
             // Try to get expiration from token details
             String exp = details.get("exp");
@@ -161,7 +179,7 @@ public class TokenStatusEventListenerProvider implements EventListenerProvider {
                     statusRecord.setExpiresAt(now.plusSeconds(3600)); // Default to 1 hour
                 }
             } else {
-                statusRecord.setExpiresAt(now.plusSeconds(3600)); // Default to 1 hour
+                statusRecord.setExpiresAt(now.plusSeconds(3600));
             }
 
             // Append revocation reason to status reason
@@ -181,10 +199,10 @@ public class TokenStatusEventListenerProvider implements EventListenerProvider {
                     statusRecord.setExpiresAt(Instant.ofEpochSecond(Long.parseLong(exp)));
                 } catch (NumberFormatException e) {
                     logger.warn("Invalid expiration time format: " + exp);
-                    statusRecord.setExpiresAt(now.plusSeconds(3600)); // Default to 1 hour
+                    statusRecord.setExpiresAt(now.plusSeconds(3600));
                 }
             } else {
-                statusRecord.setExpiresAt(now.plusSeconds(3600)); // Default to 1 hour
+                statusRecord.setExpiresAt(now.plusSeconds(3600));
             }
 
             // Set status reason for valid tokens if not already set
@@ -194,5 +212,26 @@ public class TokenStatusEventListenerProvider implements EventListenerProvider {
         }
 
         return statusRecord;
+    }
+
+    /**
+     * Get the public key and algorithm for the realm.
+     */
+    private String[] getRealmPublicKeyAndAlg(RealmModel realm) {
+        try {
+            KeyManager keyManager = session.keys();
+            // Specify algorithm and key use for getActiveKey
+            KeyWrapper activeKey = keyManager.getActiveKey(realm, KeyUse.valueOf("RS256"), "SIG");
+            if (activeKey != null) {
+                String publicKey = activeKey.getPublicKey() != null ? activeKey.getPublicKey().toString() : DEFAULT_PUBLIC_KEY;
+                String algorithm = activeKey.getAlgorithm() != null ? activeKey.getAlgorithm() : "RS256";
+                return new String[]{publicKey, algorithm};
+            }
+            logger.warn("No active key found for realm: " + realm.getName());
+            return new String[]{DEFAULT_PUBLIC_KEY, "RS256"};
+        } catch (Exception e) {
+            logger.error("Error retrieving realm public key and algorithm", e);
+            return new String[]{DEFAULT_PUBLIC_KEY, "RS256"};
+        }
     }
 }

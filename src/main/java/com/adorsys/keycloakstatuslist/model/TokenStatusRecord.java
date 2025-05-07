@@ -12,6 +12,15 @@ public class TokenStatusRecord {
     @JsonProperty("iss")
     private String issuerId;
 
+    @JsonProperty("issuer")
+    private String issuer;
+
+    @JsonProperty("public_key")
+    private String publicKey;
+
+    @JsonProperty("alg")
+    private String alg;
+
     @JsonProperty("status")
     private int status;
 
@@ -77,6 +86,31 @@ public class TokenStatusRecord {
 
     public void setIssuerId(String issuerId) {
         this.issuerId = issuerId;
+        this.issuer = issuerId;
+    }
+
+    public String getIssuer() {
+        return issuer;
+    }
+
+    public void setIssuer(String issuer) {
+        this.issuer = issuer;
+    }
+
+    public String getPublicKey() {
+        return publicKey;
+    }
+
+    public void setPublicKey(String publicKey) {
+        this.publicKey = publicKey;
+    }
+
+    public String getAlg() {
+        return alg;
+    }
+
+    public void setAlg(String alg) {
+        this.alg = alg;
     }
 
     public int getStatus() {
@@ -156,6 +190,9 @@ public class TokenStatusRecord {
         return "TokenStatusRecord{" +
                 "credentialId='" + credentialId + '\'' +
                 ", issuerId='" + issuerId + '\'' +
+                ", issuer='" + issuer + '\'' +
+                ", publicKey='" + publicKey + '\'' +
+                ", alg='" + alg + '\'' +
                 ", status=" + status +
                 ", issuedAt=" + issuedAt +
                 ", expiresAt=" + expiresAt +
