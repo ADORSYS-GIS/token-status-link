@@ -37,7 +37,13 @@ public class TokenStatusEventListenerProvider implements EventListenerProvider {
         this.session = session;
         RealmModel realm = session.getContext().getRealm();
         StatusListConfig config = new StatusListConfig(session, realm);
-        this.statusListService = new StatusListService(config.getServerUrl(), config.getAuthToken());
+        this.statusListService = new StatusListService(
+                config.getServerUrl(),
+                config.getAuthToken(),
+                config.getConnectTimeout(),
+                config.getReadTimeout(),
+                config.getRetryCount()
+        );
         logger.info("TokenStatusEventListenerProvider initialized with realm: " + (realm != null ? realm.getName() : "null"));
     }
 
@@ -220,8 +226,8 @@ public class TokenStatusEventListenerProvider implements EventListenerProvider {
     private String[] getRealmPublicKeyAndAlg(RealmModel realm) {
         try {
             KeyManager keyManager = session.keys();
-            // Specify algorithm and key use for getActiveKey
-            KeyWrapper activeKey = keyManager.getActiveKey(realm, KeyUse.valueOf("RS256"), "SIG");
+            // Fixed: Properly use KeyUse.SIG instead of valueOf("RS256")
+            KeyWrapper activeKey = keyManager.getActiveKey(realm, KeyUse.SIG, "RS256");
             if (activeKey != null) {
                 String publicKey = activeKey.getPublicKey() != null ? activeKey.getPublicKey().toString() : DEFAULT_PUBLIC_KEY;
                 String algorithm = activeKey.getAlgorithm() != null ? activeKey.getAlgorithm() : "RS256";

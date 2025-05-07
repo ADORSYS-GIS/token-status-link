@@ -28,9 +28,13 @@ public class StatusListService {
     private final String authToken;
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
-    private int retryCount = 0;
+    private final int retryCount;
 
     public StatusListService(String serverUrl, String authToken) {
+        this(serverUrl, authToken, 5000, 5000, 3);
+    }
+
+    public StatusListService(String serverUrl, String authToken, int connectTimeout, int readTimeout, int retryCount) {
         // Ensure serverUrl ends with a slash
         this.serverUrl = serverUrl.endsWith("/") ? serverUrl : serverUrl + "/";
         this.authToken = authToken;
@@ -43,7 +47,7 @@ public class StatusListService {
             this.httpClient = HttpClient.newBuilder()
                     .sslContext(sslContext)
                     .sslParameters(sslParameters)
-                    .connectTimeout(Duration.ofSeconds(10))
+                    .connectTimeout(Duration.ofMillis(connectTimeout))
                     .build();
         } catch (NoSuchAlgorithmException e) {
             logger.error("Failed to initialize SSLContext for HttpClient", e);
