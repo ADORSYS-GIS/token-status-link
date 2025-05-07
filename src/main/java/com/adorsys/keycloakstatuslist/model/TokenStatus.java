@@ -1,21 +1,16 @@
 package com.adorsys.keycloakstatuslist.model;
 
-import com.fasterxml.jackson.annotation.JsonValue;
-
 public enum TokenStatus {
-    VALID("valid"),
-    REVOKED("revoked"),
-    SUSPENDED("suspended"),
-    EXPIRED("expired");
+    VALID(0),
+    REVOKED(1);
 
-    private final String value;
+    private final int value;
 
-    TokenStatus(String value) {
+    TokenStatus(int value) {
         this.value = value;
     }
 
-    @JsonValue
-    public String getValue() {
+    public int getValue() {
         return value;
     }
 }

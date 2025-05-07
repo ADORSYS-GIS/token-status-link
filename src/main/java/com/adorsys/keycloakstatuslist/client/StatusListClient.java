@@ -136,6 +136,7 @@ public class StatusListClient {
                 return statusCode >= 200 && statusCode < 300;
             }
         } catch (IOException e) {
+            System.out.println("Error publishing record: " + e.getMessage());
             e.printStackTrace();
             return false;
         }
@@ -160,7 +161,7 @@ public class StatusListClient {
         }
 
         // Ensure status is set
-        if (statusRecord.getStatus() == null) {
+        if (statusRecord.getStatus() == -1) { // Use -1 to indicate unset status
             statusRecord.setStatus(TokenStatus.VALID);
         }
 
@@ -175,7 +176,7 @@ public class StatusListClient {
         }
 
         // For revoked tokens, ensure revokedAt and statusReason are set
-        if (statusRecord.getStatus() == TokenStatus.REVOKED) {
+        if (statusRecord.getStatus() == TokenStatus.REVOKED.getValue()) {
             if (statusRecord.getRevokedAt() == null) {
                 statusRecord.setRevokedAt(now);
             }

@@ -13,6 +13,7 @@ import org.keycloak.models.RealmModel;
 
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
+import com.adorsys.keycloakstatuslist.exception.StatusListServerException;
 import com.adorsys.keycloakstatuslist.model.TokenStatus;
 import com.adorsys.keycloakstatuslist.model.TokenStatusRecord;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
@@ -31,7 +32,7 @@ public class TokenStatusEventListenerProvider implements EventListenerProvider {
         RealmModel realm = session.getContext().getRealm();
         StatusListConfig config = new StatusListConfig(session, realm);
         this.statusListService = new StatusListService(config.getServerUrl(), config.getAuthToken());
-        logger.info("TokenStatusEventListenerProvider initialized with realm: " + realm.getName());
+        logger.info("TokenStatusEventListenerProvider initialized with realm: " + (realm != null ? realm.getName() : "null"));
     }
 
     @Override
@@ -42,12 +43,14 @@ public class TokenStatusEventListenerProvider implements EventListenerProvider {
         }
 
         try {
-            logger.debug("Processing event: " + event.getType().name());
+            logger.debug("Processing event: " + event.getType().name() + ", details: " + event.getDetails());
 
             // Check if this is an event we should process
             if (shouldProcessEvent(event)) {
                 RealmModel realm = session.realms().getRealm(event.getRealmId());
                 StatusListConfig config = new StatusListConfig(session, realm);
+
+                logger.debug("Realm: " + realm.getName() + ", StatusListConfig enabled: " + config.isEnabled());
 
                 if (!config.isEnabled()) {
                     logger.debug("Status list service is disabled for realm: " + realm.getName());
@@ -55,23 +58,34 @@ public class TokenStatusEventListenerProvider implements EventListenerProvider {
                 }
 
                 TokenStatusRecord statusRecord = createStatusRecord(event, realm);
-                if (statusRecord != null) {
-                    logger.info("Processing token status for event type: " + event.getType().name());
-                    logger.debug("Status record: " + statusRecord);
-
-                    statusListService.publishRecord(statusRecord);
-                    logger.info("Successfully published token status: " + statusRecord.getCredentialId() +
-                            ", Status: " + statusRecord.getStatus().getValue());
+                if (statusRecord == null) {
+                    logger.debug("No status record created for event: " + event.getType().name());
+                    return;
                 }
+
+                logger.info("Processing token status for event type: " + event.getType().name());
+                logger.debug("Status record: " + statusRecord);
+
+                statusListService.publishRecord(statusRecord);
+                logger.info("Successfully published token status: " + statusRecord.getCredentialId() +
+                        ", Status: " + statusRecord.getStatus());
+            } else {
+                logger.debug("Event not processed: " + event.getType().name());
+            }
+        } catch (StatusListException e) {
+            if (e instanceof StatusListServerException) {
+                StatusListServerException serverEx = (StatusListServerException) e;
+                logger.error("Server error publishing token status: Status code: " + serverEx.getStatusCode() + ", Message: " + serverEx.getMessage(), serverEx);
+            } else {
+                logger.error("Error publishing token status: " + e.getMessage(), e);
             }
         } catch (Exception e) {
-            logger.error("Error processing event: " + e.getMessage(), e);
+            logger.error("Unexpected error processing event: " + e.getMessage(), e);
         }
     }
 
     @Override
     public void onEvent(AdminEvent adminEvent, boolean includeRepresentation) {
-        // Currently not processing admin events
         logger.debug("Received admin event: " + adminEvent.getOperationType() + " " + adminEvent.getResourceType());
     }
 
