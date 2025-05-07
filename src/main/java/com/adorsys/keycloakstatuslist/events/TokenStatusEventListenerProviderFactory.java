@@ -6,7 +6,6 @@ import org.jboss.logging.Logger;
 import org.keycloak.Config;
 import org.keycloak.events.EventListenerProvider;
 import org.keycloak.events.EventListenerProviderFactory;
-import org.keycloak.events.EventType;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
 
@@ -20,14 +19,6 @@ public class TokenStatusEventListenerProviderFactory implements EventListenerPro
     public static final String PROVIDER_ID = "token-status-event-listener";
 
     // Set of supported event types
-    private static final Set<EventType> SUPPORTED_EVENTS = Set.of(
-            EventType.LOGIN,
-            EventType.LOGOUT,
-            EventType.REFRESH_TOKEN,
-            EventType.REVOKE_GRANT,
-            EventType.CLIENT_LOGIN,
-            EventType.TOKEN_EXCHANGE
-    );
 
     @Override
     public EventListenerProvider create(KeycloakSession session) {
