@@ -126,7 +126,7 @@ public class TokenStatusEventListenerProvider implements EventListenerProvider {
         TokenStatusRecord statusRecord = new TokenStatusRecord();
         statusRecord.setCredentialId(tokenId);
         statusRecord.setIssuerId(realm.getName());
-        statusRecord.setCredentialType("SD-JWT");
+        statusRecord.setCredentialType("oauth2"); // Use "oauth2" as per the spec
 
         // Build status reason with client ID and user ID if available
         StringBuilder statusReason = new StringBuilder();

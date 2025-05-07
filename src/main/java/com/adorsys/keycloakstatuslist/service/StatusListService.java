@@ -5,6 +5,7 @@ import com.adorsys.keycloakstatuslist.exception.StatusListServerException;
 import com.adorsys.keycloakstatuslist.model.TokenStatus;
 import com.adorsys.keycloakstatuslist.model.TokenStatusRecord;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.jboss.logging.Logger;
 
@@ -27,7 +28,9 @@ public class StatusListService {
         this.serverUrl = serverUrl.endsWith("/") ? serverUrl : serverUrl + "/";
         this.authToken = authToken;
         this.httpClient = HttpClient.newHttpClient();
-        this.objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+        this.objectMapper = new ObjectMapper()
+                .registerModule(new JavaTimeModule())
+                .setSerializationInclusion(JsonInclude.Include.NON_NULL);
         logger.debug("Initialized StatusListService with serverUrl: " + this.serverUrl + ", authToken: " + (authToken != null ? "present" : "null"));
     }
 
@@ -77,20 +80,24 @@ public class StatusListService {
 
     private void validateStatusRecord(TokenStatusRecord statusRecord) throws StatusListException {
         if (statusRecord.getCredentialId() == null || statusRecord.getCredentialId().isEmpty()) {
-            throw new StatusListException("Credential ID is required");
+            throw new StatusListException("Credential ID (sub) is required");
         }
         if (statusRecord.getIssuerId() == null || statusRecord.getIssuerId().isEmpty()) {
-            throw new StatusListException("Issuer ID is required");
+            throw new StatusListException("Issuer ID (iss) is required");
         }
-        if (statusRecord.getStatus() == -1) { // Use -1 to indicate unset status
+        if (statusRecord.getStatus() == -1) {
             statusRecord.setStatus(TokenStatus.VALID);
         }
-        if (statusRecord.getIndex() == null) {
-            statusRecord.setIndex(0L); // Default index, server may override
+
+        // Optional fields that should be null if not explicitly set
+        if (statusRecord.getIndex() != null && statusRecord.getIndex() == 0L) {
+            statusRecord.setIndex(null); // Let the server assign the index
         }
+
         if (statusRecord.getCredentialType() == null || statusRecord.getCredentialType().isEmpty()) {
-            statusRecord.setCredentialType("SD-JWT");
+            statusRecord.setCredentialType("oauth2"); // As per OAuth Status List spec
         }
+
         if (statusRecord.getStatus() == TokenStatus.REVOKED.getValue()) {
             if (statusRecord.getRevokedAt() == null) {
                 statusRecord.setRevokedAt(Instant.now());
@@ -99,9 +106,11 @@ public class StatusListService {
                 statusRecord.setStatusReason("Token revoked");
             }
         }
+
         if (statusRecord.getIssuedAt() == null) {
             statusRecord.setIssuedAt(Instant.now());
         }
+
         if (statusRecord.getExpiresAt() == null) {
             statusRecord.setExpiresAt(Instant.now().plusSeconds(3600));
         }

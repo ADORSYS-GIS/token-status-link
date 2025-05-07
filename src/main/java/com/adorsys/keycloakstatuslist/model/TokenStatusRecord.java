@@ -1,8 +1,10 @@
 package com.adorsys.keycloakstatuslist.model;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.time.Instant;
 
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class TokenStatusRecord {
     @JsonProperty("sub")
     private String credentialId;
@@ -22,7 +24,7 @@ public class TokenStatusRecord {
     @JsonProperty("idx")
     private Long index;
 
-    @JsonProperty("credential_type")
+    @JsonProperty("type")
     private String credentialType;
 
     @JsonProperty("revoked_at")

@@ -68,7 +68,7 @@ public class StatusListClient {
         TokenStatusRecord statusRecord = new TokenStatusRecord();
         statusRecord.setCredentialId(tokenId);
         statusRecord.setIssuerId("test-issuer");
-        statusRecord.setCredentialType("SD-JWT");
+        statusRecord.setCredentialType("oauth2");
 
         Instant now = Instant.now();
 
@@ -143,25 +143,25 @@ public class StatusListClient {
     }
 
     /**
-     * Validates that all required fields are set in the status record.
+     * Validates that all required fields are set in the status record according to OAuth Status List spec.
      *
      * @param statusRecord The record to validate
      */
     private void validateStatusRecord(TokenStatusRecord statusRecord) {
         Instant now = Instant.now();
 
-        // Ensure credentialId is set
+        // Ensure credentialId is set (sub claim)
         if (statusRecord.getCredentialId() == null || statusRecord.getCredentialId().isEmpty()) {
-            throw new IllegalArgumentException("Credential ID is required");
+            throw new IllegalArgumentException("Credential ID (sub) is required");
         }
 
-        // Ensure issuerId is set
+        // Ensure issuerId is set (iss claim)
         if (statusRecord.getIssuerId() == null || statusRecord.getIssuerId().isEmpty()) {
-            throw new IllegalArgumentException("Issuer ID is required");
+            throw new IllegalArgumentException("Issuer ID (iss) is required");
         }
 
         // Ensure status is set
-        if (statusRecord.getStatus() == -1) { // Use -1 to indicate unset status
+        if (statusRecord.getStatus() == -1) {
             statusRecord.setStatus(TokenStatus.VALID);
         }
 
@@ -185,9 +185,9 @@ public class StatusListClient {
             }
         }
 
-        // Ensure credentialType is set
+        // Ensure credentialType is set - use "oauth2" as per the spec
         if (statusRecord.getCredentialType() == null || statusRecord.getCredentialType().isEmpty()) {
-            statusRecord.setCredentialType("SD-JWT");
+            statusRecord.setCredentialType("oauth2");
         }
     }
 }
