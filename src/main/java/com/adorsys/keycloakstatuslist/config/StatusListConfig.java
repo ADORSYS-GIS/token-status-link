@@ -27,7 +27,7 @@ public class StatusListConfig {
 
     private final RealmModel realm;
 
-    public StatusListConfig(KeycloakSession session, RealmModel realm) {
+    public StatusListConfig(RealmModel realm) {
         this.realm = realm;
     }
 

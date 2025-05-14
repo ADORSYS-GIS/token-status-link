@@ -36,7 +36,7 @@ public class TokenStatusEventListenerProvider implements EventListenerProvider {
     public TokenStatusEventListenerProvider(KeycloakSession session) {
         this.session = session;
         RealmModel realm = session.getContext().getRealm();
-        StatusListConfig config = new StatusListConfig(session, realm);
+        StatusListConfig config = new StatusListConfig(realm);
         this.statusListService = new StatusListService(
                 config.getServerUrl(),
                 config.getAuthToken(),
@@ -60,7 +60,7 @@ public class TokenStatusEventListenerProvider implements EventListenerProvider {
             // Check if this is an event we should process
             if (shouldProcessEvent(event)) {
                 RealmModel realm = session.realms().getRealm(event.getRealmId());
-                StatusListConfig config = new StatusListConfig(session, realm);
+                StatusListConfig config = new StatusListConfig(realm);
 
                 logger.debug("Realm: " + realm.getName() + ", StatusListConfig enabled: " + config.isEnabled());
 
