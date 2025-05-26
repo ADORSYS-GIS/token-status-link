@@ -1,2 +1,15 @@
-target
-.vscode
+# Maven target directory
+target/
+
+# IDE files
+.vscode/
+.idea/
+*.iml
+*.iws
+*.ipr
+*.iml
+*.ipr
+*.iws
+
+# OS files
+.DS_Store 
