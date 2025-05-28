@@ -58,38 +58,6 @@ public class StatusListClient {
     }
 
     /**
-     * Publishes token status information to the server.
-     *
-     * @param tokenId the ID of the token
-     * @param eventType the type of event (LOGIN, LOGOUT, etc.)
-     * @return true if successful, false otherwise
-     */
-    public boolean publishTokenStatus(String tokenId, String eventType) {
-        TokenStatusRecord statusRecord = new TokenStatusRecord();
-        statusRecord.setCredentialId(tokenId);
-        statusRecord.setIssuerId("test-issuer");
-        statusRecord.setCredentialType("oauth2");
-
-        Instant now = Instant.now();
-
-        // Set status based on event type
-        if ("LOGOUT".equals(eventType) || "REVOKE_GRANT".equals(eventType)) {
-            statusRecord.setStatus(TokenStatus.REVOKED);
-            statusRecord.setRevokedAt(now);
-            // Also set issuedAt for revoked tokens
-            statusRecord.setIssuedAt(now.minusSeconds(60)); // 1 minute ago
-            statusRecord.setExpiresAt(now.plusSeconds(3600)); // 1 hour
-            statusRecord.setStatusReason("User logout or token revocation");
-        } else {
-            statusRecord.setStatus(TokenStatus.VALID);
-            statusRecord.setIssuedAt(now);
-            statusRecord.setExpiresAt(now.plusSeconds(3600)); // 1 hour
-        }
-
-        return publishRecord(statusRecord);
-    }
-
-    /**
      * Publishes a complete token status record to the server.
      *
      * @param statusRecord the status record to publish

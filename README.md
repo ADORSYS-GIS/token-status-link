@@ -1,10 +1,10 @@
 # Keycloak Token Status Plugin
 
-This plugin integrates with Keycloak to publish token status information to a status list server. The plugin listens for token-related events (login, logout, token refresh, token exchange, etc.) and sends the token status to a configurable external server that implements the OAuth 2.0 Status List pattern.
+This plugin integrates with Keycloak to publish token status information to a status list server. The plugin listens for long-lived token revocation events (e.g., REVOKE_GRANT) and sends the token status to a configurable external server that implements the OAuth 2.0 Status List pattern.
 
 ## Features
 
-- Track token lifecycle events (issuance, refresh, revocation)
+- Track long-lived token revocation events
 - Publish token status to an external status list server
 - Support for different token statuses (VALID, REVOKED)
 - Configurable connection parameters with sensible defaults
@@ -31,12 +31,7 @@ The plugin can be configured at the realm level with the following properties:
 
 The plugin processes the following Keycloak events:
 
-- LOGIN
-- LOGOUT
-- REFRESH_TOKEN
-- TOKEN_EXCHANGE
 - REVOKE_GRANT
-- CLIENT_LOGIN
 
 ## Token Status Record Format
 
@@ -54,7 +49,7 @@ The plugin sends token status information to the status list server in the follo
   "exp": 1717010130,
   "revoked_at": 1717008330,
   "type": "oauth2",
-  "status_reason": "Client: client-id, User: user-id, Reason: User logout or token revocation"
+  "status_reason": "Client: client-id, User: user-id, Reason: Token revoked"
 }
 ```
 
