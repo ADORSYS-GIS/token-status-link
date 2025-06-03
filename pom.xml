@@ -86,6 +86,21 @@
                 </exclusion>
             </exclusions>
         </dependency>
+        <!-- Keycloak JPA Model for EntityManager access -->
+        <dependency>
+            <groupId>org.keycloak</groupId>
+            <artifactId>keycloak-model-jpa</artifactId>
+            <version>${keycloak.version}</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- JPA for StatusListCounterEntity and StatusListMappingEntity -->
+        <dependency>
+            <groupId>jakarta.persistence</groupId>
+            <artifactId>jakarta.persistence-api</artifactId>
+            <version>3.1.0</version>
+            <scope>provided</scope>
+        </dependency>
 
         <!-- HTTP Client for statuslist server communication -->
         <dependency>
