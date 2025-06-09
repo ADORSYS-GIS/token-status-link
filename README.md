@@ -1,10 +1,14 @@
 # Keycloak Token Status Plugin
 
-This plugin integrates with Keycloak to publish token status information to a status list server. The plugin listens for token-related events (login, logout, token refresh, token exchange, etc.) and sends the token status to a configurable external server that implements the OAuth 2.0 Status List pattern.
+This plugin lets Keycloak send the status of long-lived tokens or verifiable credentials to an external status list server. It helps you quickly revoke credentials before they expire. The plugin uses the `REVOKE_GRANT` event to detect when a credential should be marked as revoked.
+
+The primary use case is for verifiable credentials or other long-lived tokens that may need to be invalidated before their expiration (for example, if a credential is compromised or must be revoked for compliance reasons). The `REVOKE_GRANT` event is used as the closest available event to signal such revocations. Please note that this event may not cover all possible credential types, but it is currently the best fit for this purpose in Keycloak.
+
+The status list server should implement the OAuth 2.0 Status List pattern.
 
 ## Features
 
-- Track token lifecycle events (issuance, refresh, revocation)
+- Track long-lived token revocation events
 - Publish token status to an external status list server
 - Support for different token statuses (VALID, REVOKED)
 - Configurable connection parameters with sensible defaults
@@ -31,12 +35,7 @@ The plugin can be configured at the realm level with the following properties:
 
 The plugin processes the following Keycloak events:
 
-- LOGIN
-- LOGOUT
-- REFRESH_TOKEN
-- TOKEN_EXCHANGE
 - REVOKE_GRANT
-- CLIENT_LOGIN
 
 ## Token Status Record Format
 
@@ -54,7 +53,7 @@ The plugin sends token status information to the status list server in the follo
   "exp": 1717010130,
   "revoked_at": 1717008330,
   "type": "oauth2",
-  "status_reason": "Client: client-id, User: user-id, Reason: User logout or token revocation"
+  "status_reason": "Client: client-id, User: user-id, Reason: Token revoked"
 }
 ```
 

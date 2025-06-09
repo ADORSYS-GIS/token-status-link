@@ -107,28 +107,24 @@ public class TokenStatusEventListenerProvider implements EventListenerProvider {
 
     private boolean shouldProcessEvent(Event event) {
         EventType type = event.getType();
-        return type == EventType.LOGIN ||
-                type == EventType.LOGOUT ||
-                type == EventType.REFRESH_TOKEN ||
-                type == EventType.TOKEN_EXCHANGE ||
-                type == EventType.REVOKE_GRANT ||
-                type == EventType.CLIENT_LOGIN;
+        // Only process REVOKE_GRANT (long-lived token revocation)
+        return type == EventType.REVOKE_GRANT;
     }
 
     private boolean isRevocationEvent(EventType type) {
-        return type == EventType.LOGOUT || type == EventType.REVOKE_GRANT;
+        // Only REVOKE_GRANT is considered a revocation event
+        return type == EventType.REVOKE_GRANT;
     }
 
     private TokenStatusRecord createStatusRecord(Event event, RealmModel realm) {
         Map<String, String> details = event.getDetails();
 
-        // Extract token ID - for login events it's in SESSION_ID
+        // Extract token ID (for REVOKE_GRANT events, typically in session or refresh_token_id)
         String tokenId = event.getSessionId();
         if (tokenId == null) {
-            // Try to get from refresh token ID
+            // Try to get from refresh token ID (for some revocation flows)
             tokenId = details.get("refresh_token_id");
         }
-
         if (tokenId == null) {
             logger.warn("No token identifier found in event, skipping");
             return null;
@@ -139,7 +135,7 @@ public class TokenStatusEventListenerProvider implements EventListenerProvider {
         statusRecord.setIssuerId(realm.getName());
         statusRecord.setIssuer(realm.getName());
 
-        // Set public key and algorithm
+        // Set public key and algorithm for the status record
         try {
             String[] keyAndAlg = getRealmPublicKeyAndAlg(realm);
             statusRecord.setPublicKey(keyAndAlg[0]);
@@ -175,30 +171,7 @@ public class TokenStatusEventListenerProvider implements EventListenerProvider {
             statusRecord.setRevokedAt(now);
             statusRecord.setIssuedAt(now.minusSeconds(60));
 
-            // Try to get expiration from token details
-            String exp = details.get("exp");
-            if (exp != null) {
-                try {
-                    statusRecord.setExpiresAt(Instant.ofEpochSecond(Long.parseLong(exp)));
-                } catch (NumberFormatException e) {
-                    logger.warn("Invalid expiration time format: " + exp);
-                    statusRecord.setExpiresAt(now.plusSeconds(3600)); // Default to 1 hour
-                }
-            } else {
-                statusRecord.setExpiresAt(now.plusSeconds(3600));
-            }
-
-            // Append revocation reason to status reason
-            if (statusRecord.getStatusReason() == null || statusRecord.getStatusReason().isEmpty()) {
-                statusRecord.setStatusReason("User logout or token revocation");
-            } else {
-                statusRecord.setStatusReason(statusRecord.getStatusReason() + ", Reason: User logout or token revocation");
-            }
-        } else {
-            statusRecord.setStatus(TokenStatus.VALID);
-            statusRecord.setIssuedAt(now);
-
-            // Try to get expiration from token details
+            // Set expiration from token details if available, otherwise default to 1 hour
             String exp = details.get("exp");
             if (exp != null) {
                 try {
@@ -211,12 +184,16 @@ public class TokenStatusEventListenerProvider implements EventListenerProvider {
                 statusRecord.setExpiresAt(now.plusSeconds(3600));
             }
 
-            // Set status reason for valid tokens if not already set
+            // Append revocation reason to status reason
             if (statusRecord.getStatusReason() == null || statusRecord.getStatusReason().isEmpty()) {
-                statusRecord.setStatusReason("Token issued");
+                statusRecord.setStatusReason("Token revoked");
+            } else {
+                statusRecord.setStatusReason(statusRecord.getStatusReason() + ", Reason: Token revoked");
             }
+        } else {
+            // Should not reach here, as only REVOKE_GRANT is processed
+            return null;
         }
-
         return statusRecord;
     }
 
