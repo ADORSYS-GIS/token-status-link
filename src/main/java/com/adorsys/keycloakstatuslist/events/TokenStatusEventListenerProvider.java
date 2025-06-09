@@ -118,18 +118,24 @@ public class TokenStatusEventListenerProvider implements EventListenerProvider {
 
     private TokenStatusRecord createStatusRecord(Event event, RealmModel realm) {
         Map<String, String> details = event.getDetails();
+
+        // Extract token ID (for REVOKE_GRANT events, typically in session or refresh_token_id)
         String tokenId = event.getSessionId();
         if (tokenId == null) {
+            // Try to get from refresh token ID (for some revocation flows)
             tokenId = details.get("refresh_token_id");
         }
         if (tokenId == null) {
             logger.warn("No token identifier found in event, skipping");
             return null;
         }
+
         TokenStatusRecord statusRecord = new TokenStatusRecord();
         statusRecord.setCredentialId(tokenId);
         statusRecord.setIssuerId(realm.getName());
         statusRecord.setIssuer(realm.getName());
+
+        // Set public key and algorithm for the status record
         try {
             String[] keyAndAlg = getRealmPublicKeyAndAlg(realm);
             statusRecord.setPublicKey(keyAndAlg[0]);
@@ -139,7 +145,10 @@ public class TokenStatusEventListenerProvider implements EventListenerProvider {
             statusRecord.setPublicKey(DEFAULT_PUBLIC_KEY);
             statusRecord.setAlg("RS256");
         }
+
         statusRecord.setCredentialType("oauth2");
+
+        // Build status reason with client ID and user ID if available
         StringBuilder statusReason = new StringBuilder();
         if (event.getClientId() != null) {
             statusReason.append("Client: ").append(event.getClientId());
@@ -153,12 +162,16 @@ public class TokenStatusEventListenerProvider implements EventListenerProvider {
         if (!statusReason.isEmpty()) {
             statusRecord.setStatusReason(statusReason.toString());
         }
+
         EventType eventType = event.getType();
         Instant now = Instant.now();
+
         if (isRevocationEvent(eventType)) {
             statusRecord.setStatus(TokenStatus.REVOKED);
             statusRecord.setRevokedAt(now);
             statusRecord.setIssuedAt(now.minusSeconds(60));
+
+            // Set expiration from token details if available, otherwise default to 1 hour
             String exp = details.get("exp");
             if (exp != null) {
                 try {
@@ -170,6 +183,8 @@ public class TokenStatusEventListenerProvider implements EventListenerProvider {
             } else {
                 statusRecord.setExpiresAt(now.plusSeconds(3600));
             }
+
+            // Append revocation reason to status reason
             if (statusRecord.getStatusReason() == null || statusRecord.getStatusReason().isEmpty()) {
                 statusRecord.setStatusReason("Token revoked");
             } else {

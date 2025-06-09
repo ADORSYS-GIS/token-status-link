@@ -1,6 +1,10 @@
 # Keycloak Token Status Plugin
 
-This plugin integrates with Keycloak to publish token status information to a status list server. The plugin listens for long-lived token revocation events (e.g., REVOKE_GRANT) and sends the token status to a configurable external server that implements the OAuth 2.0 Status List pattern.
+This plugin lets Keycloak send the status of long-lived tokens or verifiable credentials to an external status list server. It helps you quickly revoke credentials before they expire. The plugin uses the `REVOKE_GRANT` event to detect when a credential should be marked as revoked.
+
+The primary use case is for verifiable credentials or other long-lived tokens that may need to be invalidated before their expiration (for example, if a credential is compromised or must be revoked for compliance reasons). The `REVOKE_GRANT` event is used as the closest available event to signal such revocations. Please note that this event may not cover all possible credential types, but it is currently the best fit for this purpose in Keycloak.
+
+The status list server should implement the OAuth 2.0 Status List pattern.
 
 ## Features
 
