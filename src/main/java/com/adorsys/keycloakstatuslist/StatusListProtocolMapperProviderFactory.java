@@ -4,11 +4,12 @@ import org.keycloak.Config.Scope;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.protocol.ProtocolMapper;
+import org.keycloak.protocol.oidc.mappers.AbstractOIDCProtocolMapper;
 import org.keycloak.provider.ProviderConfigProperty;
 
 import java.util.List;
 
-public class StatusListProtocolMapperProviderFactory implements ProtocolMapper {
+public class StatusListProtocolMapperProviderFactory extends AbstractOIDCProtocolMapper{
 
     @Override
     public String getDisplayCategory() {
@@ -40,27 +41,21 @@ public class StatusListProtocolMapperProviderFactory implements ProtocolMapper {
         // No-op
     }
 
-    @Override
-    public ProtocolMapper create(KeycloakSession session) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'create'");
-    }
+    // Removed the 'create' method as it cannot override the final method from AbstractOIDCProtocolMapper
 
     @Override
     public void init(Scope config) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'init'");
+
     }
 
     @Override
     public void postInit(KeycloakSessionFactory factory) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'postInit'");
+
     }
 
     @Override
     public String getProtocol() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'getProtocol'");
+        return "status list client";
+   
     }
 }

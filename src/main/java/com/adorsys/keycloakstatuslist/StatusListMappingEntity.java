@@ -1,22 +1,27 @@
 package com.adorsys.keycloakstatuslist;
 
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
 @Entity
-@Table(name = "STATUS_LIST_MAPPING")
+@Table(name = "status_list_mapping")
 public class StatusListMappingEntity {
-
     @Id
+    @Column(name = "idx")
     private long idx;
 
+    @Column(name = "user_id")
     private String userId;
 
+    @Column(name = "token_id")
     private String tokenId;
 
+    @Column(name = "realm_id")
     private String realmId;
 
+    // Getters and setters
     public long getIdx() {
         return idx;
     }

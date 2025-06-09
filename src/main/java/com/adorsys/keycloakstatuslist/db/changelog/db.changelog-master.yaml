@@ -1,0 +1,37 @@
+databaseChangeLog:
+  - changeSet:
+      id: "1"
+      author: adorsys
+      changes:
+        - createTable:
+            tableName: status_list_counter
+            columns:
+              - column:
+                  name: id
+                  type: varchar(255)
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: current_index
+                  type: bigint
+                  constraints:
+                    nullable: false
+        - createTable:
+            tableName: status_list_mapping
+            columns:
+              - column:
+                  name: idx
+                  type: bigint
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: user_id
+                  type: varchar(255)
+              - column:
+                  name: token_id
+                  type: varchar(255)
+              - column:
+                  name: realm_id
+                  type: varchar(255)
