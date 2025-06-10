@@ -156,7 +156,7 @@ public class StatusListIndexStorageProvider implements Provider {
 
                 // Send status to statuslist-server.com
                 try (CloseableHttpClient httpClient = HttpClients.createDefault()) {
-                    HttpPost httpPost = new HttpPost("https://statuslist-server.com");
+                    HttpPost httpPost = new HttpPost("http://localhost:8000/statuslists/publish");
                     Map<String, Object> payload = Map.of(
                         "status", "VALID",
                         "index", idx,
