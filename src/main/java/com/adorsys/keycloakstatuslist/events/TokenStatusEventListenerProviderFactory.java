@@ -13,10 +13,10 @@ import org.keycloak.models.RealmModel;
 import org.keycloak.models.KeyManager;
 import org.keycloak.crypto.KeyUse;
 import org.keycloak.crypto.KeyWrapper;
-import org.keycloak.services.managers.RealmManager;
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
+import org.keycloak.crypto.Algorithm;
 
 /**
  * Factory for creating TokenStatusEventListenerProvider instances.
@@ -49,7 +49,6 @@ public class TokenStatusEventListenerProviderFactory implements EventListenerPro
         try (KeycloakSession session = factory.create()) {
             session.getTransactionManager().begin();
             try {
-                RealmManager realmManager = new RealmManager(session);
                 for (RealmModel realm : session.realms().getRealmsStream().toList()) {
                     registerRealmAsIssuer(session, realm);
                 }
@@ -86,13 +85,27 @@ public class TokenStatusEventListenerProviderFactory implements EventListenerPro
 
             // Get realm's public key and algorithm
             KeyManager keyManager = session.keys();
-            KeyWrapper activeKey = keyManager.getActiveKey(realm, KeyUse.SIG, "RS256");
+            KeyWrapper activeKey = keyManager.getActiveKey(realm, KeyUse.SIG, Algorithm.RS256);
             if (activeKey == null) {
                 logger.warn("No active key found for realm: " + realm.getName());
                 return;
             }
 
-            String publicKey = activeKey.getPublicKey() != null ? activeKey.getPublicKey().toString() : null;
+            // Convert public key to PEM format
+            String publicKey = null;
+            if (activeKey.getPublicKey() != null) {
+                try {
+                    byte[] encoded = activeKey.getPublicKey().getEncoded();
+                    String base64 = java.util.Base64.getEncoder().encodeToString(encoded);
+                    publicKey = "-----BEGIN PUBLIC KEY-----\n" +
+                              base64.replaceAll("(.{64})", "$1\n") +
+                              "\n-----END PUBLIC KEY-----";
+                } catch (Exception e) {
+                    logger.error("Failed to convert public key to PEM format for realm: " + realm.getName(), e);
+                    return;
+                }
+            }
+
             String algorithm = activeKey.getAlgorithm() != null ? activeKey.getAlgorithm() : "RS256";
 
             if (publicKey == null) {
