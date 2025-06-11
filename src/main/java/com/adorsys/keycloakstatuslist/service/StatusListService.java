@@ -35,16 +35,28 @@ public class StatusListService {
     }
 
     public StatusListService(String serverUrl, String authToken, int connectTimeout, int readTimeout, int retryCount) {
+        this(serverUrl, authToken, createDefaultHttpClient(connectTimeout), retryCount);
+    }
+
+    public StatusListService(String serverUrl, String authToken, HttpClient httpClient, int retryCount) {
         // Ensure serverUrl ends with a slash
         this.serverUrl = serverUrl.endsWith("/") ? serverUrl : serverUrl + "/";
         this.authToken = authToken;
+        this.httpClient = httpClient;
         this.retryCount = Math.max(0, retryCount); // Ensure non-negative retry count
+        this.objectMapper = new ObjectMapper()
+                .registerModule(new JavaTimeModule())
+                .setSerializationInclusion(JsonInclude.Include.NON_NULL);
+        logger.info("Initialized StatusListService with serverUrl: " + this.serverUrl + ", retryCount: " + this.retryCount);
+    }
+
+    private static HttpClient createDefaultHttpClient(int connectTimeout) {
         try {
             // Configure HttpClient with secure TLS settings
             SSLContext sslContext = SSLContext.getDefault();
             SSLParameters sslParameters = new SSLParameters();
             sslParameters.setProtocols(new String[]{"TLSv1.2", "TLSv1.3"});
-            this.httpClient = HttpClient.newBuilder()
+            return HttpClient.newBuilder()
                     .sslContext(sslContext)
                     .sslParameters(sslParameters)
                     .connectTimeout(Duration.ofMillis(connectTimeout))
@@ -53,10 +65,6 @@ public class StatusListService {
             logger.error("Failed to initialize SSLContext for HttpClient", e);
             throw new IllegalStateException("Cannot initialize secure HttpClient", e);
         }
-        this.objectMapper = new ObjectMapper()
-                .registerModule(new JavaTimeModule())
-                .setSerializationInclusion(JsonInclude.Include.NON_NULL);
-        logger.info("Initialized StatusListService with serverUrl: " + this.serverUrl + ", retryCount: " + this.retryCount);
     }
 
     public void publishRecord(TokenStatusRecord statusRecord) throws StatusListException {
@@ -89,8 +97,9 @@ public class StatusListService {
 
                 logger.debug("Request ID: " + requestId + ", Received response: Status code: " + statusCode + ", Headers: " + responseHeaders);
 
-                if (statusCode >= 200 && statusCode < 300) {
-                    logger.info("Request ID: " + requestId + ", Successfully published record for credentialId: " + credentialId);
+                if (statusCode >= 200 && statusCode < 300 || statusCode == 409) {
+                    logger.info("Request ID: " + requestId + ", Successfully published record for credentialId: " + credentialId +
+                            (statusCode == 409 ? " (already registered)" : ""));
                     return;
                 } else {
                     logger.error("Request ID: " + requestId + ", Failed to publish record for credentialId: " + credentialId +
@@ -133,6 +142,116 @@ public class StatusListService {
                     Thread.currentThread().interrupt();
                 }
                 throw new StatusListException("Failed to publish record for credentialId: " + credentialId, e);
+            }
+        }
+    }
+
+    private void handleRetryableException(String requestId, String entityId, Exception e, int attempt, String operation) throws StatusListException {
+        if (attempt <= retryCount) {
+            logger.warn("Request ID: " + requestId + ", Attempt: " + attempt + ", " + operation + " failed for " + entityId +
+                    ", retrying... Error: " + e.getMessage() + ", Server URL: " + serverUrl);
+            try {
+                performSleep(1000L * attempt); // Delegate sleep to a protected method
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                throw new StatusListException("Interrupted during retry for " + entityId, ie);
+            }
+            return;
+        }
+        logger.error("Request ID: " + requestId + ", " + operation + " failed for " + entityId +
+                " after " + retryCount + " retries: " + e.getMessage() + ", Server URL: " + serverUrl, e);
+        throw new StatusListException(operation + " failed for " + entityId + ", Server URL: " + serverUrl, e);
+    }
+
+    private void handleRetry(String requestId, String issuerId, int attempt, Exception e) throws StatusListException {
+        if (attempt <= retryCount) {
+            logger.warn("Request ID: " + requestId + ", Attempt: " + attempt + 
+                    ", Error for issuer: " + issuerId + ", retrying... Error: " + e.getMessage() + 
+                    ", Server URL: " + serverUrl);
+            try {
+                performSleep(1000L * attempt); // Delegate sleep to a protected method
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                throw new StatusListException("Interrupted during retry for issuer: " + issuerId, ie);
+            }
+            return;
+        }
+
+        String errorMessage = "Failed to register issuer: " + issuerId + 
+                " after " + retryCount + " retries: " + e.getMessage() + 
+                ", Server URL: " + serverUrl;
+        logger.error("Request ID: " + requestId + ", " + errorMessage, e);
+        
+        if (e instanceof InterruptedException) {
+            Thread.currentThread().interrupt();
+        }
+        throw new StatusListException(errorMessage, e);
+    }
+
+    public void registerIssuer(String issuerId, String publicKey, String algorithm) throws StatusListException {
+        String requestId = UUID.randomUUID().toString();
+        logger.info("Request ID: " + requestId + ", Registering issuer: " + issuerId + " with server: " + serverUrl);
+
+        // Create a simple record with just the required fields for issuer registration
+        TokenStatusRecord issuerRecord = new TokenStatusRecord();
+        issuerRecord.setIssuer(issuerId);
+        issuerRecord.setPublicKey(publicKey);
+        issuerRecord.setAlg(algorithm);
+
+        int attempt = 1;
+
+        while (true) {
+            try {
+                String jsonPayload = objectMapper.writeValueAsString(issuerRecord);
+                logger.debug("Request ID: " + requestId + ", Attempt: " + attempt + ", Registering issuer: " + issuerId + 
+                    ", Payload: " + jsonPayload);
+
+                HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
+                        .uri(URI.create(serverUrl + "credentials"))
+                        .header("Content-Type", "application/json")
+                        .header("X-Request-ID", requestId)
+                        .timeout(Duration.ofSeconds(30)) // Add explicit timeout
+                        .POST(HttpRequest.BodyPublishers.ofString(jsonPayload));
+
+                HttpRequest request = requestBuilder.build();
+                logger.debug("Request ID: " + requestId + ", Sending HTTP request to: " + request.uri() + 
+                    ", Headers: " + request.headers().map());
+
+                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+                int statusCode = response.statusCode();
+                String responseBody = response.body();
+                String responseHeaders = response.headers().toString();
+
+                logger.debug("Request ID: " + requestId + ", Received response: Status code: " + statusCode + 
+                    ", Headers: " + responseHeaders + ", Body: " + responseBody);
+
+                if (statusCode >= 200 && statusCode < 300 || statusCode == 409) {
+                    logger.info("Request ID: " + requestId + ", Successfully registered issuer: " + issuerId + 
+                        (statusCode == 409 ? " (already registered)" : ""));
+                    return;
+                } else {
+                    throw new StatusListServerException(
+                        "Failed to register issuer: " + issuerId + 
+                        ", Status code: " + statusCode + 
+                        ", Response: " + responseBody,
+                        statusCode
+                    );
+                }
+            } catch (ConnectException | java.net.http.HttpTimeoutException e) {
+                handleRetry(requestId, issuerId, attempt, e);
+                attempt++;
+            } catch (IOException | InterruptedException e) {
+                if (attempt <= retryCount && e instanceof IOException) {
+                    handleRetryableException(requestId, issuerId, e, attempt, "Transient error");
+                } else {
+                    logger.error("Request ID: " + requestId + ", Failed to register issuer: " + issuerId +
+                            ": " + e.getMessage() + ", Server URL: " + serverUrl, e);
+                    if (e instanceof InterruptedException) {
+                        Thread.currentThread().interrupt();
+                    }
+                    throw new StatusListException("Failed to register issuer: " + issuerId + 
+                        ", Server URL: " + serverUrl, e);
+                }
             }
         }
     }
@@ -194,5 +313,9 @@ public class StatusListService {
         if (statusRecord.getExpiresAt() == null) {
             statusRecord.setExpiresAt(Instant.now().plusSeconds(3600));
         }
+    }
+
+    protected void performSleep(long millis) throws InterruptedException {
+        Thread.sleep(millis);
     }
 }
