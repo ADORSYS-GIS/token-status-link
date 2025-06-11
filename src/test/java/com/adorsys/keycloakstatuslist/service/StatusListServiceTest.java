@@ -47,7 +47,11 @@ class StatusListServiceTest {
 
     @BeforeEach
     void setUp() {
-        statusListService = new StatusListService(SERVER_URL, null, httpClient, RETRY_COUNT);
+        statusListService = new StatusListService(SERVER_URL, null, httpClient, RETRY_COUNT) {
+            @Override
+            protected void performSleep(long millis) throws InterruptedException {
+            }
+        };
     }
 
     private void setupResponse(int statusCode, String body) throws IOException, InterruptedException {
@@ -77,13 +81,6 @@ class StatusListServiceTest {
                 .thenReturn(httpResponse);
     }
 
-    private void setupMaxRetriesExceeded() throws IOException, InterruptedException {
-        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
-                .thenThrow(new ConnectException("Connection refused"))
-                .thenThrow(new ConnectException("Connection refused"))
-                .thenThrow(new ConnectException("Connection refused"))
-                .thenThrow(new ConnectException("Connection refused"));
-    }
 
     private void verifyHttpClientCall(int expectedCalls) throws IOException, InterruptedException {
         verify(httpClient, times(expectedCalls)).send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class));
@@ -174,13 +171,22 @@ class StatusListServiceTest {
     @Test
     void registerIssuer_MaxRetriesExceeded() throws IOException, InterruptedException {
         // Arrange
-        setupMaxRetriesExceeded();
+        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
+                .thenThrow(new ConnectException("Connection refused"))
+                .thenThrow(new ConnectException("Connection refused"))
+                .thenThrow(new ConnectException("Connection refused"))
+                .thenThrow(new ConnectException("Connection refused"));
 
         // Act & Assert
         StatusListException exception = assertThrows(StatusListException.class,
                 () -> statusListService.registerIssuer(ISSUER_ID, PUBLIC_KEY, ALGORITHM));
-        assertTrue(exception.getMessage().contains("Connection failed for " + ISSUER_ID + ", Server URL: " + SERVER_URL));
-        verifyHttpClientCall(RETRY_COUNT + 1);
+        
+        // Verify the exception message contains the expected text
+        assertTrue(exception.getMessage().contains("Failed to register issuer: " + ISSUER_ID));
+        assertTrue(exception.getMessage().contains("Server URL: " + SERVER_URL));
+        
+        // Verify the number of retry attempts
+        verify(httpClient, times(RETRY_COUNT + 1)).send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class));
     }
 
     @Test

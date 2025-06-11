@@ -151,7 +151,7 @@ public class StatusListService {
             logger.warn("Request ID: " + requestId + ", Attempt: " + attempt + ", " + operation + " failed for " + entityId +
                     ", retrying... Error: " + e.getMessage() + ", Server URL: " + serverUrl);
             try {
-                Thread.sleep(1000L * attempt); // Exponential backoff: 1s, 2s, 3s, etc.
+                performSleep(1000L * attempt); // Delegate sleep to a protected method
             } catch (InterruptedException ie) {
                 Thread.currentThread().interrupt();
                 throw new StatusListException("Interrupted during retry for " + entityId, ie);
@@ -161,6 +161,31 @@ public class StatusListService {
         logger.error("Request ID: " + requestId + ", " + operation + " failed for " + entityId +
                 " after " + retryCount + " retries: " + e.getMessage() + ", Server URL: " + serverUrl, e);
         throw new StatusListException(operation + " failed for " + entityId + ", Server URL: " + serverUrl, e);
+    }
+
+    private void handleRetry(String requestId, String issuerId, int attempt, Exception e) throws StatusListException {
+        if (attempt <= retryCount) {
+            logger.warn("Request ID: " + requestId + ", Attempt: " + attempt + 
+                    ", Error for issuer: " + issuerId + ", retrying... Error: " + e.getMessage() + 
+                    ", Server URL: " + serverUrl);
+            try {
+                performSleep(1000L * attempt); // Delegate sleep to a protected method
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                throw new StatusListException("Interrupted during retry for issuer: " + issuerId, ie);
+            }
+            return;
+        }
+
+        String errorMessage = "Failed to register issuer: " + issuerId + 
+                " after " + retryCount + " retries: " + e.getMessage() + 
+                ", Server URL: " + serverUrl;
+        logger.error("Request ID: " + requestId + ", " + errorMessage, e);
+        
+        if (e instanceof InterruptedException) {
+            Thread.currentThread().interrupt();
+        }
+        throw new StatusListException(errorMessage, e);
     }
 
     public void registerIssuer(String issuerId, String publicKey, String algorithm) throws StatusListException {
@@ -173,7 +198,9 @@ public class StatusListService {
         issuerRecord.setPublicKey(publicKey);
         issuerRecord.setAlg(algorithm);
 
-        for (int attempt = 1; attempt <= retryCount + 1; attempt++) {
+        int attempt = 1;
+
+        while (true) {
             try {
                 String jsonPayload = objectMapper.writeValueAsString(issuerRecord);
                 logger.debug("Request ID: " + requestId + ", Attempt: " + attempt + ", Registering issuer: " + issuerId + 
@@ -203,17 +230,16 @@ public class StatusListService {
                         (statusCode == 409 ? " (already registered)" : ""));
                     return;
                 } else {
-                    logger.error("Request ID: " + requestId + ", Failed to register issuer: " + issuerId +
-                            ". Status code: " + statusCode + ", Response: " + responseBody);
                     throw new StatusListServerException(
-                            "Failed to register issuer: " + issuerId + ". Status code: " + statusCode,
-                            statusCode
+                        "Failed to register issuer: " + issuerId + 
+                        ", Status code: " + statusCode + 
+                        ", Response: " + responseBody,
+                        statusCode
                     );
                 }
-            } catch (ConnectException e) {
-                handleRetryableException(requestId, issuerId, e, attempt, "Connection");
-            } catch (java.net.http.HttpTimeoutException e) {
-                handleRetryableException(requestId, issuerId, e, attempt, "Request");
+            } catch (ConnectException | java.net.http.HttpTimeoutException e) {
+                handleRetry(requestId, issuerId, attempt, e);
+                attempt++;
             } catch (IOException | InterruptedException e) {
                 if (attempt <= retryCount && e instanceof IOException) {
                     handleRetryableException(requestId, issuerId, e, attempt, "Transient error");
@@ -287,5 +313,9 @@ public class StatusListService {
         if (statusRecord.getExpiresAt() == null) {
             statusRecord.setExpiresAt(Instant.now().plusSeconds(3600));
         }
+    }
+
+    protected void performSleep(long millis) throws InterruptedException {
+        Thread.sleep(millis);
     }
 }

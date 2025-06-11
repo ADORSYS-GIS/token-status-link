@@ -23,12 +23,10 @@ import org.keycloak.crypto.Algorithm;
  */
 public class TokenStatusEventListenerProviderFactory implements EventListenerProviderFactory {
     private static final Logger logger = Logger.getLogger(TokenStatusEventListenerProviderFactory.class);
-
-    // Provider ID used in Keycloak configuration
-    public static final String PROVIDER_ID = "token-status-event-listener";
-
-    // Set of realms that have been registered as issuers
+    private static final String PROVIDER_ID = "token-status-event-listener";
     private final Set<String> registeredRealms = new HashSet<>();
+    private KeycloakSessionFactory sessionFactory;
+    private volatile boolean initialized = false;
 
     @Override
     public EventListenerProvider create(KeycloakSession session) {
@@ -44,22 +42,80 @@ public class TokenStatusEventListenerProviderFactory implements EventListenerPro
     @Override
     public void postInit(KeycloakSessionFactory factory) {
         logger.info("Post-initializing TokenStatusEventListenerProviderFactory");
+        this.sessionFactory = factory;
         
-        // Register all realms as issuers
-        try (KeycloakSession session = factory.create()) {
-            session.getTransactionManager().begin();
+        // Start a background thread to handle initialization
+        Thread initThread = new Thread(() -> {
             try {
-                for (RealmModel realm : session.realms().getRealmsStream().toList()) {
-                    registerRealmAsIssuer(session, realm);
-                }
-                session.getTransactionManager().commit();
-            } catch (Exception e) {
-                session.getTransactionManager().rollback();
-                logger.error("Error during post-initialization", e);
+                // Wait for Keycloak to be fully started
+                performSleep(5000); // Now using the overridable method
+                initializeRealms();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                logger.error("Initialization thread interrupted", e);
             }
-        } catch (Exception e) {
-            logger.error("Error creating session during post-initialization", e);
+        });
+        initThread.setDaemon(true);
+        initThread.start();
+    }
+
+    private void initializeRealms() {
+        if (initialized) {
+            return;
         }
+
+        logger.info("Starting realm initialization");
+        int maxRetries = 3;
+        int retryCount = 0;
+        boolean success = false;
+
+        while (!success && retryCount < maxRetries) {
+            try (KeycloakSession session = sessionFactory.create()) {
+                try {
+                    session.getTransactionManager().begin();
+                    
+                    // Get all realms
+                    var realms = session.realms().getRealmsStream().toList();
+                    logger.info("Found " + realms.size() + " realms to register");
+                    
+                    // Register each realm
+                    for (RealmModel realm : realms) {
+                        try {
+                            registerRealmAsIssuer(session, realm);
+                        } catch (Exception e) {
+                            logger.error("Failed to register realm: " + realm.getName(), e);
+                        }
+                    }
+                    
+                    session.getTransactionManager().commit();
+                    success = true;
+                    initialized = true;
+                    logger.info("Successfully completed realm initialization");
+                } catch (Exception e) {
+                    session.getTransactionManager().rollback();
+                    logger.warn("Database not ready yet, attempt " + (retryCount + 1) + " of " + maxRetries);
+                    retryCount++;
+                    performSleep(2000);
+                }
+            } catch (Exception e) {
+                logger.error("Error during realm initialization attempt " + (retryCount + 1), e);
+                retryCount++;
+                try {
+                    performSleep(2000);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
+        }
+
+        if (!success) {
+            logger.error("Failed to initialize realms after " + maxRetries + " attempts");
+        }
+    }
+
+    protected void performSleep(long millis) throws InterruptedException {
+        Thread.sleep(millis);
     }
 
     private void registerRealmAsIssuer(KeycloakSession session, RealmModel realm) {
@@ -126,6 +182,7 @@ public class TokenStatusEventListenerProviderFactory implements EventListenerPro
     public void close() {
         logger.info("Closing TokenStatusEventListenerProviderFactory");
         registeredRealms.clear();
+        initialized = false;
     }
 
     @Override
