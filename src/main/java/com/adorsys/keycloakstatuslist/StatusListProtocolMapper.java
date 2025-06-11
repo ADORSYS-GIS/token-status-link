@@ -13,8 +13,6 @@ import org.keycloak.provider.ProviderConfigProperty;
 import org.keycloak.representations.IDToken;
 import org.keycloak.connections.jpa.JpaConnectionProvider;
 import org.jboss.logging.Logger;
-
-import jakarta.mail.internet.ContentType;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import org.apache.hc.client5.http.classic.methods.HttpPost;
@@ -44,15 +42,30 @@ public class StatusListProtocolMapper extends AbstractOIDCProtocolMapper
         property.setLabel("Status List Base URI");
         property.setType(ProviderConfigProperty.STRING_TYPE);
         property.setHelpText("The base URI for the status list (e.g., https://example.com/statuslists)");
-        property.setDefaultValue("https://example.com/statuslists");
+        property.setDefaultValue("https://statuslist.eudi-adorsys.com");
         configProperties.add(property);
 
         property = new ProviderConfigProperty();
         property.setName(LIST_ID_PROPERTY);
         property.setLabel("Status List ID");
         property.setType(ProviderConfigProperty.STRING_TYPE);
-        property.setHelpText("The list ID to append to the base URI (e.g., 1)");
-        property.setDefaultValue("1");
+        property.setHelpText("The list ID to append to the base URI should be unique(e.g., 07499bc3-7e65-46b9-b7dd-ca37c4807420)");
+        property.setDefaultValue("07499bc3-7e65-46b9-b7dd-ca37c4807420");
+        configProperties.add(property);
+
+        property = new ProviderConfigProperty();
+        property.setName(OIDCAttributeMapperHelper.TOKEN_CLAIM_NAME);
+        property.setLabel("Token Claim Name");
+        property.setType(ProviderConfigProperty.STRING_TYPE);   
+        property.setDefaultValue("status");
+        configProperties.add(property);
+
+        property = new ProviderConfigProperty();
+        property.setName("jwt token");
+        property.setLabel("JWT bearer");
+        property.setType(ProviderConfigProperty.STRING_TYPE);
+        property.setHelpText("This is the jwt token for authenticating with the registerred status list server.");
+        property.setDefaultValue("");
         configProperties.add(property);
 
         OIDCAttributeMapperHelper.addTokenClaimNameConfig(configProperties);
@@ -91,8 +104,8 @@ public class StatusListProtocolMapper extends AbstractOIDCProtocolMapper
                 clientSessionCtx.getClientSession().getClient().getClientId(),
                 keycloakSession.getContext().getRealm().getId());
 
-        String baseUri = mappingModel.getConfig().getOrDefault(BASE_URI_PROPERTY, "https://example.com/statuslists");
-        String listId = mappingModel.getConfig().getOrDefault(LIST_ID_PROPERTY, "2");
+        String baseUri = mappingModel.getConfig().get(BASE_URI_PROPERTY);
+        String listId = mappingModel.getConfig().get(LIST_ID_PROPERTY);
         String uri = String.format("%s/%s", baseUri, listId);
         logger.debugf("Claim configuration: baseUri=%s, listId=%s, uri=%s", baseUri, listId, uri);
 
@@ -114,7 +127,7 @@ public class StatusListProtocolMapper extends AbstractOIDCProtocolMapper
         token.getOtherClaims().put(claimName, status.toMap());
     }
 
-    private long getNextIndex(KeycloakSession session) {
+    protected long getNextIndex(KeycloakSession session) {
         logger.debugf("Getting next index for realm: %s", session.getContext().getRealm().getId());
         final long[] nextIndex = { -1 };
         session.getTransactionManager().enlist(new KeycloakTransaction() {
@@ -190,39 +203,51 @@ public class StatusListProtocolMapper extends AbstractOIDCProtocolMapper
         return nextIndex[0];
     }
 
-    private void storeIndexMapping(long idx, String userId, String tokenId, String listId, KeycloakSession session) {
+    protected void storeIndexMapping(long idx, String userId, String tokenId, String listId, KeycloakSession session) {
         logger.debugf("Storing index mapping: idx=%d, userId=%s, tokenId=%s, listId=%s", idx, userId, tokenId, listId);
 
         session.getTransactionManager().enlist(new org.keycloak.models.KeycloakTransaction() {
+            private boolean rollbackOnly = false; // Local state to track rollback
+            private boolean active = false;
+
             @Override
             public void begin() {
+                active = true;
                 logger.debug("Starting transaction for storeIndexMapping");
             }
 
             @Override
             public void commit() {
-                logger.debug("Transaction committed for storeIndexMapping");
+                if (active && !rollbackOnly) {
+            logger.infof("Successfully persisted StatusListMappingEntity for idx=%d", idx);
+                }
+                active = false;
             }
 
             @Override
             public void rollback() {
-                logger.warn("Transaction rolled back for storeIndexMapping");
+                if (active) {
+
+                    logger.warn("Transaction rolled back for storeIndexMapping");
+                }
+                active = false;
             }
 
             @Override
             public void setRollbackOnly() {
-                logger.debug("Setting transaction to rollback only");
-                session.getTransactionManager().setRollbackOnly();
+
+                rollbackOnly = true;
+
             }
 
             @Override
             public boolean getRollbackOnly() {
-                return session.getTransactionManager().getRollbackOnly();
+                return rollbackOnly;
             }
 
             @Override
             public boolean isActive() {
-                return session.getTransactionManager().isActive();
+                return active;
             }
         });
 
@@ -260,11 +285,7 @@ public class StatusListProtocolMapper extends AbstractOIDCProtocolMapper
                 logger.info("Sending POST to /statuslists/publish with payload: " + jsonPayload);
 
                 // Add Authorization header with Bearer token
-                String accessToken = "eyJhbGciOiJFUzI1NiIsImtpZCI6ImdvbmR3YW5hLWRpZ2l0YWwtcG9sZS1jeHliYSIsInR5cCI6IkpXVCJ9.eyJpYXQiOjE3NDk1NjUxMjEsImV4cCI6MTc0OTY1MTUyMX0.0EHCqKI6WZjKF8OcmkzZjTizeOTVx4-tPHQlRMjPm75eX8fQVpyyXeFd8LAKmwiVknCYmI0etACyOKAzyFOk5g"; // Replace
-                                                                                                                                                                                                                                                                    // with
-                                                                                                                                                                                                                                                                    // actual
-                                                                                                                                                                                                                                                                    // token
-                                                                                                                                                                                                                                                                    // retrieval
+                String accessToken = "eyJhbGciOiJFUzI1NiIsImtpZCI6ImdvbmR3YW5hLWRpZ2l0YWwtcG9sZS1jeHliYSIsInR5cCI6IkpXVCJ9.eyJpYXQiOjE3NDk1NjUxMjEsImV4cCI6MTc0OTY1MTUyMX0.0EHCqKI6WZjKF8OcmkzZjTizeOTVx4-tPHQlRMjPm75eX8fQVpyyXeFd8LAKmwiVknCYmI0etACyOKAzyFOk5g"; // retrieval
                 httpPost.setHeader("Authorization", "Bearer " + accessToken);
                 httpPost.setHeader("Content-Type", "application/json");
                 httpPost.setEntity(new StringEntity(jsonPayload, StandardCharsets.UTF_8, false));

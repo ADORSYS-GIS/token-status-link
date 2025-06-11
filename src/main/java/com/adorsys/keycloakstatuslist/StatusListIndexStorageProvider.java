@@ -95,7 +95,7 @@ public class StatusListIndexStorageProvider implements Provider {
         return nextIndex[0];
     }
 
-    public void storeIndexMapping(long idx, String userId, String tokenId, String listId, KeycloakSession keycloakSession) {
+    public void storeIndexMapping(long idx, String userId, String tokenId, String listId, KeycloakSession keycloakSession, String server_endpoint) {
         logger.debug("Storing index mapping: idx=" + idx + ", userId=" + userId + ", tokenId=" + tokenId + ", listId=" + listId);
         keycloakSession.getTransactionManager().enlist(new KeycloakTransaction() {
             private boolean active = true;
@@ -139,44 +139,44 @@ public class StatusListIndexStorageProvider implements Provider {
                 return active;
             }
 
-            public void run() {
-                EntityManager em = keycloakSession.getProvider(JpaConnectionProvider.class).getEntityManager();
-                if (em == null) {
-                    logger.error("EntityManager is null for JpaConnectionProvider");
-                    setRollbackOnly();
-                    return;
-                }
-                StatusListMappingEntity mapping = new StatusListMappingEntity();
-                mapping.setIdx(idx);
-                mapping.setUserId(userId);
-                mapping.setTokenId(tokenId);
-                mapping.setRealmId(keycloakSession.getContext().getRealm().getId());
-                em.persist(mapping);
-                logger.debug("Persisted StatusListMappingEntity");
+            // public void run() {
+            //     EntityManager em = keycloakSession.getProvider(JpaConnectionProvider.class).getEntityManager();
+            //     if (em == null) {
+            //         logger.error("EntityManager is null for JpaConnectionProvider");
+            //         setRollbackOnly();
+            //         return;
+            //     }
+            //     StatusListMappingEntity mapping = new StatusListMappingEntity();
+            //     mapping.setIdx(idx);
+            //     mapping.setUserId(userId);
+            //     mapping.setTokenId(tokenId);
+            //     mapping.setRealmId(keycloakSession.getContext().getRealm().getId());
+            //     em.persist(mapping);
+            //     logger.debug("Persisted StatusListMappingEntity");
 
-                // Send status to statuslist-server.com
-                try (CloseableHttpClient httpClient = HttpClients.createDefault()) {
-                    HttpPost httpPost = new HttpPost("http://localhost:8000/statuslists/publish");
-                    Map<String, Object> payload = Map.of(
-                        "status", "VALID",
-                        "index", idx,
-                        "list_id", listId
-                    );
-                    String jsonPayload = objectMapper.writeValueAsString(payload);
-                    httpPost.setEntity(new StringEntity(jsonPayload, null, "application/json", active));
-                    httpClient.execute(httpPost, response -> {
-                        if (response.getCode() != 200) {
-                            logger.warnf("Failed to send status to statuslist-server.com for idx %d: %d %s",
-                                idx, response.getCode(), response.getReasonPhrase());
-                        } else {
-                            logger.debug("Successfully sent status to statuslist-server.com for idx " + idx);
-                        }
-                        return null;
-                    });
-                } catch (IOException e) {
-                    logger.errorf("Error sending status to statuslist-server.com for idx %d: %s", idx, e.getMessage());
-                }
-            }
+            //     // Send status to statuslist server
+            //     try (CloseableHttpClient httpClient = HttpClients.createDefault()) {
+            //         HttpPost httpPost = new HttpPost(server_endpoint);
+            //         Map<String, Object> payload = Map.of(
+            //             "status", "VALID",
+            //             "index", idx,
+            //             "list_id", listId
+            //         );
+            //         String jsonPayload = objectMapper.writeValueAsString(payload);
+            //         httpPost.setEntity(new StringEntity(jsonPayload, null, "application/json", active));
+            //         httpClient.execute(httpPost, response -> {
+            //             if (response.getCode() != 200) {
+            //                 logger.warnf("Failed to send status to statuslist-server.com for idx %d: %d %s",
+            //                     idx, response.getCode(), response.getReasonPhrase());
+            //             } else {
+            //                 logger.debug("Successfully sent status to statuslist-server.com for idx " + idx);
+            //             }
+            //             return null;
+            //         });
+            //     } catch (IOException e) {
+            //         logger.errorf("Error sending status to statuslist-server.com for idx %d: %s", idx, e.getMessage());
+            //     }
+            // }
         });
     }
 
