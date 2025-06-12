@@ -8,14 +8,7 @@ import org.jboss.logging.Logger;
 
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
-import org.apache.hc.client5.http.classic.methods.HttpPost;
-import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
-import org.apache.hc.client5.http.impl.classic.HttpClients;
-import org.apache.hc.core5.http.io.entity.StringEntity;
 import com.fasterxml.jackson.databind.ObjectMapper;
-
-import java.io.IOException;
-import java.util.Map;
 
 public class StatusListIndexStorageProvider implements Provider {
     private static final Logger logger = Logger.getLogger(StatusListIndexStorageProvider.class);
@@ -138,45 +131,6 @@ public class StatusListIndexStorageProvider implements Provider {
             public boolean isActive() {
                 return active;
             }
-
-            // public void run() {
-            //     EntityManager em = keycloakSession.getProvider(JpaConnectionProvider.class).getEntityManager();
-            //     if (em == null) {
-            //         logger.error("EntityManager is null for JpaConnectionProvider");
-            //         setRollbackOnly();
-            //         return;
-            //     }
-            //     StatusListMappingEntity mapping = new StatusListMappingEntity();
-            //     mapping.setIdx(idx);
-            //     mapping.setUserId(userId);
-            //     mapping.setTokenId(tokenId);
-            //     mapping.setRealmId(keycloakSession.getContext().getRealm().getId());
-            //     em.persist(mapping);
-            //     logger.debug("Persisted StatusListMappingEntity");
-
-            //     // Send status to statuslist server
-            //     try (CloseableHttpClient httpClient = HttpClients.createDefault()) {
-            //         HttpPost httpPost = new HttpPost(server_endpoint);
-            //         Map<String, Object> payload = Map.of(
-            //             "status", "VALID",
-            //             "index", idx,
-            //             "list_id", listId
-            //         );
-            //         String jsonPayload = objectMapper.writeValueAsString(payload);
-            //         httpPost.setEntity(new StringEntity(jsonPayload, null, "application/json", active));
-            //         httpClient.execute(httpPost, response -> {
-            //             if (response.getCode() != 200) {
-            //                 logger.warnf("Failed to send status to statuslist-server.com for idx %d: %d %s",
-            //                     idx, response.getCode(), response.getReasonPhrase());
-            //             } else {
-            //                 logger.debug("Successfully sent status to statuslist-server.com for idx " + idx);
-            //             }
-            //             return null;
-            //         });
-            //     } catch (IOException e) {
-            //         logger.errorf("Error sending status to statuslist-server.com for idx %d: %s", idx, e.getMessage());
-            //     }
-            // }
         });
     }
 
