@@ -15,6 +15,10 @@ import liquibase.resource.ClassLoaderResourceAccessor;
 
 import java.sql.Connection;
 
+/**
+ * Runs Liquibase migrations during Keycloak startup to create database tables for status list indices and mappings.
+ * Registered as a ProviderFactory via META-INF/services, executed in postInit to ensure schema setup for StatusListProtocolMapper.
+ */
 public class LiquibaseMigrationRunner implements Provider, ProviderFactory<LiquibaseMigrationRunner> {
     private static final Logger logger = Logger.getLogger(LiquibaseMigrationRunner.class);
     private static volatile boolean migrated = false;

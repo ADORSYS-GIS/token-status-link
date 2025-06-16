@@ -1,11 +1,11 @@
-package com.adorsys.keycloakstatuslist;
+package com.adorsys.keycloakstatuslist.model;
 
 import java.util.Map;
 
 public class Status {
-    private final StatusList statusList;
+    private final StatusListClaim statusList;
 
-    public Status(StatusList statusList) {
+    public Status(StatusListClaim statusList) {
         this.statusList = statusList;
     }
 

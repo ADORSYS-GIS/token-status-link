@@ -6,8 +6,6 @@ import org.keycloak.models.*;
 import org.keycloak.protocol.oidc.mappers.OIDCAttributeMapperHelper;
 import org.keycloak.representations.AccessToken;
 import org.keycloak.representations.IDToken;
-import org.mockito.Mockito;
-
 import java.util.HashMap;
 import java.util.Map;
 
@@ -27,7 +25,6 @@ public class StatusListProtocolMapperTest {
         String TEST_REALM_ID = "test-realm";
         String TEST_CLIENT_ID = "test-client";
         String TEST_USER_ID = "user-123";
-        String TEST_TOKEN_ID = "token-456";
         long TEST_INDEX = 42L;
         long ERROR_INDEX = -1L;
     }
@@ -43,7 +40,7 @@ public class StatusListProtocolMapperTest {
 
             @Override
             protected void storeIndexMapping(long idx, String userId, String tokenId,
-                                             String listId, KeycloakSession session, Map<String, String> config) {
+                    String listId, KeycloakSession session, Map<String, String> config) {
                 // no-op
             }
         });
@@ -92,8 +89,7 @@ public class StatusListProtocolMapperTest {
                 StatusListProtocolMapper.Constants.LIST_ID_PROPERTY, "99",
                 OIDCAttributeMapperHelper.TOKEN_CLAIM_NAME, StatusListProtocolMapper.Constants.DEFAULT_TOKEN_CLAIM_NAME,
                 OIDCAttributeMapperHelper.INCLUDE_IN_ACCESS_TOKEN, "true",
-                OIDCAttributeMapperHelper.INCLUDE_IN_ID_TOKEN, "true"
-        ));
+                OIDCAttributeMapperHelper.INCLUDE_IN_ID_TOKEN, "true"));
     }
 
     @Test
@@ -111,7 +107,8 @@ public class StatusListProtocolMapperTest {
                 "Claim 'status' should be present");
 
         @SuppressWarnings("unchecked")
-        Map<String, Object> statusClaim = (Map<String, Object>) claims.get(StatusListProtocolMapper.Constants.DEFAULT_TOKEN_CLAIM_NAME);
+        Map<String, Object> statusClaim = (Map<String, Object>) claims
+                .get(StatusListProtocolMapper.Constants.DEFAULT_TOKEN_CLAIM_NAME);
         assertNotNull(statusClaim, "Status claim map should not be null");
 
         @SuppressWarnings("unchecked")
@@ -158,8 +155,7 @@ public class StatusListProtocolMapperTest {
     public void defaultConfig_usesDefaults() {
         // Arrange
         Map<String, String> minimalConfig = new HashMap<>(Map.of(
-                OIDCAttributeMapperHelper.INCLUDE_IN_ACCESS_TOKEN, "true"
-        ));
+                OIDCAttributeMapperHelper.INCLUDE_IN_ACCESS_TOKEN, "true"));
         when(mappingModel.getConfig()).thenReturn(minimalConfig);
         AccessToken token = new AccessToken();
 
@@ -172,7 +168,8 @@ public class StatusListProtocolMapperTest {
                 "Default claim 'status' should be present");
 
         @SuppressWarnings("unchecked")
-        Map<String, Object> statusClaim = (Map<String, Object>) claims.get(StatusListProtocolMapper.Constants.DEFAULT_TOKEN_CLAIM_NAME);
+        Map<String, Object> statusClaim = (Map<String, Object>) claims
+                .get(StatusListProtocolMapper.Constants.DEFAULT_TOKEN_CLAIM_NAME);
         assertNotNull(statusClaim, "Status claim map should not be null");
 
         @SuppressWarnings("unchecked")
@@ -180,7 +177,9 @@ public class StatusListProtocolMapperTest {
         assertNotNull(statusList, "Nested 'status_list' map should not be null");
 
         String uri = (String) statusList.get("uri");
-        assertTrue(uri.endsWith("https://statuslist.eudi-adorsys.com/" + StatusListProtocolMapper.Constants.DEFAULT_LIST_ID),
+        assertTrue(
+                uri.endsWith(
+                        "https://statuslist.eudi-adorsys.com/" + StatusListProtocolMapper.Constants.DEFAULT_LIST_ID),
                 "URI should end with default list ID, but was: " + uri);
 
         assertEquals(String.valueOf(TestConstants.TEST_INDEX), statusList.get("idx"),

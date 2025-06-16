@@ -12,6 +12,10 @@ import org.apache.hc.client5.http.classic.methods.HttpPost;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.apache.hc.core5.http.io.entity.StringEntity;
+
+import com.adorsys.keycloakstatuslist.model.Status;
+import com.adorsys.keycloakstatuslist.model.StatusListClaim;
+import com.adorsys.keycloakstatuslist.model.StatusListMappingEntity;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
@@ -133,7 +137,7 @@ public class StatusListProtocolMapper extends AbstractOIDCProtocolMapper
         String userId = userSession != null ? userSession.getUser().getId() : null;
         storeIndexMapping(idx, userId, token.getId(), listId, session, config);
 
-        StatusList statusList = new StatusList(String.valueOf(idx), uri);
+        StatusListClaim statusList = new StatusListClaim(String.valueOf(idx), uri);
         Status status = new Status(statusList);
         String claimName = config.getOrDefault(Constants.TOKEN_CLAIM_NAME_PROPERTY, Constants.DEFAULT_TOKEN_CLAIM_NAME);
         logger.infof("Adding claim '%s' with value: %s", claimName, status.toMap());

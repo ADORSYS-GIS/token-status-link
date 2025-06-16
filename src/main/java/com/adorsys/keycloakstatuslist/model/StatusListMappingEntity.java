@@ -1,4 +1,4 @@
-package com.adorsys.keycloakstatuslist;
+package com.adorsys.keycloakstatuslist.model;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;

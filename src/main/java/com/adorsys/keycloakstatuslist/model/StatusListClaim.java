@@ -1,10 +1,10 @@
-package com.adorsys.keycloakstatuslist;
+package com.adorsys.keycloakstatuslist.model;
 
-public class StatusList {
+public class StatusListClaim {
     private final String idx;
     private final String uri;
 
-    public StatusList(String idx, String uri) {
+    public StatusListClaim(String idx, String uri) {
         this.idx = idx;
         this.uri = uri;
     }
