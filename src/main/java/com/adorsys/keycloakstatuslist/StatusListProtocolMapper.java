@@ -15,6 +15,7 @@ import org.apache.hc.core5.http.io.entity.StringEntity;
 
 import com.adorsys.keycloakstatuslist.model.Status;
 import com.adorsys.keycloakstatuslist.model.StatusListClaim;
+import com.adorsys.keycloakstatuslist.model.StatusListCounterEntity;
 import com.adorsys.keycloakstatuslist.model.StatusListMappingEntity;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
