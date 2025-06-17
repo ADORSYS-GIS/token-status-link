@@ -19,15 +19,12 @@ import com.adorsys.keycloakstatuslist.service.StatusListService;
 
 import java.security.PublicKey;
 import java.util.Arrays;
-import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class TokenStatusEventListenerProviderFactoryTest {
-
-    private static final int INITIALIZATION_WAIT_SECONDS = 6;
 
     @Mock
     private KeycloakSession session;
@@ -66,13 +63,7 @@ class TokenStatusEventListenerProviderFactoryTest {
 
     @BeforeEach
     void setUp() {
-        // Use a test-specific factory that overrides the sleep method
-        factory = new TokenStatusEventListenerProviderFactory() {
-            @Override
-            protected void performSleep(long millis) throws InterruptedException {
-                // Do nothing in tests to avoid actual sleep
-            }
-        };
+        factory = new TokenStatusEventListenerProviderFactory();
         
         // Setup session mocks
         lenient().when(session.getContext()).thenReturn(context);
@@ -93,14 +84,6 @@ class TokenStatusEventListenerProviderFactoryTest {
         lenient().when(realm.getAttribute("status-list-retry-count")).thenReturn("3");
     }
 
-    private void waitForInitialization() {
-        try {
-            TimeUnit.SECONDS.sleep(INITIALIZATION_WAIT_SECONDS);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-    }
-
     @Test
     void create_ShouldCreateProvider() {
         // Act
@@ -111,7 +94,7 @@ class TokenStatusEventListenerProviderFactoryTest {
     }
 
     @Test
-    void postInit_ShouldStartInitializationThread() {
+    void postInit_ShouldInitializeRealms() {
         // Arrange
         when(sessionFactory.create()).thenReturn(session);
         when(realmProvider.getRealmsStream()).thenReturn(Arrays.asList(realm).stream());
@@ -122,9 +105,6 @@ class TokenStatusEventListenerProviderFactoryTest {
 
         // Act
         factory.postInit(sessionFactory);
-
-        // Wait for initialization thread to complete
-        waitForInitialization();
 
         // Assert
         verify(session.getTransactionManager()).begin();
@@ -150,35 +130,10 @@ class TokenStatusEventListenerProviderFactoryTest {
         // Act
         factory.postInit(sessionFactory);
 
-        // Wait for initialization thread to complete
-        waitForInitialization();
-
         // Assert
         verify(transactionManager).begin();
         verify(transactionManager).commit();
         verify(keyManager, never()).getActiveKey(any(), any(), any());
-    }
-
-    @Test
-    void registerRealmAsIssuer_ShouldRegisterRealmSuccessfully() {
-        // Arrange
-        when(sessionFactory.create()).thenReturn(session);
-        when(realmProvider.getRealmsStream()).thenReturn(Arrays.asList(realm).stream());
-        when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), anyString())).thenReturn(keyWrapper);
-        when(keyWrapper.getPublicKey()).thenReturn(publicKey);
-        when(keyWrapper.getAlgorithm()).thenReturn("RS256");
-        when(publicKey.getEncoded()).thenReturn("test-key".getBytes());
-
-        // Act
-        factory.postInit(sessionFactory);
-
-        // Wait for initialization thread to complete
-        waitForInitialization();
-
-        // Assert
-        verify(transactionManager).begin();
-        verify(transactionManager).commit();
-        verify(keyManager).getActiveKey(eq(realm), eq(KeyUse.SIG), anyString());
     }
 
     @Test
@@ -192,9 +147,6 @@ class TokenStatusEventListenerProviderFactoryTest {
 
         // Act
         factory.postInit(sessionFactory);
-
-        // Wait for initialization thread to complete
-        waitForInitialization();
 
         // Assert
         verify(transactionManager).begin();
@@ -211,9 +163,6 @@ class TokenStatusEventListenerProviderFactoryTest {
 
         // Act
         factory.postInit(sessionFactory);
-
-        // Wait for initialization thread to complete
-        waitForInitialization();
 
         // Assert
         verify(transactionManager).begin();

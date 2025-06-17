@@ -256,6 +256,58 @@ public class StatusListService {
         }
     }
 
+    public boolean isIssuerRegistered(String issuerId) throws StatusListException {
+        String requestId = UUID.randomUUID().toString();
+        logger.debug("Request ID: " + requestId + ", Checking if issuer is registered: " + issuerId);
+
+        int attempt = 1;
+        while (true) {
+            try {
+                HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
+                        .uri(URI.create(serverUrl + "credentials/" + issuerId))
+                        .header("X-Request-ID", requestId)
+                        .timeout(Duration.ofSeconds(30))
+                        .GET();
+
+                if (authToken != null && !authToken.isEmpty()) {
+                    requestBuilder.header("Authorization", "Bearer " + authToken);
+                }
+
+                HttpRequest request = requestBuilder.build();
+                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+                int statusCode = response.statusCode();
+
+                if (statusCode == 200) {
+                    logger.debug("Request ID: " + requestId + ", Issuer is registered: " + issuerId);
+                    return true;
+                } else if (statusCode == 404) {
+                    logger.debug("Request ID: " + requestId + ", Issuer is not registered: " + issuerId);
+                    return false;
+                } else {
+                    throw new StatusListServerException(
+                        "Failed to check issuer registration status: " + issuerId + 
+                        ", Status code: " + statusCode,
+                        statusCode
+                    );
+                }
+            } catch (ConnectException | java.net.http.HttpTimeoutException e) {
+                handleRetry(requestId, issuerId, attempt, e);
+                attempt++;
+            } catch (IOException | InterruptedException e) {
+                if (attempt <= retryCount && e instanceof IOException) {
+                    handleRetryableException(requestId, issuerId, e, attempt, "Transient error");
+                } else {
+                    logger.error("Request ID: " + requestId + ", Failed to check issuer registration: " + issuerId +
+                            ": " + e.getMessage() + ", Server URL: " + serverUrl, e);
+                    if (e instanceof InterruptedException) {
+                        Thread.currentThread().interrupt();
+                    }
+                    throw new StatusListException("Failed to check issuer registration: " + issuerId, e);
+                }
+            }
+        }
+    }
+
     private void validateStatusRecord(TokenStatusRecord statusRecord) throws StatusListException {
         String credentialId = statusRecord.getCredentialId() != null ? statusRecord.getCredentialId() : "unknown";
 

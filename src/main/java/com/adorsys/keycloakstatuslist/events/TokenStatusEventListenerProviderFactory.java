@@ -1,7 +1,7 @@
 package com.adorsys.keycloakstatuslist.events;
 
 import java.util.Set;
-import java.util.HashSet;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.jboss.logging.Logger;
 import org.keycloak.Config;
@@ -24,7 +24,7 @@ import org.keycloak.crypto.Algorithm;
 public class TokenStatusEventListenerProviderFactory implements EventListenerProviderFactory {
     private static final Logger logger = Logger.getLogger(TokenStatusEventListenerProviderFactory.class);
     private static final String PROVIDER_ID = "token-status-event-listener";
-    private final Set<String> registeredRealms = new HashSet<>();
+    private final Set<String> registeredRealms = ConcurrentHashMap.newKeySet();
     private KeycloakSessionFactory sessionFactory;
     private volatile boolean initialized = false;
 
@@ -44,19 +44,13 @@ public class TokenStatusEventListenerProviderFactory implements EventListenerPro
         logger.info("Post-initializing TokenStatusEventListenerProviderFactory");
         this.sessionFactory = factory;
         
-        // Start a background thread to handle initialization
-        Thread initThread = new Thread(() -> {
-            try {
-                // Wait for Keycloak to be fully started
-                performSleep(5000); // Now using the overridable method
-                initializeRealms();
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                logger.error("Initialization thread interrupted", e);
-            }
-        });
-        initThread.setDaemon(true);
-        initThread.start();
+        // Initialize realms directly since we're already in the postInit phase
+        // which means Keycloak's database is ready
+        try {
+            initializeRealms();
+        } catch (Exception e) {
+            logger.error("Error during initialization", e);
+        }
     }
 
     private void initializeRealms() {
@@ -65,52 +59,28 @@ public class TokenStatusEventListenerProviderFactory implements EventListenerPro
         }
 
         logger.info("Starting realm initialization");
-        int maxRetries = 3;
-        int retryCount = 0;
-        boolean success = false;
-
-        while (!success && retryCount < maxRetries) {
-            try (KeycloakSession session = sessionFactory.create()) {
+        
+        try (KeycloakSession session = sessionFactory.create()) {
+            session.getTransactionManager().begin();
+            
+            // Get all realms
+            var realms = session.realms().getRealmsStream().toList();
+            logger.info("Found " + realms.size() + " realms to register");
+            
+            // Register each realm
+            for (RealmModel realm : realms) {
                 try {
-                    session.getTransactionManager().begin();
-                    
-                    // Get all realms
-                    var realms = session.realms().getRealmsStream().toList();
-                    logger.info("Found " + realms.size() + " realms to register");
-                    
-                    // Register each realm
-                    for (RealmModel realm : realms) {
-                        try {
-                            registerRealmAsIssuer(session, realm);
-                        } catch (Exception e) {
-                            logger.error("Failed to register realm: " + realm.getName(), e);
-                        }
-                    }
-                    
-                    session.getTransactionManager().commit();
-                    success = true;
-                    initialized = true;
-                    logger.info("Successfully completed realm initialization");
+                    registerRealmAsIssuer(session, realm);
                 } catch (Exception e) {
-                    session.getTransactionManager().rollback();
-                    logger.warn("Database not ready yet, attempt " + (retryCount + 1) + " of " + maxRetries);
-                    retryCount++;
-                    performSleep(2000);
-                }
-            } catch (Exception e) {
-                logger.error("Error during realm initialization attempt " + (retryCount + 1), e);
-                retryCount++;
-                try {
-                    performSleep(2000);
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    break;
+                    logger.error("Failed to register realm: " + realm.getName(), e);
                 }
             }
-        }
-
-        if (!success) {
-            logger.error("Failed to initialize realms after " + maxRetries + " attempts");
+            
+            session.getTransactionManager().commit();
+            initialized = true;
+            logger.info("Successfully completed realm initialization");
+        } catch (Exception e) {
+            logger.error("Error during realm initialization", e);
         }
     }
 
@@ -119,11 +89,6 @@ public class TokenStatusEventListenerProviderFactory implements EventListenerPro
     }
 
     private void registerRealmAsIssuer(KeycloakSession session, RealmModel realm) {
-        if (registeredRealms.contains(realm.getName())) {
-            logger.debug("Realm already registered as issuer: " + realm.getName());
-            return;
-        }
-
         try {
             StatusListConfig config = new StatusListConfig(realm);
             if (!config.isEnabled()) {
@@ -138,6 +103,13 @@ public class TokenStatusEventListenerProviderFactory implements EventListenerPro
                     config.getReadTimeout(),
                     config.getRetryCount()
             );
+
+            // Check if the realm is already registered in the status list service
+            if (statusListService.isIssuerRegistered(realm.getName())) {
+                logger.debug("Realm already registered as issuer in status list service: " + realm.getName());
+                registeredRealms.add(realm.getName());
+                return;
+            }
 
             // Get realm's public key and algorithm
             KeyManager keyManager = session.keys();
