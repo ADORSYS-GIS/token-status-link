@@ -89,6 +89,11 @@ public class TokenStatusEventListenerProviderFactory implements EventListenerPro
     }
 
     private void registerRealmAsIssuer(KeycloakSession session, RealmModel realm) {
+        if (registeredRealms.contains(realm.getName())) {
+            logger.debug("Realm already registered as issuer: " + realm.getName());
+            return;
+        }
+
         try {
             StatusListConfig config = new StatusListConfig(realm);
             if (!config.isEnabled()) {
@@ -103,13 +108,6 @@ public class TokenStatusEventListenerProviderFactory implements EventListenerPro
                     config.getReadTimeout(),
                     config.getRetryCount()
             );
-
-            // Check if the realm is already registered in the status list service
-            if (statusListService.isIssuerRegistered(realm.getName())) {
-                logger.debug("Realm already registered as issuer in status list service: " + realm.getName());
-                registeredRealms.add(realm.getName());
-                return;
-            }
 
             // Get realm's public key and algorithm
             KeyManager keyManager = session.keys();
