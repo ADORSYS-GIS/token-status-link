@@ -1,12 +1,11 @@
 package com.adorsys.keycloakstatuslist.model;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
+import jakarta.persistence.*;
+import java.util.Objects;
 
 @Entity
-@Table(name = "status_list_mapping")
+@Table(name = "STATUS_LIST_MAPPING")
+@IdClass(StatusListMappingEntity.StatusListMappingId.class)
 public class StatusListMappingEntity {
 
     @Id
@@ -14,7 +13,7 @@ public class StatusListMappingEntity {
     private String statusListId;
 
     @Id
-    @Column(name = "idx")
+    @Column(name = "idx", nullable = false)
     private long idx;
 
     @Column(name = "user_id")
@@ -26,13 +25,16 @@ public class StatusListMappingEntity {
     @Column(name = "realm_id")
     private String realmId;
 
-    // Getters and setters
-    public long getIdx() {
-        return idx;
-    }
-
     public String getStatusListId() {
         return statusListId;
+    }
+
+    public void setStatusListId(String statusListId) {
+        this.statusListId = statusListId;
+    }
+
+    public long getIdx() {
+        return idx;
     }
 
     public void setIdx(long idx) {
@@ -63,8 +65,62 @@ public class StatusListMappingEntity {
         this.realmId = realmId;
     }
 
-    public void setStatusListId(String statusListId) {
-        this.statusListId = statusListId;
+    public static class StatusListMappingId implements java.io.Serializable {
+        private String statusListId;
+        private long idx;
+
+        public StatusListMappingId() {
+        }
+
+        public StatusListMappingId(String statusListId, long idx) {
+            this.statusListId = statusListId;
+            this.idx = idx;
+        }
+
+        public String getStatusListId() {
+            return statusListId;
+        }
+
+        public void setStatusListId(String statusListId) {
+            this.statusListId = statusListId;
+        }
+
+        public long getIdx() {
+            return idx;
+        }
+
+        public void setIdx(long idx) {
+            this.idx = idx;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o)
+                return true;
+            if (!(o instanceof StatusListMappingId))
+                return false;
+            StatusListMappingId that = (StatusListMappingId) o;
+            return idx == that.idx && Objects.equals(statusListId, that.statusListId);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(statusListId, idx);
+        }
     }
 
+    @Override
+    public boolean equals(Object o) {
+        if (this == o)
+            return true;
+        if (!(o instanceof StatusListMappingEntity))
+            return false;
+        StatusListMappingEntity that = (StatusListMappingEntity) o;
+        return idx == that.idx && Objects.equals(statusListId, that.statusListId);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(statusListId, idx);
+    }
 }

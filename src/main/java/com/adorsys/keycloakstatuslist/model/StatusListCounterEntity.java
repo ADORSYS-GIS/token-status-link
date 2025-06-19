@@ -1,21 +1,18 @@
 package com.adorsys.keycloakstatuslist.model;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
+import jakarta.persistence.*;
 
 @Entity
-@Table(name = "status_list_counter")
+@Table(name = "STATUS_LIST_COUNTER")
 public class StatusListCounterEntity {
+
     @Id
-    @Column(name = "id")
+    @Column(name = "id", nullable = false)
     private String id;
 
-    @Column(name = "current_index")
+    @Column(name = "current_index", nullable = false)
     private long currentIndex;
 
-    // Getters and setters
     public String getId() {
         return id;
     }
