@@ -8,7 +8,7 @@ import org.keycloak.models.KeycloakSessionFactory;
 
 public class StatusListJpaEntityProviderFactory implements JpaEntityProviderFactory {
 
-    private static final String ID = "status-list-jpa-entity-provider";
+    public static final String ID = "status-list-jpa-entity-provider";
 
     @Override
     public JpaEntityProvider create(KeycloakSession session) {
