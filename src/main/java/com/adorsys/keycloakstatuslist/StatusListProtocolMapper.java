@@ -37,7 +37,6 @@ public class StatusListProtocolMapper extends AbstractOIDCProtocolMapper
         String JWT_TOKEN_PROPERTY = "jwt.token";
         String DEFAULT_BASE_URI = "https://statuslist.eudi-adorsys.com";
         String DEFAULT_LIST_ID = "07499bc3-7e65-46b9-b7dd-ca37c4807420";
-        String DEFAULT_TOKEN_CLAIM_NAME = "status";
         String DEFAULT_JWT_TOKEN = "";
         String STATUS_ERROR_CLAIM = "status_error";
         String STATUS_ERROR_MESSAGE = "Failed to generate index";
@@ -64,18 +63,11 @@ public class StatusListProtocolMapper extends AbstractOIDCProtocolMapper
                 "The list ID to append to the base URI should be unique (e.g., 07499bc3-7e65-46b9-b7dd-ca37c4807420)",
                 Constants.DEFAULT_LIST_ID);
         addConfigProperty(
-                Constants.TOKEN_CLAIM_NAME_PROPERTY,
-                "Token Claim Name",
-                ProviderConfigProperty.STRING_TYPE,
-                "Name of the claim to add to the token",
-                Constants.DEFAULT_TOKEN_CLAIM_NAME);
-        addConfigProperty(
                 Constants.JWT_TOKEN_PROPERTY,
                 "JWT Bearer",
                 ProviderConfigProperty.STRING_TYPE,
                 "JWT token for authenticating with the registered status list server",
                 Constants.DEFAULT_JWT_TOKEN);
-        OIDCAttributeMapperHelper.addTokenClaimNameConfig(CONFIG_PROPERTIES);
         OIDCAttributeMapperHelper.addIncludeInTokensConfig(CONFIG_PROPERTIES, StatusListProtocolMapper.class);
     }
 
@@ -136,11 +128,11 @@ public class StatusListProtocolMapper extends AbstractOIDCProtocolMapper
         }
 
         String userId = userSession != null ? userSession.getUser().getId() : null;
-        storeIndexMapping(idx, userId, token.getId(), listId, session, config);
+        storeIndexMapping(listId, idx, userId, token.getId(), session, config);
 
         StatusListClaim statusList = new StatusListClaim(String.valueOf(idx), uri);
         Status status = new Status(statusList);
-        String claimName = config.getOrDefault(Constants.TOKEN_CLAIM_NAME_PROPERTY, Constants.DEFAULT_TOKEN_CLAIM_NAME);
+        String claimName = config.get(Constants.TOKEN_CLAIM_NAME_PROPERTY);
         logger.infof("Adding claim '%s' with value: %s", claimName, status.toMap());
         token.getOtherClaims().put(claimName, status.toMap());
     }
@@ -181,9 +173,11 @@ public class StatusListProtocolMapper extends AbstractOIDCProtocolMapper
         return nextIndex[0];
     }
 
-    protected void storeIndexMapping(long idx, String userId, String tokenId, String listId, KeycloakSession session,
+    protected void storeIndexMapping(String statusListId, long idx, String userId, String tokenId,
+            KeycloakSession session,
             Map<String, String> config) {
-        logger.debugf("Storing index mapping: idx=%d, userId=%s, tokenId=%s, listId=%s", idx, userId, tokenId, listId);
+        logger.debugf("Storing index mapping: status_list_id=%s, idx=%d, userId=%s, tokenId=%s", statusListId, idx,
+                userId, tokenId);
         EntityManager em = getEntityManager(session);
         if (em == null) {
             return;
@@ -192,6 +186,7 @@ public class StatusListProtocolMapper extends AbstractOIDCProtocolMapper
         executeInTransaction(session, () -> {
             try {
                 StatusListMappingEntity mapping = new StatusListMappingEntity();
+                mapping.setStatusListId(statusListId);
                 mapping.setIdx(idx);
                 mapping.setUserId(userId);
                 mapping.setTokenId(tokenId);
@@ -199,7 +194,7 @@ public class StatusListProtocolMapper extends AbstractOIDCProtocolMapper
                 em.persist(mapping);
                 em.flush();
 
-                sendStatusToServer(idx, listId, config);
+                sendStatusToServer(idx, statusListId, config);
             } catch (Exception e) {
                 logger.error("Failed to store index mapping", e);
                 session.getTransactionManager().setRollbackOnly();
@@ -262,7 +257,7 @@ public class StatusListProtocolMapper extends AbstractOIDCProtocolMapper
         operation.run();
     }
 
-    private void sendStatusToServer(long idx, String listId, Map<String, String> config) throws IOException {
+    private void sendStatusToServer(long idx, String statusListId, Map<String, String> config) throws IOException {
         String baseUri = config.get(Constants.BASE_URI_PROPERTY);
         String endpoint = baseUri + Constants.HTTP_ENDPOINT_PATH;
         String jwtToken = config.getOrDefault(Constants.JWT_TOKEN_PROPERTY, Constants.DEFAULT_JWT_TOKEN);
@@ -274,7 +269,7 @@ public class StatusListProtocolMapper extends AbstractOIDCProtocolMapper
                     "index", idx);
             List<Map<String, Object>> statuses = List.of(statusObject);
             Map<String, Object> payload = Map.of(
-                    "list_id", listId,
+                    "list_id", statusListId,
                     "status", statuses);
 
             String jsonPayload = objectMapper.writeValueAsString(payload);

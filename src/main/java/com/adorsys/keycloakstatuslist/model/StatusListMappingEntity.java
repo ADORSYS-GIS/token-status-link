@@ -8,6 +8,11 @@ import jakarta.persistence.Table;
 @Entity
 @Table(name = "status_list_mapping")
 public class StatusListMappingEntity {
+
+    @Id
+    @Column(name = "status_list_id", nullable = false)
+    private String statusListId;
+
     @Id
     @Column(name = "idx")
     private long idx;
@@ -24,6 +29,10 @@ public class StatusListMappingEntity {
     // Getters and setters
     public long getIdx() {
         return idx;
+    }
+
+    public String getStatusListId() {
+        return statusListId;
     }
 
     public void setIdx(long idx) {
@@ -53,4 +62,9 @@ public class StatusListMappingEntity {
     public void setRealmId(String realmId) {
         this.realmId = realmId;
     }
+
+    public void setStatusListId(String statusListId) {
+        this.statusListId = statusListId;
+    }
+
 }

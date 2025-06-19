@@ -1,1 +1,1 @@
-com.adorsys.keycloakstatuslist.LiquibaseMigrationRunner
+com.adorsys.keycloakstatuslist.LiquibaseMigrationProviderFactory

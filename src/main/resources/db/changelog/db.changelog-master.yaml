@@ -1,6 +1,6 @@
 databaseChangeLog:
   - changeSet:
-      id: "1"
+      id: "2"
       author: adorsys
       changes:
         - createTable:
@@ -21,10 +21,14 @@ databaseChangeLog:
             tableName: status_list_mapping
             columns:
               - column:
+                  name: status_list_id
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
                   name: idx
                   type: bigint
                   constraints:
-                    primaryKey: true
                     nullable: false
               - column:
                   name: user_id
@@ -35,3 +39,8 @@ databaseChangeLog:
               - column:
                   name: realm_id
                   type: varchar(255)
+            constraints:
+              - primaryKey:
+                  columns:
+                    - status_list_id
+                    - idx
