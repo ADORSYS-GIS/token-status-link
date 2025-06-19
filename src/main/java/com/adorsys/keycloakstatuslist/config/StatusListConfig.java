@@ -1,6 +1,5 @@
 package com.adorsys.keycloakstatuslist.config;
 
-import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 
 /**
