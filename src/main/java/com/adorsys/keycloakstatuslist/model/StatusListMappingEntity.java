@@ -4,17 +4,16 @@ import jakarta.persistence.*;
 import java.util.Objects;
 
 @Entity
-@Table(name = "STATUS_LIST_MAPPING")
-@IdClass(StatusListMappingEntity.StatusListMappingId.class)
+@Table(name = "status_list_mapping")
 public class StatusListMappingEntity {
-
-    @Id
-    @Column(name = "status_list_id", nullable = false)
-    private String statusListId;
 
     @Id
     @Column(name = "idx", nullable = false)
     private long idx;
+
+    // You can't have two primary keys on the same resource
+    @Column(name = "status_list_id", nullable = false)
+    private String statusListId;
 
     @Column(name = "user_id")
     private String userId;
