@@ -14,7 +14,7 @@ target/
 # OS files
 .DS_Store 
 # H2 database files
-keycloak-26.2.0/data/h2/*.db 
+**/*.db 
 # Quarkus generated files
-keycloak-26.2.0/lib/quarkus/*.jar
-keycloak-26.2.0/lib/quarkus/*.dat 
+**/*.jar
+**/*.dat 
