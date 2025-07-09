@@ -21,4 +21,15 @@
         </createTable>
     </changeSet>
 
+    <changeSet id="add-indices-to-status-list-mapping" author="adorsys">
+        <createIndex indexName="idx_status_list_mapping_realm_user_token" tableName="status_list_mapping">
+            <column name="realm_id"/>
+            <column name="user_id"/>
+            <column name="token_id"/>
+        </createIndex>
+        <createIndex indexName="idx_status_list_mapping_token_id" tableName="status_list_mapping">
+            <column name="token_id"/>
+        </createIndex>
+    </changeSet>
+
 </databaseChangeLog>

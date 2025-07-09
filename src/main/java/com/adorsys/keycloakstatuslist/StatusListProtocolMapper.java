@@ -20,6 +20,7 @@ import com.adorsys.keycloakstatuslist.model.StatusListClaim;
 import com.adorsys.keycloakstatuslist.model.StatusListCounterEntity;
 import com.adorsys.keycloakstatuslist.model.StatusListMappingEntity;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.keycloak.util.JsonSerialization;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -31,7 +32,7 @@ public class StatusListProtocolMapper extends AbstractOIDCProtocolMapper
         implements OIDCAccessTokenMapper, OIDCIDTokenMapper {
 
     private static final Logger logger = Logger.getLogger(StatusListProtocolMapper.class);
-    private static final ObjectMapper objectMapper = new ObjectMapper();
+    private static final ObjectMapper objectMapper = JsonSerialization.mapper;
 
     protected interface Constants {
         String PROVIDER_ID = "status-list-protocol-mapper";
