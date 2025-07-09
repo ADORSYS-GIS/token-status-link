@@ -1,17 +1,22 @@
 package com.adorsys.keycloakstatuslist;
 
+import com.adorsys.keycloakstatuslist.model.StatusListCounterEntity;
 import com.adorsys.keycloakstatuslist.model.StatusListMappingEntity;
 import org.keycloak.connections.jpa.entityprovider.JpaEntityProvider;
+import org.jboss.logging.Logger;
 
 import java.util.List;
 
 public class StatusListJpaEntityProvider implements JpaEntityProvider {
 
+    private static final Logger logger = Logger.getLogger(StatusListJpaEntityProvider.class);
+
     @Override
     public List<Class<?>> getEntities() {
-        System.out.println("DEBUG: Registering entities: StatusListCounterEntity, StatusListMappingEntity");
+        logger.debug("Registering entities: StatusListCounterEntity, StatusListMappingEntity");
         return List.of(
-                StatusListMappingEntity.class
+            StatusListCounterEntity.class,
+            StatusListMappingEntity.class
         );
     }
 
@@ -22,7 +27,7 @@ public class StatusListJpaEntityProvider implements JpaEntityProvider {
 
     @Override
     public void close() {
-        System.out.println("DEBUG: Closing StatusListJpaEntityProvider");
+        logger.debug("Closing StatusListJpaEntityProvider");
     }
 
     @Override

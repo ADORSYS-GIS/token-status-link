@@ -118,6 +118,11 @@ public class StatusListProtocolMapperTest {
                 assertEquals(expectedUri, statusList.get("uri"), "URI should match configured baseUri/listId");
                 assertEquals(String.valueOf(TestConstants.TEST_INDEX), statusList.get("idx"),
                                 "Idx should match the stringified nextIndex");
+
+                // Verify storeIndexMapping was called
+                verify(mapper, times(1)).storeIndexMapping(
+                        eq("99"), eq(TestConstants.TEST_INDEX), anyString(), isNull(), eq(session), anyMap()
+                );
         }
 
         @Test
@@ -165,6 +170,10 @@ public class StatusListProtocolMapperTest {
                 // Assert
                 Map<String, Object> claims = token.getOtherClaims();
                 assertTrue(claims.size() == 1, "Only the error claim should be present");
-
+                assertTrue(claims.containsKey(StatusListProtocolMapper.Constants.STATUS_ERROR_CLAIM),
+                        "Error claim should be present when claim name is missing");
+                assertEquals(StatusListProtocolMapper.Constants.STATUS_ERROR_MESSAGE,
+                        claims.get(StatusListProtocolMapper.Constants.STATUS_ERROR_CLAIM),
+                        "Error claim should have the correct error message");
         }
 }

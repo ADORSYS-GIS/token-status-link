@@ -12,6 +12,8 @@ import org.apache.hc.client5.http.classic.methods.HttpPost;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.apache.hc.core5.http.io.entity.StringEntity;
+import org.apache.hc.client5.http.config.RequestConfig;
+import java.util.concurrent.TimeUnit;
 
 import com.adorsys.keycloakstatuslist.model.Status;
 import com.adorsys.keycloakstatuslist.model.StatusListClaim;
@@ -22,12 +24,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import org.keycloak.models.utils.KeycloakModelUtils;
+import java.util.function.Consumer;
 
 public class StatusListProtocolMapper extends AbstractOIDCProtocolMapper
         implements OIDCAccessTokenMapper, OIDCIDTokenMapper {
 
     private static final Logger logger = Logger.getLogger(StatusListProtocolMapper.class);
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private static final ObjectMapper objectMapper = new ObjectMapper();
 
     protected interface Constants {
         String PROVIDER_ID = "status-list-protocol-mapper";
@@ -47,31 +51,32 @@ public class StatusListProtocolMapper extends AbstractOIDCProtocolMapper
         String BEARER_PREFIX = "Bearer ";
     }
 
-    private static final List<ProviderConfigProperty> CONFIG_PROPERTIES = new ArrayList<>();
-
+    private static final List<ProviderConfigProperty> CONFIG_PROPERTIES;
     static {
-        addConfigProperty(
+        List<ProviderConfigProperty> props = new ArrayList<>();
+        addConfigProperty(props,
                 Constants.BASE_URI_PROPERTY,
                 "Status List Base URI",
                 ProviderConfigProperty.STRING_TYPE,
                 "The base URI for the status list (e.g., https://example.com/statuslists)",
                 Constants.DEFAULT_BASE_URI);
-        addConfigProperty(
+        addConfigProperty(props,
                 Constants.LIST_ID_PROPERTY,
                 "Status List ID",
                 ProviderConfigProperty.STRING_TYPE,
                 "The list ID to append to the base URI should be unique (e.g., 07499bc3-7e65-46b9-b7dd-ca37c4807420)",
                 Constants.DEFAULT_LIST_ID);
-        addConfigProperty(
+        addConfigProperty(props,
                 Constants.JWT_TOKEN_PROPERTY,
                 "JWT Bearer",
                 ProviderConfigProperty.STRING_TYPE,
                 "JWT token for authenticating with the registered status list server",
                 Constants.DEFAULT_JWT_TOKEN);
-        OIDCAttributeMapperHelper.addIncludeInTokensConfig(CONFIG_PROPERTIES, StatusListProtocolMapper.class);
+        OIDCAttributeMapperHelper.addIncludeInTokensConfig(props, StatusListProtocolMapper.class);
+        CONFIG_PROPERTIES = java.util.Collections.unmodifiableList(props);
     }
 
-    private static void addConfigProperty(String name, String label, String type, String helpText,
+    private static void addConfigProperty(List<ProviderConfigProperty> props, String name, String label, String type, String helpText,
             String defaultValue) {
         ProviderConfigProperty property = new ProviderConfigProperty();
         property.setName(name);
@@ -79,7 +84,7 @@ public class StatusListProtocolMapper extends AbstractOIDCProtocolMapper
         property.setType(type);
         property.setHelpText(helpText);
         property.setDefaultValue(defaultValue);
-        CONFIG_PROPERTIES.add(property);
+        props.add(property);
     }
 
     @Override
@@ -120,6 +125,13 @@ public class StatusListProtocolMapper extends AbstractOIDCProtocolMapper
         String uri = String.format("%s/%s", baseUri, listId);
         logger.debugf("Configuration: baseUri=%s, listId=%s, uri=%s", baseUri, listId, uri);
 
+        String claimName = config.get(Constants.TOKEN_CLAIM_NAME_PROPERTY);
+        if (claimName == null || claimName.isEmpty()) {
+            logger.error("Claim name is missing in the configuration, adding error claim");
+            token.getOtherClaims().put(Constants.STATUS_ERROR_CLAIM, Constants.STATUS_ERROR_MESSAGE);
+            return;
+        }
+
         long idx = getNextIndex(session);
         if (idx == -1) {
             logger.error("Failed to get next index, adding error claim");
@@ -130,22 +142,28 @@ public class StatusListProtocolMapper extends AbstractOIDCProtocolMapper
         String userId = userSession != null ? userSession.getUser().getId() : null;
         storeIndexMapping(listId, idx, userId, token.getId(), session, config);
 
-        StatusListClaim statusList = new StatusListClaim(String.valueOf(idx), uri);
+        StatusListClaim statusList = new StatusListClaim((int) idx, uri);
         Status status = new Status(statusList);
-        String claimName = config.get(Constants.TOKEN_CLAIM_NAME_PROPERTY);
         logger.infof("Adding claim '%s' with value: %s", claimName, status.toMap());
         token.getOtherClaims().put(claimName, status.toMap());
     }
 
+    private static void withEntityManagerInTransaction(KeycloakSession session, Consumer<EntityManager> action) {
+        KeycloakModelUtils.runJobInTransaction(session.getKeycloakSessionFactory(), s -> {
+            EntityManager em = s.getProvider(JpaConnectionProvider.class).getEntityManager();
+            if (em == null) {
+                logger.error("EntityManager is null for JpaConnectionProvider");
+                s.getTransactionManager().setRollbackOnly();
+                return;
+            }
+            action.accept(em);
+        });
+    }
+
     protected long getNextIndex(KeycloakSession session) {
         logger.debugf("Getting next index for realm: %s", session.getContext().getRealm().getId());
-        EntityManager em = getEntityManager(session);
-        if (em == null) {
-            return -1;
-        }
-
         long[] nextIndex = { -1 };
-        executeInTransaction(session, () -> {
+        withEntityManagerInTransaction(session, em -> {
             try {
                 logger.debugf("Querying StatusListCounterEntity with ID '%s'", Constants.COUNTER_ID);
                 StatusListCounterEntity counter = em.find(StatusListCounterEntity.class, Constants.COUNTER_ID,
@@ -178,12 +196,7 @@ public class StatusListProtocolMapper extends AbstractOIDCProtocolMapper
             Map<String, String> config) {
         logger.debugf("Storing index mapping: status_list_id=%s, idx=%d, userId=%s, tokenId=%s", statusListId, idx,
                 userId, tokenId);
-        EntityManager em = getEntityManager(session);
-        if (em == null) {
-            return;
-        }
-
-        executeInTransaction(session, () -> {
+        withEntityManagerInTransaction(session, em -> {
             try {
                 StatusListMappingEntity mapping = new StatusListMappingEntity();
                 mapping.setStatusListId(statusListId);
@@ -202,97 +215,82 @@ public class StatusListProtocolMapper extends AbstractOIDCProtocolMapper
         });
     }
 
-    private EntityManager getEntityManager(KeycloakSession session) {
-        EntityManager em = session.getProvider(JpaConnectionProvider.class).getEntityManager();
-        if (em == null) {
-            logger.error("EntityManager is null for JpaConnectionProvider");
-            session.getTransactionManager().setRollbackOnly();
-        }
-        return em;
-    }
-
-    private void executeInTransaction(KeycloakSession session, Runnable operation) {
-        session.getTransactionManager().enlist(new KeycloakTransaction() {
-            private boolean rollbackOnly = false;
-            private boolean active = false;
-
-            @Override
-            public void begin() {
-                active = true;
-                logger.debug("Starting transaction");
-            }
-
-            @Override
-            public void commit() {
-                if (active && !rollbackOnly) {
-                    logger.debug("Committing transaction");
-                }
-                active = false;
-            }
-
-            @Override
-            public void rollback() {
-                if (active) {
-                    logger.warn("Transaction rolled back");
-                }
-                active = false;
-            }
-
-            @Override
-            public void setRollbackOnly() {
-                rollbackOnly = true;
-            }
-
-            @Override
-            public boolean getRollbackOnly() {
-                return rollbackOnly;
-            }
-
-            @Override
-            public boolean isActive() {
-                return active;
-            }
-        });
-
-        operation.run();
-    }
-
     private void sendStatusToServer(long idx, String statusListId, Map<String, String> config) throws IOException {
         String baseUri = config.get(Constants.BASE_URI_PROPERTY);
         String endpoint = baseUri + Constants.HTTP_ENDPOINT_PATH;
         String jwtToken = config.getOrDefault(Constants.JWT_TOKEN_PROPERTY, Constants.DEFAULT_JWT_TOKEN);
+        if (jwtToken == null || jwtToken.isEmpty()) {
+            logger.error("JWT token is required for status server authentication but is missing or empty.");
+            throw new IllegalArgumentException("JWT token is required for status server authentication.");
+        }
 
-        try (CloseableHttpClient httpClient = HttpClients.createDefault()) {
-            HttpPost httpPost = new HttpPost(endpoint);
-            Map<String, Object> statusObject = Map.of(
-                    "status", "VALID",
-                    "index", idx);
-            List<Map<String, Object>> statuses = List.of(statusObject);
-            Map<String, Object> payload = Map.of(
-                    "list_id", statusListId,
-                    "status", statuses);
+        int maxRetries = 3;
+        int attempt = 0;
+        int connectTimeoutSec = 5;
+        int responseTimeoutSec = 10;
+        boolean success = false;
+        Exception lastException = null;
 
-            String jsonPayload = objectMapper.writeValueAsString(payload);
-            logger.infof("Sending POST to %s with payload: %s", endpoint, jsonPayload);
+        RequestConfig requestConfig = RequestConfig.custom()
+                .setConnectTimeout(connectTimeoutSec, TimeUnit.SECONDS)
+                .setResponseTimeout(responseTimeoutSec, TimeUnit.SECONDS)
+                .build();
 
-            if (!jwtToken.isEmpty()) {
-                httpPost.setHeader(Constants.AUTHORIZATION_HEADER, Constants.BEARER_PREFIX + jwtToken);
-            }
-            httpPost.setHeader("Content-Type", Constants.CONTENT_TYPE_JSON);
-            httpPost.setEntity(new StringEntity(jsonPayload, StandardCharsets.UTF_8, false));
+        while (attempt < maxRetries && !success) {
+            attempt++;
+            final int currentAttempt = attempt;
+            try (CloseableHttpClient httpClient = HttpClients.custom()
+                    .setDefaultRequestConfig(requestConfig)
+                    .build()) {
+                HttpPost httpPost = new HttpPost(endpoint);
+                Map<String, Object> statusObject = Map.of(
+                        "status", "VALID",
+                        "index", idx);
+                List<Map<String, Object>> statuses = List.of(statusObject);
+                Map<String, Object> payload = Map.of(
+                        "list_id", statusListId,
+                        "status", statuses);
 
-            httpClient.execute(httpPost, response -> {
-                if (response.getCode() < 200 || response.getCode() >= 300) {
-                    logger.warnf("Failed to send status to %s for idx %d: %d %s",
-                            endpoint, idx, response.getCode(), response.getReasonPhrase());
-                } else {
-                    logger.debugf("Successfully sent status to %s for idx %d", endpoint, idx);
+                String jsonPayload = objectMapper.writeValueAsString(payload);
+                logger.infof("[Attempt %d/%d] Sending POST to %s with payload: %s", currentAttempt, maxRetries, endpoint, jsonPayload);
+
+                if (!jwtToken.isEmpty()) {
+                    httpPost.setHeader(Constants.AUTHORIZATION_HEADER, Constants.BEARER_PREFIX + jwtToken);
                 }
-                return null;
-            });
-        } catch (IOException e) {
-            logger.warnf("Error sending status to %s for idx %d: %s", endpoint, idx, e.getMessage());
-            throw e;
+                httpPost.setHeader("Content-Type", Constants.CONTENT_TYPE_JSON);
+                httpPost.setEntity(new StringEntity(jsonPayload, StandardCharsets.UTF_8, false));
+
+                httpClient.execute(httpPost, response -> {
+                    if (response.getCode() < 200 || response.getCode() >= 300) {
+                        logger.warnf("[Attempt %d/%d] Failed to send status to %s for idx %d: %d %s",
+                                currentAttempt, maxRetries, endpoint, idx, response.getCode(), response.getReasonPhrase());
+                        throw new IOException("Non-success response: " + response.getCode());
+                    } else {
+                        logger.debugf("Successfully sent status to %s for idx %d", endpoint, idx);
+                    }
+                    return null;
+                });
+                success = true;
+            } catch (Exception e) {
+                lastException = e;
+                logger.warnf("[Attempt %d/%d] Error sending status to %s for idx %d: %s", currentAttempt, maxRetries, endpoint, idx, e.getMessage());
+                if (attempt < maxRetries) {
+                    try {
+                        Thread.sleep(1000L * attempt); // Exponential backoff
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
+            }
+        }
+        if (!success && lastException != null) {
+            logger.errorf("All attempts to send status to %s for idx %d failed.", endpoint, idx);
+            if (lastException instanceof IOException) {
+                throw (IOException) lastException;
+            } else {
+                throw new IOException("Failed to send status after retries", lastException);
+            }
         }
     }
 }

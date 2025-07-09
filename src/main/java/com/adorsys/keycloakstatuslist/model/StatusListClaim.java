@@ -2,6 +2,8 @@ package com.adorsys.keycloakstatuslist.model;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import java.util.Map;
+
 /**
  * Represents the `status_list` claim object for a token, as defined in the
  * <a href=
@@ -46,8 +48,8 @@ public class StatusListClaim {
      * @param uri The URI of the status list resource where the token's status is
      *            published.
      */
-    public StatusListClaim(String idx, String uri) {
-        this.idx = idx;
+    public StatusListClaim(int idx, String uri) {
+        this.idx = String.valueOf(idx);
         this.uri = uri;
     }
 
@@ -71,5 +73,12 @@ public class StatusListClaim {
      */
     public String getUri() {
         return uri;
+    }
+
+    public Map<String, Object> toMap() {
+        return Map.of(
+            "idx", idx,
+            "uri", uri
+        );
     }
 }

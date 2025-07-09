@@ -48,14 +48,8 @@ public class Status {
      * @throws RuntimeException if serialization fails.
      */
     public Map<String, Object> toMap() {
-        try {
-            // Use Jackson's ObjectMapper to serialize the object to a map
-            return new com.fasterxml.jackson.databind.ObjectMapper().convertValue(
-                this,
-                new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {}
-            );
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to serialize Status to map", e);
-        }
+        return Map.of(
+            "status_list", statusList != null ? statusList.toMap() : null
+        );
     }
 }
