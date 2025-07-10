@@ -3,12 +3,10 @@
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
-
     <groupId>com.adorsys</groupId>
     <artifactId>keycloak-token-status-plugin</artifactId>
     <version>1.0.0-SNAPSHOT</version>
     <packaging>jar</packaging>
-
     <name>Keycloak Token Status Plugin</name>
     <description>A Keycloak plugin that publishes token status to a statuslist server</description>
 
@@ -86,26 +84,39 @@
                 </exclusion>
             </exclusions>
         </dependency>
-
+        <!-- Keycloak JPA Model for EntityManager access -->
+        <dependency>
+            <groupId>org.keycloak</groupId>
+            <artifactId>keycloak-model-jpa</artifactId>
+            <version>${keycloak.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <!-- JPA for StatusListCounterEntity and StatusListMappingEntity -->
+        <dependency>
+            <groupId>jakarta.persistence</groupId>
+            <artifactId>jakarta.persistence-api</artifactId>
+            <version>3.1.0</version>
+            <scope>provided</scope>
+        </dependency>
         <!-- HTTP Client for statuslist server communication -->
         <dependency>
             <groupId>org.apache.httpcomponents.client5</groupId>
             <artifactId>httpclient5</artifactId>
             <version>5.2.1</version>
         </dependency>
-
         <!-- JSON Processing -->
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
             <version>${jackson.version}</version>
+            <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>com.fasterxml.jackson.datatype</groupId>
             <artifactId>jackson-datatype-jsr310</artifactId>
             <version>${jackson.version}</version>
+            <scope>provided</scope>
         </dependency>
-
         <!-- Logging -->
         <dependency>
             <groupId>org.jboss.logging</groupId>
@@ -124,7 +135,6 @@
             <version>1.4.14</version>
             <scope>test</scope>
         </dependency>
-
         <!-- Testing -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>
@@ -143,6 +153,12 @@
             <artifactId>mockito-junit-jupiter</artifactId>
             <version>5.15.2</version>
             <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.keycloak</groupId>
+            <artifactId>keycloak-core</artifactId>
+            <version>${keycloak.version}</version>
+            <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>net.bytebuddy</groupId>
@@ -201,14 +217,22 @@
                         <configuration>
                             <createDependencyReducedPom>false</createDependencyReducedPom>
                             <transformers>
-                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer" />
                             </transformers>
                         </configuration>
                     </execution>
                 </executions>
             </plugin>
         </plugins>
-    </build>
+<resources>
+    <resource>
+        <directory>src/main/resources</directory>
+        <includes>
+            <include>**/*</include>
+        </includes>
+    </resource>
+</resources>
+</build>
 
     <repositories>
         <repository>

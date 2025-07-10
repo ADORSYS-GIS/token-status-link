@@ -13,3 +13,8 @@ target/
 
 # OS files
 .DS_Store 
+# H2 database files
+**/*.db 
+# Quarkus generated files
+**/*.jar
+**/*.dat 
