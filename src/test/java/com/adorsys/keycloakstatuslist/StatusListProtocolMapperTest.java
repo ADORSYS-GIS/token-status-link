@@ -20,6 +20,7 @@ public class StatusListProtocolMapperTest {
         private ProtocolMapperModel mappingModel;
         private UserSessionModel userSession;
         private ClientSessionContext clientSessionCtx;
+        private RealmModel realm;
 
         private interface TestConstants {
                 String TEST_REALM_ID = "test-realm";
@@ -28,6 +29,8 @@ public class StatusListProtocolMapperTest {
                 long TEST_INDEX = 42L;
                 long ERROR_INDEX = -1L;
                 String TEST_CLAIM_NAME = "custom_status"; // Configured claim name for tests
+                String TEST_SERVER_URL = "https://example.com/statuslist/";
+                String TEST_LIST_ID = "99";
         }
 
         @BeforeEach
@@ -41,7 +44,7 @@ public class StatusListProtocolMapperTest {
 
                         @Override
                         protected void storeIndexMapping(String statusListId, long idx, String userId, String tokenId,
-                                        KeycloakSession session, Map<String, String> config) {
+                                        KeycloakSession session, Map<String, String> mapperConfig, com.adorsys.keycloakstatuslist.config.StatusListConfig realmConfig) {
                                 // no-op
                         }
                 });
@@ -51,6 +54,7 @@ public class StatusListProtocolMapperTest {
                 mappingModel = mock(ProtocolMapperModel.class);
                 userSession = mock(UserSessionModel.class);
                 clientSessionCtx = mock(ClientSessionContext.class);
+                realm = mock(RealmModel.class);
 
                 // Configure common mocks
                 configureMocks();
@@ -64,9 +68,16 @@ public class StatusListProtocolMapperTest {
                 KeycloakContext context = mock(KeycloakContext.class);
                 when(session.getContext()).thenReturn(context);
 
-                RealmModel realm = mock(RealmModel.class);
                 when(context.getRealm()).thenReturn(realm);
                 when(realm.getId()).thenReturn(TestConstants.TEST_REALM_ID);
+                
+                // Mock realm attributes for StatusListConfig
+                when(realm.getAttribute("status-list-enabled")).thenReturn("true");
+                when(realm.getAttribute("status-list-server-url")).thenReturn(TestConstants.TEST_SERVER_URL);
+                when(realm.getAttribute("status-list-auth-token")).thenReturn("test-token");
+                when(realm.getAttribute("status-list-connect-timeout")).thenReturn("5000");
+                when(realm.getAttribute("status-list-read-timeout")).thenReturn("5000");
+                when(realm.getAttribute("status-list-retry-count")).thenReturn("3");
 
                 ClientModel client = mock(ClientModel.class);
                 when(context.getClient()).thenReturn(client);
@@ -86,8 +97,7 @@ public class StatusListProtocolMapperTest {
 
         private Map<String, String> createDefaultConfig() {
                 return new HashMap<>(Map.of(
-                                StatusListProtocolMapper.Constants.BASE_URI_PROPERTY, "https://example.com/statuslist",
-                                StatusListProtocolMapper.Constants.LIST_ID_PROPERTY, "99",
+                                StatusListProtocolMapper.Constants.LIST_ID_PROPERTY, TestConstants.TEST_LIST_ID,
                                 OIDCAttributeMapperHelper.TOKEN_CLAIM_NAME, TestConstants.TEST_CLAIM_NAME,
                                 OIDCAttributeMapperHelper.INCLUDE_IN_ACCESS_TOKEN, "true",
                                 OIDCAttributeMapperHelper.INCLUDE_IN_ID_TOKEN, "true"));
@@ -97,7 +107,7 @@ public class StatusListProtocolMapperTest {
         public void transformAccessToken_happyPath() {
                 // Arrange
                 AccessToken token = new AccessToken();
-                String expectedUri = "https://example.com/statuslist/99";
+                String expectedUri = TestConstants.TEST_SERVER_URL + TestConstants.TEST_LIST_ID;
 
                 // Act
                 mapper.transformAccessToken(token, mappingModel, session, userSession, clientSessionCtx);
@@ -115,13 +125,14 @@ public class StatusListProtocolMapperTest {
                 Map<String, Object> statusList = (Map<String, Object>) statusClaim.get("status_list");
                 assertNotNull(statusList, "Nested 'status_list' map should not be null");
 
-                assertEquals(expectedUri, statusList.get("uri"), "URI should match configured baseUri/listId");
+                assertEquals(expectedUri, statusList.get("uri"), "URI should match configured serverUrl/listId");
                 assertEquals(String.valueOf(TestConstants.TEST_INDEX), statusList.get("idx"),
                                 "Idx should match the stringified nextIndex");
 
-                // Verify storeIndexMapping was called
+                // Verify storeIndexMapping was called with correct parameters
                 verify(mapper, times(1)).storeIndexMapping(
-                        eq("99"), eq(TestConstants.TEST_INDEX), anyString(), isNull(), eq(session), anyMap()
+                        eq(TestConstants.TEST_LIST_ID), eq(TestConstants.TEST_INDEX), anyString(), isNull(), 
+                        eq(session), anyMap(), any(com.adorsys.keycloakstatuslist.config.StatusListConfig.class)
                 );
         }
 
@@ -159,9 +170,11 @@ public class StatusListProtocolMapperTest {
         @Test
         public void defaultConfig_noClaimName() {
                 // Arrange
-                Map<String, String> minimalConfig = new HashMap<>(Map.of(
-                                OIDCAttributeMapperHelper.INCLUDE_IN_ACCESS_TOKEN, "true"));
-                when(mappingModel.getConfig()).thenReturn(minimalConfig);
+                Map<String, String> configWithoutClaimName = new HashMap<>(Map.of(
+                                StatusListProtocolMapper.Constants.LIST_ID_PROPERTY, TestConstants.TEST_LIST_ID,
+                                OIDCAttributeMapperHelper.INCLUDE_IN_ACCESS_TOKEN, "true",
+                                OIDCAttributeMapperHelper.INCLUDE_IN_ID_TOKEN, "true"));
+                when(mappingModel.getConfig()).thenReturn(configWithoutClaimName);
                 AccessToken token = new AccessToken();
 
                 // Act
@@ -169,11 +182,80 @@ public class StatusListProtocolMapperTest {
 
                 // Assert
                 Map<String, Object> claims = token.getOtherClaims();
-                assertTrue(claims.size() == 1, "Only the error claim should be present");
-                assertTrue(claims.containsKey(StatusListProtocolMapper.Constants.STATUS_ERROR_CLAIM),
-                        "Error claim should be present when claim name is missing");
                 assertEquals(StatusListProtocolMapper.Constants.STATUS_ERROR_MESSAGE,
-                        claims.get(StatusListProtocolMapper.Constants.STATUS_ERROR_CLAIM),
-                        "Error claim should have the correct error message");
+                                claims.get(StatusListProtocolMapper.Constants.STATUS_ERROR_CLAIM),
+                                "Error claim should indicate missing claim name");
+                assertFalse(claims.containsKey(TestConstants.TEST_CLAIM_NAME),
+                                "Status claim should not be present when claim name is missing");
+        }
+
+        @Test
+        public void statusListDisabled_shouldNotProcess() {
+                // Arrange
+                when(realm.getAttribute("status-list-enabled")).thenReturn("false");
+                AccessToken token = new AccessToken();
+
+                // Act
+                mapper.transformAccessToken(token, mappingModel, session, userSession, clientSessionCtx);
+
+                // Assert
+                Map<String, Object> claims = token.getOtherClaims();
+                assertFalse(claims.containsKey(TestConstants.TEST_CLAIM_NAME),
+                                "Status claim should not be present when status list is disabled");
+                assertFalse(claims.containsKey(StatusListProtocolMapper.Constants.STATUS_ERROR_CLAIM),
+                                "No error claim should be present when status list is disabled");
+        }
+
+        @Test
+        public void invalidServerUrl_shouldAddErrorClaim() {
+                // Arrange
+                when(realm.getAttribute("status-list-server-url")).thenReturn("invalid-url");
+                AccessToken token = new AccessToken();
+
+                // Act
+                mapper.transformAccessToken(token, mappingModel, session, userSession, clientSessionCtx);
+
+                // Assert
+                Map<String, Object> claims = token.getOtherClaims();
+                assertEquals("Invalid status list server URL",
+                                claims.get(StatusListProtocolMapper.Constants.STATUS_ERROR_CLAIM),
+                                "Error claim should indicate invalid server URL");
+                assertFalse(claims.containsKey(TestConstants.TEST_CLAIM_NAME),
+                                "Status claim should not be present when server URL is invalid");
+        }
+
+        @Test
+        public void missingServerUrl_shouldAddErrorClaim() {
+                // Arrange
+                when(realm.getAttribute("status-list-server-url")).thenReturn("");
+                AccessToken token = new AccessToken();
+
+                // Act
+                mapper.transformAccessToken(token, mappingModel, session, userSession, clientSessionCtx);
+
+                // Assert
+                Map<String, Object> claims = token.getOtherClaims();
+                assertEquals("Status list server URL not configured",
+                                claims.get(StatusListProtocolMapper.Constants.STATUS_ERROR_CLAIM),
+                                "Error claim should indicate missing server URL");
+                assertFalse(claims.containsKey(TestConstants.TEST_CLAIM_NAME),
+                                "Status claim should not be present when server URL is missing");
+        }
+
+        @Test
+        public void nullServerUrl_shouldUseDefault() {
+                // Arrange
+                when(realm.getAttribute("status-list-server-url")).thenReturn(null);
+                AccessToken token = new AccessToken();
+
+                // Act
+                mapper.transformAccessToken(token, mappingModel, session, userSession, clientSessionCtx);
+
+                // Assert
+                Map<String, Object> claims = token.getOtherClaims();
+                assertTrue(claims.containsKey(TestConstants.TEST_CLAIM_NAME),
+                                "Status claim should be present when server URL is null (uses default)");
+                assertFalse(claims.containsKey(StatusListProtocolMapper.Constants.STATUS_ERROR_CLAIM),
+                                "No error claim should be present when server URL is null (uses default)");
         }
 }
