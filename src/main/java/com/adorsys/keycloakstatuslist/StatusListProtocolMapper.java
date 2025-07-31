@@ -72,7 +72,8 @@ public class StatusListProtocolMapper extends AbstractOIDCProtocolMapper
         CONFIG_PROPERTIES = java.util.Collections.unmodifiableList(props);
     }
 
-    private static void addConfigProperty(List<ProviderConfigProperty> props, String name, String label, String type, String helpText,
+    private static void addConfigProperty(List<ProviderConfigProperty> props, String name, String label, String type,
+            String helpText,
             String defaultValue) {
         ProviderConfigProperty property = new ProviderConfigProperty();
         property.setName(name);
@@ -117,7 +118,7 @@ public class StatusListProtocolMapper extends AbstractOIDCProtocolMapper
 
         // Get realm configuration
         StatusListConfig config = new StatusListConfig(session.getContext().getRealm());
-        
+
         // Check if status list is enabled
         if (!config.isEnabled()) {
             logger.debugf("Status list is disabled for realm: %s", realmId);
@@ -141,7 +142,7 @@ public class StatusListProtocolMapper extends AbstractOIDCProtocolMapper
 
         Map<String, String> mapperConfig = mappingModel.getConfig();
         String listId = mapperConfig.getOrDefault(Constants.LIST_ID_PROPERTY, Constants.DEFAULT_LIST_ID);
-        
+
         // Ensure server URL ends with slash for proper concatenation
         String baseUri = serverUrl.endsWith("/") ? serverUrl : serverUrl + "/";
         String uri = String.format("%s%s", baseUri, listId);
@@ -253,16 +254,18 @@ public class StatusListProtocolMapper extends AbstractOIDCProtocolMapper
         });
     }
 
-    private void sendStatusToServer(long idx, String statusListId, Map<String, String> mapperConfig, StatusListConfig realmConfig) throws IOException {
+    private void sendStatusToServer(long idx, String statusListId, Map<String, String> mapperConfig,
+            StatusListConfig realmConfig) throws IOException {
         String serverUrl = realmConfig.getServerUrl();
         String endpoint = serverUrl + Constants.HTTP_ENDPOINT_PATH;
         String jwtToken = mapperConfig.getOrDefault(Constants.JWT_TOKEN_PROPERTY, Constants.DEFAULT_JWT_TOKEN);
-        
+
         // Use realm auth token if mapper token is not provided
-        if ((jwtToken == null || jwtToken.isEmpty()) && realmConfig.getAuthToken() != null && !realmConfig.getAuthToken().isEmpty()) {
+        if ((jwtToken == null || jwtToken.isEmpty()) && realmConfig.getAuthToken() != null
+                && !realmConfig.getAuthToken().isEmpty()) {
             jwtToken = realmConfig.getAuthToken();
         }
-        
+
         if (jwtToken == null || jwtToken.isEmpty()) {
             logger.error("JWT token is required for status server authentication but is missing or empty.");
             throw new IllegalArgumentException("JWT token is required for status server authentication.");
@@ -296,7 +299,8 @@ public class StatusListProtocolMapper extends AbstractOIDCProtocolMapper
                         "status", statuses);
 
                 String jsonPayload = objectMapper.writeValueAsString(payload);
-                logger.infof("[Attempt %d/%d] Sending POST to %s with payload: %s", currentAttempt, maxRetries, endpoint, jsonPayload);
+                logger.infof("[Attempt %d/%d] Sending POST to %s with payload: %s", currentAttempt, maxRetries,
+                        endpoint, jsonPayload);
 
                 if (!jwtToken.isEmpty()) {
                     httpPost.setHeader(Constants.AUTHORIZATION_HEADER, Constants.BEARER_PREFIX + jwtToken);
@@ -307,7 +311,8 @@ public class StatusListProtocolMapper extends AbstractOIDCProtocolMapper
                 httpClient.execute(httpPost, response -> {
                     if (response.getCode() < 200 || response.getCode() >= 300) {
                         logger.warnf("[Attempt %d/%d] Failed to send status to %s for idx %d: %d %s",
-                                currentAttempt, maxRetries, endpoint, idx, response.getCode(), response.getReasonPhrase());
+                                currentAttempt, maxRetries, endpoint, idx, response.getCode(),
+                                response.getReasonPhrase());
                         throw new IOException("Non-success response: " + response.getCode());
                     } else {
                         logger.debugf("Successfully sent status to %s for idx %d", endpoint, idx);
@@ -317,7 +322,8 @@ public class StatusListProtocolMapper extends AbstractOIDCProtocolMapper
                 success = true;
             } catch (Exception e) {
                 lastException = e;
-                logger.warnf("[Attempt %d/%d] Error sending status to %s for idx %d: %s", currentAttempt, maxRetries, endpoint, idx, e.getMessage());
+                logger.warnf("[Attempt %d/%d] Error sending status to %s for idx %d: %s", currentAttempt, maxRetries,
+                        endpoint, idx, e.getMessage());
                 if (attempt < maxRetries) {
                     try {
                         Thread.sleep(1000L * attempt); // Exponential backoff

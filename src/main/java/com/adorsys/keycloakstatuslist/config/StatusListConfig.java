@@ -4,7 +4,8 @@ import org.keycloak.models.RealmModel;
 
 /**
  * Configuration holder for the Token Status plugin.
- * This class provides access to the plugin configuration, which can be set in the Keycloak Admin Console.
+ * This class provides access to the plugin configuration, which can be set in
+ * the Keycloak Admin Console.
  */
 public class StatusListConfig {
 
@@ -95,7 +96,8 @@ public class StatusListConfig {
     }
 
     /**
-     * Gets the number of retry attempts when communicating with the status list server.
+     * Gets the number of retry attempts when communicating with the status list
+     * server.
      *
      * @return number of retry attempts
      */

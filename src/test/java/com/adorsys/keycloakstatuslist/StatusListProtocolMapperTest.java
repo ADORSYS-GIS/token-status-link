@@ -44,7 +44,8 @@ public class StatusListProtocolMapperTest {
 
                         @Override
                         protected void storeIndexMapping(String statusListId, long idx, String userId, String tokenId,
-                                        KeycloakSession session, Map<String, String> mapperConfig, com.adorsys.keycloakstatuslist.config.StatusListConfig realmConfig) {
+                                        KeycloakSession session, Map<String, String> mapperConfig,
+                                        com.adorsys.keycloakstatuslist.config.StatusListConfig realmConfig) {
                                 // no-op
                         }
                 });
@@ -70,7 +71,7 @@ public class StatusListProtocolMapperTest {
 
                 when(context.getRealm()).thenReturn(realm);
                 when(realm.getId()).thenReturn(TestConstants.TEST_REALM_ID);
-                
+
                 // Mock realm attributes for StatusListConfig
                 when(realm.getAttribute("status-list-enabled")).thenReturn("true");
                 when(realm.getAttribute("status-list-server-url")).thenReturn(TestConstants.TEST_SERVER_URL);
@@ -131,9 +132,9 @@ public class StatusListProtocolMapperTest {
 
                 // Verify storeIndexMapping was called with correct parameters
                 verify(mapper, times(1)).storeIndexMapping(
-                        eq(TestConstants.TEST_LIST_ID), eq(TestConstants.TEST_INDEX), anyString(), isNull(), 
-                        eq(session), anyMap(), any(com.adorsys.keycloakstatuslist.config.StatusListConfig.class)
-                );
+                                eq(TestConstants.TEST_LIST_ID), eq(TestConstants.TEST_INDEX), anyString(), isNull(),
+                                eq(session), anyMap(),
+                                any(com.adorsys.keycloakstatuslist.config.StatusListConfig.class));
         }
 
         @Test

@@ -15,9 +15,8 @@ public class StatusListJpaEntityProvider implements JpaEntityProvider {
     public List<Class<?>> getEntities() {
         logger.debug("Registering entities: StatusListCounterEntity, StatusListMappingEntity");
         return List.of(
-            StatusListCounterEntity.class,
-            StatusListMappingEntity.class
-        );
+                StatusListCounterEntity.class,
+                StatusListMappingEntity.class);
     }
 
     @Override
