@@ -2,6 +2,8 @@ package com.adorsys.keycloakstatuslist.events;
 
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.List;
+import java.util.ArrayList;
 
 import org.jboss.logging.Logger;
 import org.keycloak.Config;
@@ -59,26 +61,47 @@ public class TokenStatusEventListenerProviderFactory implements EventListenerPro
         }
 
         logger.info("Starting realm initialization");
-        
+
         try (KeycloakSession session = sessionFactory.create()) {
             session.getTransactionManager().begin();
-            
+
             // Get all realms
             var realms = session.realms().getRealmsStream().toList();
             logger.info("Found " + realms.size() + " realms to register");
-            
+
+            // Track registration results
+            int totalRealms = realms.size();
+            int successfulRegistrations = 0;
+            int failedRegistrations = 0;
+            List<String> failedRealmNames = new ArrayList<>();
+
             // Register each realm
             for (RealmModel realm : realms) {
                 try {
                     registerRealmAsIssuer(session, realm);
+                    successfulRegistrations++;
                 } catch (Exception e) {
                     logger.error("Failed to register realm: " + realm.getName(), e);
+                    failedRegistrations++;
+                    failedRealmNames.add(realm.getName());
                 }
             }
-            
+
             session.getTransactionManager().commit();
-            initialized = true;
-            logger.info("Successfully completed realm initialization");
+
+            // Report results based on registration outcomes
+            if (failedRegistrations == 0) {
+                logger.info("Successfully completed realm initialization - all " + totalRealms + " realms registered");
+                initialized = true;
+            } else if (successfulRegistrations == 0) {
+                logger.error("Realm initialization failed - all " + totalRealms
+                        + " realms failed to register. Failed realms: " + String.join(", ", failedRealmNames));
+            } else {
+                logger.warn("Realm initialization completed with partial success - " + successfulRegistrations
+                        + " successful, " + failedRegistrations + " failed. Failed realms: "
+                        + String.join(", ", failedRealmNames));
+                initialized = true;
+            }
         } catch (Exception e) {
             logger.error("Error during realm initialization", e);
         }
