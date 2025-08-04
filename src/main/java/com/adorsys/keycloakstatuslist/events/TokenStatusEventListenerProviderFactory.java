@@ -90,6 +90,8 @@ public class TokenStatusEventListenerProviderFactory implements EventListenerPro
             session.getTransactionManager().commit();
 
             // Report results based on registration outcomes
+            logger.debug("Registration results - Total: " + totalRealms + ", Successful: " + successfulRegistrations + ", Failed: " + failedRegistrations);
+            
             if (failedRegistrations == 0) {
                 logger.info("Successfully completed realm initialization - all " + totalRealms + " realms registered");
                 initialized = true;
@@ -111,7 +113,7 @@ public class TokenStatusEventListenerProviderFactory implements EventListenerPro
         Thread.sleep(millis);
     }
 
-    private void registerRealmAsIssuer(KeycloakSession session, RealmModel realm) {
+    private void registerRealmAsIssuer(KeycloakSession session, RealmModel realm) throws StatusListException {
         if (registeredRealms.contains(realm.getName())) {
             logger.debug("Realm already registered as issuer: " + realm.getName());
             return;
@@ -168,6 +170,8 @@ public class TokenStatusEventListenerProviderFactory implements EventListenerPro
             logger.info("Successfully registered realm as issuer: " + realm.getName());
         } catch (StatusListException e) {
             logger.error("Failed to register realm as issuer: " + realm.getName(), e);
+            // Re-throw the exception so that initializeRealms can track the failure
+            throw e;
         }
     }
 
