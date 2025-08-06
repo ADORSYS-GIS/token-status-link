@@ -207,7 +207,7 @@ class TokenStatusEventListenerProviderFactoryTest {
         when(realm1.getAttribute("status-list-read-timeout")).thenReturn("5000");
         when(realm1.getAttribute("status-list-retry-count")).thenReturn("3");
 
-        // Setup realm2 to fail
+        // Setup realm2 to fail - by making public key conversion fail
         when(realm2.getName()).thenReturn("failed-realm");
         when(realm2.getAttribute("status-list-enabled")).thenReturn("true");
         when(realm2.getAttribute("status-list-server-url")).thenReturn("http://localhost:8000");
@@ -216,12 +216,23 @@ class TokenStatusEventListenerProviderFactoryTest {
         when(realm2.getAttribute("status-list-read-timeout")).thenReturn("5000");
         when(realm2.getAttribute("status-list-retry-count")).thenReturn("3");
 
-        // Setup key manager for both realms
-        when(keyManager.getActiveKey(eq(realm1), eq(KeyUse.SIG), anyString())).thenReturn(keyWrapper);
-        when(keyManager.getActiveKey(eq(realm2), eq(KeyUse.SIG), anyString())).thenReturn(keyWrapper);
-        when(keyWrapper.getPublicKey()).thenReturn(publicKey);
-        when(keyWrapper.getAlgorithm()).thenReturn("RS256");
-        when(publicKey.getEncoded()).thenReturn("test-key".getBytes());
+        // Create separate key wrappers and public keys for each realm
+        KeyWrapper keyWrapper1 = mock(KeyWrapper.class);
+        KeyWrapper keyWrapper2 = mock(KeyWrapper.class);
+        PublicKey publicKey1 = mock(PublicKey.class);
+        PublicKey publicKey2 = mock(PublicKey.class);
+
+        // Setup key manager for realm1 (success)
+        when(keyManager.getActiveKey(eq(realm1), eq(KeyUse.SIG), anyString())).thenReturn(keyWrapper1);
+        when(keyWrapper1.getPublicKey()).thenReturn(publicKey1);
+        when(keyWrapper1.getAlgorithm()).thenReturn("RS256");
+        when(publicKey1.getEncoded()).thenReturn("test-key".getBytes());
+
+        // Setup key manager for realm2 (failure)
+        when(keyManager.getActiveKey(eq(realm2), eq(KeyUse.SIG), anyString())).thenReturn(keyWrapper2);
+        when(keyWrapper2.getPublicKey()).thenReturn(publicKey2);
+        when(keyWrapper2.getAlgorithm()).thenReturn("RS256");
+        when(publicKey2.getEncoded()).thenThrow(new RuntimeException("Public key encoding failed"));
 
         // Act
         factory.postInit(sessionFactory);
@@ -265,11 +276,23 @@ class TokenStatusEventListenerProviderFactoryTest {
         when(disabledRealm.getAttribute("status-list-enabled")).thenReturn("false");
 
         // Setup key manager for enabled realms
-        when(keyManager.getActiveKey(eq(successRealm), eq(KeyUse.SIG), anyString())).thenReturn(keyWrapper);
-        when(keyManager.getActiveKey(eq(failedRealm), eq(KeyUse.SIG), anyString())).thenReturn(keyWrapper);
-        when(keyWrapper.getPublicKey()).thenReturn(publicKey);
-        when(keyWrapper.getAlgorithm()).thenReturn("RS256");
-        when(publicKey.getEncoded()).thenReturn("test-key".getBytes());
+        // Create separate key wrappers and public keys for each realm
+        KeyWrapper successKeyWrapper = mock(KeyWrapper.class);
+        KeyWrapper failedKeyWrapper = mock(KeyWrapper.class);
+        PublicKey successPublicKey = mock(PublicKey.class);
+        PublicKey failedPublicKey = mock(PublicKey.class);
+
+        // Setup key manager for success realm
+        when(keyManager.getActiveKey(eq(successRealm), eq(KeyUse.SIG), anyString())).thenReturn(successKeyWrapper);
+        when(successKeyWrapper.getPublicKey()).thenReturn(successPublicKey);
+        when(successKeyWrapper.getAlgorithm()).thenReturn("RS256");
+        when(successPublicKey.getEncoded()).thenReturn("test-key".getBytes());
+
+        // Setup key manager for failed realm - make it fail by throwing an exception
+        when(keyManager.getActiveKey(eq(failedRealm), eq(KeyUse.SIG), anyString())).thenReturn(failedKeyWrapper);
+        when(failedKeyWrapper.getPublicKey()).thenReturn(failedPublicKey);
+        when(failedKeyWrapper.getAlgorithm()).thenReturn("RS256");
+        when(failedPublicKey.getEncoded()).thenThrow(new RuntimeException("Public key encoding failed"));
 
         // Act
         factory.postInit(sessionFactory);
