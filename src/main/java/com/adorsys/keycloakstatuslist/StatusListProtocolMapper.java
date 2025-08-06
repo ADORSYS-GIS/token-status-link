@@ -8,6 +8,8 @@ import org.keycloak.connections.jpa.JpaConnectionProvider;
 import org.jboss.logging.Logger;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
+import jakarta.ws.rs.core.UriBuilder;
+
 import org.apache.hc.client5.http.classic.methods.HttpPost;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
@@ -69,7 +71,7 @@ public class StatusListProtocolMapper extends AbstractOIDCProtocolMapper
                 "JWT token for authenticating with the registered status list server",
                 Constants.DEFAULT_JWT_TOKEN);
         OIDCAttributeMapperHelper.addIncludeInTokensConfig(props, StatusListProtocolMapper.class);
-        CONFIG_PROPERTIES = java.util.Collections.unmodifiableList(props);
+        CONFIG_PROPERTIES = Collections.unmodifiableList(props);
     }
 
     private static void addConfigProperty(List<ProviderConfigProperty> props, String name, String label, String type,
@@ -109,56 +111,61 @@ public class StatusListProtocolMapper extends AbstractOIDCProtocolMapper
         return CONFIG_PROPERTIES;
     }
 
+    public StatusListConfig getStatusListConfig(RealmModel realm) {
+        return new StatusListConfig(realm);
+    }
+
     @Override
     protected void setClaim(IDToken token, ProtocolMapperModel mappingModel, UserSessionModel userSession,
             KeycloakSession session, ClientSessionContext clientSessionCtx) {
+
         String clientId = clientSessionCtx.getClientSession().getClient().getClientId();
         String realmId = session.getContext().getRealm().getId();
         logger.infof("Setting claim for client: %s, realm: %s", clientId, realmId);
 
-        // Get realm configuration
-        StatusListConfig config = new StatusListConfig(session.getContext().getRealm());
+        StatusListConfig config = getStatusListConfig(session.getContext().getRealm());
 
-        // Check if status list is enabled
+        // Guard: Status list feature is disabled
         if (!config.isEnabled()) {
             logger.debugf("Status list is disabled for realm: %s", realmId);
             return;
         }
 
-        // Get server URL from realm configuration
+        // Guard: Server URL missing or empty
         String serverUrl = config.getServerUrl();
         if (serverUrl == null || serverUrl.trim().isEmpty()) {
             logger.errorf("Status list server URL is not configured for realm: %s", realmId);
-            token.getOtherClaims().put(Constants.STATUS_ERROR_CLAIM, "Status list server URL not configured");
             return;
         }
 
-        // Validate server URL format
-        if (!isValidUrl(serverUrl)) {
+        // Guard: Server URL is invalid
+        if (!isValidHttpUrl(serverUrl)) {
             logger.errorf("Invalid status list server URL for realm %s: %s", realmId, serverUrl);
-            token.getOtherClaims().put(Constants.STATUS_ERROR_CLAIM, "Invalid status list server URL");
             return;
         }
 
         Map<String, String> mapperConfig = mappingModel.getConfig();
-        String listId = mapperConfig.getOrDefault(Constants.LIST_ID_PROPERTY, Constants.DEFAULT_LIST_ID);
-
-        // Ensure server URL ends with slash for proper concatenation
-        String baseUri = serverUrl.endsWith("/") ? serverUrl : serverUrl + "/";
-        String uri = String.format("%s%s", baseUri, listId);
-        logger.debugf("Configuration: baseUri=%s, listId=%s, uri=%s", baseUri, listId, uri);
-
         String claimName = mapperConfig.get(Constants.TOKEN_CLAIM_NAME_PROPERTY);
-        if (claimName == null || claimName.isEmpty()) {
-            logger.error("Claim name is missing in the configuration, adding error claim");
-            token.getOtherClaims().put(Constants.STATUS_ERROR_CLAIM, Constants.STATUS_ERROR_MESSAGE);
+
+        // Guard: Claim name is missing or empty
+        if (claimName == null || claimName.trim().isEmpty()) {
+            logger.error("Claim name is missing in the configuration");
             return;
         }
 
+        // Build URI for status list
+        String listId = mapperConfig.getOrDefault(Constants.LIST_ID_PROPERTY, Constants.DEFAULT_LIST_ID);
+        URI uri = UriBuilder.fromUri(serverUrl)
+                .path("status-lists")
+                .path(listId)
+                .build();
+
+        logger.debugf("Configuration: listId=%s, uri=%s", listId, uri);
+
+        // Retrieve next available index
         long idx = getNextIndex(session);
         if (idx == -1) {
-            logger.error("Failed to get next index, adding error claim");
-            token.getOtherClaims().put(Constants.STATUS_ERROR_CLAIM, Constants.STATUS_ERROR_MESSAGE);
+            logger.error("Failed to get next index");
             return;
         }
 
@@ -167,17 +174,12 @@ public class StatusListProtocolMapper extends AbstractOIDCProtocolMapper
 
         StatusListClaim statusList = new StatusListClaim((int) idx, uri);
         Status status = new Status(statusList);
+
         logger.infof("Adding claim '%s' with value: %s", claimName, status.toMap());
         token.getOtherClaims().put(claimName, status.toMap());
     }
 
-    /**
-     * Validates if the provided URL is a valid HTTP/HTTPS URL.
-     *
-     * @param url the URL to validate
-     * @return true if the URL is valid, false otherwise
-     */
-    private boolean isValidUrl(String url) {
+    private boolean isValidHttpUrl(String url) {
         try {
             URI uri = new URI(url);
             String scheme = uri.getScheme();
@@ -260,7 +262,6 @@ public class StatusListProtocolMapper extends AbstractOIDCProtocolMapper
         String endpoint = serverUrl + Constants.HTTP_ENDPOINT_PATH;
         String jwtToken = mapperConfig.getOrDefault(Constants.JWT_TOKEN_PROPERTY, Constants.DEFAULT_JWT_TOKEN);
 
-        // Use realm auth token if mapper token is not provided
         if ((jwtToken == null || jwtToken.isEmpty()) && realmConfig.getAuthToken() != null
                 && !realmConfig.getAuthToken().isEmpty()) {
             jwtToken = realmConfig.getAuthToken();
@@ -326,7 +327,7 @@ public class StatusListProtocolMapper extends AbstractOIDCProtocolMapper
                         endpoint, idx, e.getMessage());
                 if (attempt < maxRetries) {
                     try {
-                        Thread.sleep(1000L * attempt); // Exponential backoff
+                        Thread.sleep(1000L * attempt);
                     } catch (InterruptedException ie) {
                         Thread.currentThread().interrupt();
                         break;
