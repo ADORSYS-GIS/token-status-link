@@ -351,7 +351,6 @@ class TokenStatusEventListenerProviderFactoryTest {
         // Assert
         verify(transactionManager).begin();
         verify(transactionManager).commit();
-        // Key manager should not be called because health check fails in test environment
         verify(keyManager, never()).getActiveKey(eq(realm), eq(KeyUse.SIG), anyString());
     }
 
