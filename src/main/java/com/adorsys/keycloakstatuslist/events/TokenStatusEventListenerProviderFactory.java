@@ -20,6 +20,14 @@ import com.adorsys.keycloakstatuslist.service.StatusListService;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import org.keycloak.crypto.Algorithm;
 
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.net.URI;
+import java.time.Duration;
+import java.io.IOException;
+import java.net.ConnectException;
+
 /**
  * Factory for creating TokenStatusEventListenerProvider instances.
  */
@@ -73,35 +81,53 @@ public class TokenStatusEventListenerProviderFactory implements EventListenerPro
             int totalRealms = realms.size();
             int successfulRegistrations = 0;
             int failedRegistrations = 0;
+            int skippedRegistrations = 0;
             List<String> failedRealmNames = new ArrayList<>();
+            List<String> skippedRealmNames = new ArrayList<>();
 
             // Register each realm
             for (RealmModel realm : realms) {
-                try {
-                    registerRealmAsIssuer(session, realm);
+                boolean registrationResult = registerRealmAsIssuer(session, realm);
+                if (registrationResult) {
                     successfulRegistrations++;
-                } catch (Exception e) {
-                    logger.error("Failed to register realm: " + realm.getName(), e);
-                    failedRegistrations++;
-                    failedRealmNames.add(realm.getName());
+                } else {
+                    // Check if this was due to server unavailability
+                    if (realm.getAttribute("status-list-enabled") != null && 
+                        "true".equals(realm.getAttribute("status-list-enabled"))) {
+                        skippedRegistrations++;
+                        skippedRealmNames.add(realm.getName());
+                    } else {
+                        failedRegistrations++;
+                        failedRealmNames.add(realm.getName());
+                    }
                 }
             }
 
             session.getTransactionManager().commit();
 
             // Report results based on registration outcomes
-            logger.debug("Registration results - Total: " + totalRealms + ", Successful: " + successfulRegistrations + ", Failed: " + failedRegistrations);
+            logger.info("Registration results - Total: " + totalRealms + 
+                ", Successful: " + successfulRegistrations + 
+                ", Failed: " + failedRegistrations + 
+                ", Skipped: " + skippedRegistrations);
             
-            if (failedRegistrations == 0) {
+            if (failedRegistrations == 0 && skippedRegistrations == 0) {
                 logger.info("Successfully completed realm initialization - all " + totalRealms + " realms registered");
                 initialized = true;
-            } else if (successfulRegistrations == 0) {
+            } else if (successfulRegistrations == 0 && failedRegistrations > 0) {
                 logger.error("Realm initialization failed - all " + totalRealms
                         + " realms failed to register. Failed realms: " + String.join(", ", failedRealmNames));
             } else {
-                logger.warn("Realm initialization completed with partial success - " + successfulRegistrations
-                        + " successful, " + failedRegistrations + " failed. Failed realms: "
+                if (skippedRegistrations > 0) {
+                    logger.warn("Realm initialization completed with some realms skipped due to server unavailability - " 
+                        + successfulRegistrations + " successful, " + skippedRegistrations + " skipped. Skipped realms: "
+                        + String.join(", ", skippedRealmNames));
+                }
+                if (failedRegistrations > 0) {
+                    logger.warn("Realm initialization completed with some failures - " 
+                        + successfulRegistrations + " successful, " + failedRegistrations + " failed. Failed realms: "
                         + String.join(", ", failedRealmNames));
+                }
                 initialized = true;
             }
         } catch (Exception e) {
@@ -109,21 +135,76 @@ public class TokenStatusEventListenerProviderFactory implements EventListenerPro
         }
     }
 
+    /**
+     * Checks the health status of the status list server before proceeding with operations.
+     * 
+     * @param serverUrl the server URL to check
+     * @return true if the server is healthy, false otherwise
+     */
+    private boolean checkServerHealth(String serverUrl) {
+        try {
+            String normalizedUrl = serverUrl.endsWith("/") ? serverUrl : serverUrl + "/";
+            String healthUrl = normalizedUrl + "health";
+            
+            logger.debug("Checking server health at: " + healthUrl);
+            
+            HttpClient httpClient = HttpClient.newBuilder()
+                    .connectTimeout(Duration.ofSeconds(10))
+                    .build();
+            
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(healthUrl))
+                    .timeout(Duration.ofSeconds(10))
+                    .GET()
+                    .build();
+            
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            int statusCode = response.statusCode();
+            
+            if (statusCode == 200) {
+                logger.debug("Server health check passed: " + serverUrl);
+                return true;
+            } else {
+                logger.warn("Server health check failed: " + serverUrl + ", Status code: " + statusCode);
+                return false;
+            }
+        } catch (ConnectException | java.net.http.HttpTimeoutException e) {
+            logger.warn("Server health check failed - connection error: " + serverUrl + ", Error: " + e.getMessage());
+            return false;
+        } catch (IOException | InterruptedException e) {
+            logger.error("Server health check failed: " + serverUrl + ", Error: " + e.getMessage(), e);
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            return false;
+        }
+    }
+
     protected void performSleep(long millis) throws InterruptedException {
         Thread.sleep(millis);
     }
 
-    private void registerRealmAsIssuer(KeycloakSession session, RealmModel realm) throws StatusListException {
+    private boolean registerRealmAsIssuer(KeycloakSession session, RealmModel realm) {
         if (registeredRealms.contains(realm.getName())) {
             logger.debug("Realm already registered as issuer: " + realm.getName());
-            return;
+            return true; // Already registered, no need to re-register
         }
 
         try {
             StatusListConfig config = new StatusListConfig(realm);
             if (!config.isEnabled()) {
                 logger.debug("Status list service is disabled for realm: " + realm.getName());
-                return;
+                return true; // Disabled, no need to register
+            }
+
+            String serverUrl = config.getServerUrl();
+            
+            // Check server health before proceeding
+            logger.info("Checking server health before registering realm: " + realm.getName());
+            if (!checkServerHealth(serverUrl)) {
+                logger.warn("Status list server is not healthy. Skipping registration for realm: " + realm.getName() + 
+                    ". Server URL: " + serverUrl);
+                return false; // Server not healthy, skip registration
             }
 
             StatusListService statusListService = new StatusListService(
@@ -139,7 +220,7 @@ public class TokenStatusEventListenerProviderFactory implements EventListenerPro
             KeyWrapper activeKey = keyManager.getActiveKey(realm, KeyUse.SIG, Algorithm.RS256);
             if (activeKey == null) {
                 logger.warn("No active key found for realm: " + realm.getName());
-                return;
+                return false; 
             }
 
             // Convert public key to PEM format
@@ -153,7 +234,7 @@ public class TokenStatusEventListenerProviderFactory implements EventListenerPro
                               "\n-----END PUBLIC KEY-----";
                 } catch (Exception e) {
                     logger.error("Failed to convert public key to PEM format for realm: " + realm.getName(), e);
-                    return;
+                    return false;
                 }
             }
 
@@ -161,17 +242,17 @@ public class TokenStatusEventListenerProviderFactory implements EventListenerPro
 
             if (publicKey == null) {
                 logger.warn("No public key available for realm: " + realm.getName());
-                return;
+                return false;
             }
 
             // Register the realm as an issuer
             statusListService.registerIssuer(realm.getName(), publicKey, algorithm);
             registeredRealms.add(realm.getName());
             logger.info("Successfully registered realm as issuer: " + realm.getName());
+            return true;
         } catch (StatusListException e) {
             logger.error("Failed to register realm as issuer: " + realm.getName(), e);
-            // Re-throw the exception so that initializeRealms can track the failure
-            throw e;
+            return false;
         }
     }
 
