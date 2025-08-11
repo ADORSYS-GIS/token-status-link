@@ -143,36 +143,33 @@ public class TokenStatusEventListenerProviderFactory implements EventListenerPro
      */
     private boolean checkServerHealth(String serverUrl) {
         try {
-            String normalizedUrl = serverUrl.endsWith("/") ? serverUrl : serverUrl + "/";
-            String healthUrl = normalizedUrl + "health";
-            
-            logger.debug("Checking server health at: " + healthUrl);
+            String healthUrl = serverUrl.endsWith("/") ? serverUrl + "health" : serverUrl + "/health";
+            logger.debugf("Checking server health at: %s", healthUrl);
             
             HttpClient httpClient = HttpClient.newBuilder()
                     .connectTimeout(Duration.ofSeconds(10))
                     .build();
-            
+                    
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(healthUrl))
                     .timeout(Duration.ofSeconds(10))
                     .GET()
                     .build();
-            
+
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            int statusCode = response.statusCode();
             
-            if (statusCode == 200) {
-                logger.debug("Server health check passed: " + serverUrl);
+            if (response.statusCode() == 200) {
+                logger.debug("Server health check passed");
                 return true;
             } else {
-                logger.warn("Server health check failed: " + serverUrl + ", Status code: " + statusCode);
+                logger.warnf("Server health check failed: status %d", response.statusCode());
                 return false;
             }
         } catch (ConnectException | java.net.http.HttpTimeoutException e) {
-            logger.warn("Server health check failed - connection error: " + serverUrl + ", Error: " + e.getMessage());
+            logger.warnf("Connection error while checking server health: %s", e.getMessage());
             return false;
         } catch (IOException | InterruptedException e) {
-            logger.error("Server health check failed: " + serverUrl + ", Error: " + e.getMessage(), e);
+            logger.error("Server health check error", e);
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
@@ -197,14 +194,9 @@ public class TokenStatusEventListenerProviderFactory implements EventListenerPro
                 return true; // Disabled, no need to register
             }
 
-            String serverUrl = config.getServerUrl();
-            
-            // Check server health before proceeding
-            logger.info("Checking server health before registering realm: " + realm.getName());
-            if (!checkServerHealth(serverUrl)) {
-                logger.warn("Status list server is not healthy. Skipping registration for realm: " + realm.getName() + 
-                    ". Server URL: " + serverUrl);
-                return false; // Server not healthy, skip registration
+            if (!checkServerHealth(config.getServerUrl())) {
+                logger.warnf("Health check failed for server: %s", config.getServerUrl());
+                return false;
             }
 
             StatusListService statusListService = new StatusListService(
