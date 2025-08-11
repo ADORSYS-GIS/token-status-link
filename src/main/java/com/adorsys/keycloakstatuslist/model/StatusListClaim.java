@@ -2,6 +2,7 @@ package com.adorsys.keycloakstatuslist.model;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import java.net.URI;
 import java.util.Map;
 
 /**
@@ -54,6 +55,14 @@ public class StatusListClaim {
     }
 
     /**
+     * Overloaded constructor — accepts index as int and URI object.
+     * Internally converts URI to string.
+     */
+    public StatusListClaim(int idx, URI uri) {
+        this(idx, uri.toString());
+    }
+
+    /**
      * Returns the index of the token in the status list.
      * Used by Jackson for serialization and by other components (e.g., Status
      * class) to access the index.
@@ -77,8 +86,7 @@ public class StatusListClaim {
 
     public Map<String, Object> toMap() {
         return Map.of(
-            "idx", idx,
-            "uri", uri
-        );
+                "idx", idx,
+                "uri", uri);
     }
 }
