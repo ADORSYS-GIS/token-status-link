@@ -1,18 +1,14 @@
 package com.adorsys.keycloakstatuslist.service;
 
-import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationResponse;
 import com.adorsys.keycloakstatuslist.model.TokenStatusRecord;
-import com.adorsys.keycloakstatuslist.model.TokenStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.keycloak.crypto.KeyUse;
 import org.keycloak.crypto.KeyWrapper;
-import org.keycloak.crypto.SignatureVerifierContext;
-import org.keycloak.crypto.AsymmetricSignatureVerifierContext;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.KeyManager;
@@ -20,16 +16,8 @@ import org.keycloak.models.KeycloakContext;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.keycloak.sdjwt.vp.SdJwtVP;
-import org.keycloak.sdjwt.IssuerSignedJWT;
-import org.keycloak.sdjwt.IssuerSignedJwtVerificationOpts;
-import org.keycloak.common.VerificationException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 
-import java.lang.reflect.Field;
 import java.security.PublicKey;
-import java.time.Instant;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -37,6 +25,7 @@ import static org.mockito.Mockito.*;
 
 /**
  * Unit tests for CredentialRevocationService.
+ * Tests ONLY the main service's orchestration logic, not individual service implementations.
  */
 @ExtendWith(MockitoExtension.class)
 class CredentialRevocationServiceTest {
@@ -66,23 +55,28 @@ class CredentialRevocationServiceTest {
     private SdJwtVP sdJwtVP;
     
     @Mock
-    private IssuerSignedJWT issuerSignedJWT;
+    private SdJwtVPValidationService sdJwtVPValidationService;
     
     @Mock
-    private SignatureVerifierContext signatureVerifierContext;
+    private RevocationRecordService revocationRecordService;
+    
+    @Mock
+    private RequestValidationService requestValidationService;
+    
+    @Mock
+    private TokenStatusRecord mockRevocationRecord;
 
     private CredentialRevocationService service;
-    private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() {
-        objectMapper = new ObjectMapper();
-        
+        // Setup basic session mocks
         lenient().when(session.getContext()).thenReturn(context);
         lenient().when(context.getRealm()).thenReturn(realm);
         lenient().when(session.keys()).thenReturn(keyManager);
         lenient().when(realm.getName()).thenReturn("test-realm");
         
+        // Setup realm attributes
         lenient().when(realm.getAttribute("status-list-enabled")).thenReturn("true");
         lenient().when(realm.getAttribute("status-list-auth-token")).thenReturn("test-auth-token");
         lenient().when(realm.getAttribute("status-list-connect-timeout")).thenReturn("5000");
@@ -90,923 +84,206 @@ class CredentialRevocationServiceTest {
         lenient().when(realm.getAttribute("status-list-retry-count")).thenReturn("3");
         lenient().when(realm.getAttribute(anyString())).thenReturn(null);
         
+        // Setup key management
         lenient().when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq("RS256"))).thenReturn(keyWrapper);
         lenient().when(keyWrapper.getPublicKey()).thenReturn(publicKey);
         lenient().when(keyWrapper.getAlgorithm()).thenReturn("RS256");
         
+        // Create service with mocked dependencies
         service = new CredentialRevocationService(session);
+        
+        // Inject mocked dependencies using reflection
+        injectMockedDependencies();
     }
-
-    @Test
-    void testRevokeCredential_EmptySdJwtVp() {
-        String credentialId = "test-credential-123";
-        String revocationReason = "Test revocation";
-        
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                "", credentialId, revocationReason
-        );
-        
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(request);
-        });
-        
-        assertTrue(exception.getMessage().contains("SD-JWT VP token is required"));
-    }
-
-    @Test
-    void testRevokeCredential_NullSdJwtVp() {
-        String credentialId = "test-credential-123";
-        String revocationReason = "Test revocation";
-        
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                null, credentialId, revocationReason
-        );
-        
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(request);
-        });
-        
-        assertTrue(exception.getMessage().contains("SD-JWT VP token is required"));
-    }
-
-    @Test
-    void testRevokeCredential_EmptyCredentialId() {
-        String credentialId = "test-credential-123";
-        String sdJwtVp = createValidSdJwtVP(credentialId);
-        String revocationReason = "Test revocation";
-        
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                sdJwtVp, "", revocationReason
-        );
-        
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(request);
-        });
-        
-        assertTrue(exception.getMessage().contains("Credential ID is required"));
-    }
-
-    @Test
-    void testRevokeCredential_NullCredentialId() {
-        String credentialId = "test-credential-123";
-        String sdJwtVp = createValidSdJwtVP(credentialId);
-        String revocationReason = "Test revocation";
-        
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                sdJwtVp, null, revocationReason
-        );
-        
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(request);
-        });
-        
-        assertTrue(exception.getMessage().contains("Credential ID is required"));
-    }
-
-    @Test
-    void testRevokeCredential_MissingTildeSeparators() {
-        String credentialId = "test-credential-123";
-        String invalidSdJwtVp = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZXN0LWNyZWRlbnRpYWwtMTIzIiwiaXNzIjoiaHR0cDovL2xvY2FsaG9zdDo4MDgwL3JlYWxtcy9tYXN0ZXIiLCJpYXQiOjE3NTQzOTQ3NjQsImV4cCI6MTc4NTkzMDc2NCwidmN0IjoiaHR0cHM6Ly9jcmVkZW50aWFscy5leGFtcGxlLmNvbS9pZGVudGl0eV9jcmVkZW50aWFsIiwianRpIjoidGVzdC1jcmVkZW50aWFsLTEyMyIsImNyZWRlbnRpYWxfaWQiOiJ0ZXN0LWNyZWRlbnRpYWwtMTIzIn0.signature";
-        String revocationReason = "Test revocation";
-        
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                invalidSdJwtVp, credentialId, revocationReason
-        );
-        
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(request);
-        });
-        
-        assertTrue(exception.getMessage().contains("missing required signing key") || 
-                  exception.getMessage().contains("Invalid SD-JWT VP format") ||
-                  exception.getMessage().contains("Failed to parse SD-JWT VP token") ||
-                  exception.getMessage().contains("SD-JWT is malformed, expected to contain a '~'"));
-    }
-
-    @Test
-    void testRevokeCredential_InvalidSdJwtVpToken() {
-        String credentialId = "test-credential-123";
-        String invalidSdJwtVp = "invalid.token.format";
-        String revocationReason = "Test revocation";
-        
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                invalidSdJwtVp, credentialId, revocationReason
-        );
-        
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(request);
-        });
-        
-        assertTrue(exception.getMessage().contains("Invalid SD-JWT VP format") ||
-                  exception.getMessage().contains("Failed to parse SD-JWT VP token") ||
-                  exception.getMessage().contains("Invalid SD-JWT VP token format"));
-    }
-
-    @Test
-    void testRevokeCredential_LongRevocationReason() {
-        String credentialId = "test-credential-123";
-        String longReason = "a".repeat(300);
-        String sdJwtVp = createValidSdJwtVP(credentialId);
-        
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                sdJwtVp, credentialId, longReason
-        );
-        
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(request);
-        });
-        
-        assertNotNull(exception.getMessage());
-    }
-
-    @Test
-    void testRevokeCredential_NoActiveKey() {
-        String credentialId = "test-credential-123";
-        String revocationReason = "Test revocation";
-        String sdJwtVp = createValidSdJwtVP(credentialId);
-        
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                sdJwtVp, credentialId, revocationReason
-        );
-        
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(request);
-        });
-        
-        assertNotNull(exception.getMessage());
-    }
-
-    @Test
-    void testRevokeCredential_NullRevocationReason() {
-        String credentialId = "test-credential-123";
-        String sdJwtVp = createValidSdJwtVP(credentialId);
-        
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                sdJwtVp, credentialId, null
-        );
-        
-        assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(request);
-        });
-    }
-
-    @Test
-    void testRevokeCredential_EmptyRevocationReason() {
-        String credentialId = "test-credential-123";
-        String sdJwtVp = createValidSdJwtVP(credentialId);
-        
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                sdJwtVp, credentialId, ""
-        );
-        
-        assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(request);
-        });
-    }
-
-    @Test
-    void testRevokeCredential_ValidatesInputParameters() {
-        String credentialId = "test-credential-123";
-        String revocationReason = "Test revocation";
-        
-        assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(new CredentialRevocationRequest(null, credentialId, revocationReason));
-        });
-        
-        assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(new CredentialRevocationRequest("", credentialId, revocationReason));
-        });
-        
-        assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(new CredentialRevocationRequest("valid-token", null, revocationReason));
-        });
-        
-        assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(new CredentialRevocationRequest("valid-token", "", revocationReason));
-        });
-    }
-
-    @Test
-    void testRevokeCredential_ValidatesRevocationReason() {
-        String credentialId = "test-credential-123";
-        String longReason = "a".repeat(300);
-        
-        assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(new CredentialRevocationRequest(createValidSdJwtVP(credentialId), credentialId, longReason));
-        });
-    }
-
-
-    @Test
-    void testRevokeCredential_NoActiveKeyForVerification() {
-        String credentialId = "test-credential-123";
-        String revocationReason = "Test revocation";
-        String sdJwtVp = createValidSdJwtVP(credentialId);
-        
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                sdJwtVp, credentialId, revocationReason
-        );
-        
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(request);
-        });
-        
-        assertNotNull(exception.getMessage());
-    }
-
-    @Test
-    void testRevokeCredential_KeyWrapperWithoutPublicKey() {
-        String credentialId = "test-credential-123";
-        String revocationReason = "Test revocation";
-        String sdJwtVp = createValidSdJwtVP(credentialId);
-        
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                sdJwtVp, credentialId, revocationReason
-        );
-        
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(request);
-        });
-        
-        assertNotNull(exception.getMessage());
-    }
-
-    @Test
-    void testRevokeCredential_SignatureVerificationFailure() {
-        String credentialId = "test-credential-123";
-        String revocationReason = "Test revocation";
-        String sdJwtVp = createValidSdJwtVP(credentialId);
-        
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                sdJwtVp, credentialId, revocationReason
-        );
-        
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(request);
-        });
-        
-        assertNotNull(exception.getMessage());
-    }
-
-    @Test
-    void testRevokeCredential_CredentialOwnershipMismatch() {
-        String credentialId = "test-credential-123";
-        String differentCredentialId = "different-credential-456";
-        String revocationReason = "Test revocation";
-        String sdJwtVp = createValidSdJwtVP(credentialId);
-        
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                sdJwtVp, credentialId, revocationReason
-        );
-        
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(request);
-        });
-        
-        assertNotNull(exception.getMessage());
-    }
-
-    @Test
-    void testRevokeCredential_CannotExtractCredentialId() {
-        String credentialId = "test-credential-123";
-        String revocationReason = "Test revocation";
-        String sdJwtVp = createValidSdJwtVP(credentialId);
-        
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                sdJwtVp, credentialId, revocationReason
-        );
-        
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(request);
-        });
-        
-        assertNotNull(exception.getMessage());
-    }
-
-    @Test
-    void testRevokeCredential_VerificationExceptionHandling() {
-        String credentialId = "test-credential-123";
-        String revocationReason = "Test revocation";
-        String sdJwtVp = createValidSdJwtVP(credentialId);
-        
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                sdJwtVp, credentialId, revocationReason
-        );
-        
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(request);
-        });
-        
-        assertNotNull(exception.getMessage());
-    }
-
-    @Test
-    void testRevokeCredential_SuccessfulVerification() {
-        String credentialId = "test-credential-123";
-        String revocationReason = "Test revocation";
-        String sdJwtVp = createValidSdJwtVP(credentialId);
-        
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                sdJwtVp, credentialId, revocationReason
-        );
-        
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(request);
-        });
-        
-        assertNotNull(exception.getMessage());
+    
+    private void injectMockedDependencies() {
+        try {
+            // Inject mocked SdJwtVPValidationService
+            java.lang.reflect.Field sdJwtVPValidationField = CredentialRevocationService.class.getDeclaredField("sdJwtVPValidationService");
+            sdJwtVPValidationField.setAccessible(true);
+            sdJwtVPValidationField.set(service, sdJwtVPValidationService);
+            
+            // Inject mocked RevocationRecordService
+            java.lang.reflect.Field revocationRecordField = CredentialRevocationService.class.getDeclaredField("revocationRecordService");
+            revocationRecordField.setAccessible(true);
+            revocationRecordField.set(service, revocationRecordService);
+            
+            // Inject mocked RequestValidationService
+            java.lang.reflect.Field requestValidationField = CredentialRevocationService.class.getDeclaredField("requestValidationService");
+            requestValidationField.setAccessible(true);
+            requestValidationField.set(service, requestValidationService);
+            
+            // Inject mocked StatusListService
+            java.lang.reflect.Field statusListField = CredentialRevocationService.class.getDeclaredField("statusListService");
+            statusListField.setAccessible(true);
+            statusListField.set(service, statusListService);
+            
+        } catch (Exception e) {
+            fail("Failed to inject mocked dependencies: " + e.getMessage());
+        }
     }
 
     @Test
     void testRevokeCredential_Success() throws Exception {
-        String credentialId = "test-credential-123";
-        String revocationReason = "Test revocation";
-        String sdJwtVp = createMockSdJwtVP(credentialId);
+        // Arrange
+        CredentialRevocationRequest request = createValidRequest();
         
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                sdJwtVp, credentialId, revocationReason
-        );
+        // Mock all dependencies to return success
+        doNothing().when(requestValidationService).validateRevocationRequest(any());
+        when(sdJwtVPValidationService.parseAndValidateSdJwtVP(anyString(), anyString())).thenReturn(sdJwtVP);
+        doNothing().when(sdJwtVPValidationService).verifyCredentialOwnership(any(SdJwtVP.class), anyString(), anyString());
+        when(revocationRecordService.createRevocationRecord(any(), anyString())).thenReturn(mockRevocationRecord);
+        doNothing().when(statusListService).publishRecord(any(TokenStatusRecord.class));
         
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(request);
-        });
+        // Act
+        CredentialRevocationResponse response = service.revokeCredential(request);
         
-        assertNotNull(exception.getMessage());
+        // Assert - Test ONLY the main service's orchestration logic
+        assertNotNull(response);
+        assertEquals(request.getCredentialId(), response.getCredentialId());
+        assertNotNull(response.getRevokedAt());
+        assertEquals(request.getRevocationReason(), response.getRevocationReason());
+        
+        // Verify the orchestration flow - services called in correct order
+        verify(requestValidationService).validateRevocationRequest(any());
+        verify(sdJwtVPValidationService).parseAndValidateSdJwtVP(anyString(), anyString());
+        verify(sdJwtVPValidationService).verifyCredentialOwnership(any(SdJwtVP.class), anyString(), anyString());
+        verify(revocationRecordService).createRevocationRecord(any(), anyString());
+        verify(statusListService).publishRecord(any(TokenStatusRecord.class));
     }
 
     @Test
-    void testRevokeCredential_ValidRevocationReason() throws Exception {
-        String credentialId = "test-credential-123";
-        String revocationReason = "User requested revocation due to security concerns";
-        String sdJwtVp = createMockSdJwtVP(credentialId);
+    void testRevokeCredential_RequestValidationFailure() throws Exception {
+        // Arrange
+        CredentialRevocationRequest request = createValidRequest();
         
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                sdJwtVp, credentialId, revocationReason
-        );
+        // Mock validation to fail
+        doThrow(new StatusListException("Validation failed"))
+            .when(requestValidationService).validateRevocationRequest(any());
         
+        // Act & Assert
         StatusListException exception = assertThrows(StatusListException.class, () -> {
             service.revokeCredential(request);
         });
         
-        assertNotNull(exception.getMessage());
+        // Test that the main service properly handles the error
+        assertTrue(exception.getMessage().contains("Validation failed"));
+        
+        // Verify no other services were called
+        verify(sdJwtVPValidationService, never()).parseAndValidateSdJwtVP(anyString(), anyString());
+        verify(revocationRecordService, never()).createRevocationRecord(any(), anyString());
+        verify(statusListService, never()).publishRecord(any());
     }
 
     @Test
-    void testRevokeCredential_NullRevocationReasonSuccess() throws Exception {
-        String credentialId = "test-credential-123";
-        String sdJwtVp = createMockSdJwtVP(credentialId);
+    void testRevokeCredential_SdJwtVPValidationFailure() throws Exception {
+        // Arrange
+        CredentialRevocationRequest request = createValidRequest();
         
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                sdJwtVp, credentialId, null
-        );
+        // Mock request validation to succeed, but SD-JWT validation to fail
+        doNothing().when(requestValidationService).validateRevocationRequest(any());
+        when(sdJwtVPValidationService.parseAndValidateSdJwtVP(anyString(), anyString()))
+            .thenThrow(new StatusListException("SD-JWT validation failed"));
         
+        // Act & Assert
         StatusListException exception = assertThrows(StatusListException.class, () -> {
             service.revokeCredential(request);
         });
         
-        assertNotNull(exception.getMessage());
+        // Test that the main service properly handles the error
+        assertTrue(exception.getMessage().contains("SD-JWT validation failed"));
+        
+        // Verify the flow stopped at SD-JWT validation
+        verify(requestValidationService).validateRevocationRequest(any());
+        verify(sdJwtVPValidationService).parseAndValidateSdJwtVP(anyString(), anyString());
+        verify(revocationRecordService, never()).createRevocationRecord(any(), anyString());
+        verify(statusListService, never()).publishRecord(any());
     }
 
     @Test
-    void testRevokeCredential_EmptyRevocationReasonSuccess() throws Exception {
-        String credentialId = "test-credential-123";
-        String sdJwtVp = createMockSdJwtVP(credentialId);
+    void testRevokeCredential_StatusListFailure() throws Exception {
+        // Arrange
+        CredentialRevocationRequest request = createValidRequest();
         
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                sdJwtVp, credentialId, ""
-        );
+        // Mock all dependencies to succeed until status list publication
+        doNothing().when(requestValidationService).validateRevocationRequest(any());
+        when(sdJwtVPValidationService.parseAndValidateSdJwtVP(anyString(), anyString())).thenReturn(sdJwtVP);
+        doNothing().when(sdJwtVPValidationService).verifyCredentialOwnership(any(SdJwtVP.class), anyString(), anyString());
+        when(revocationRecordService.createRevocationRecord(any(), anyString())).thenReturn(mockRevocationRecord);
+        doThrow(new StatusListException("Status list publication failed"))
+            .when(statusListService).publishRecord(any(TokenStatusRecord.class));
         
+        // Act & Assert
         StatusListException exception = assertThrows(StatusListException.class, () -> {
             service.revokeCredential(request);
         });
         
-        assertNotNull(exception.getMessage());
-    }
-
-    @Test
-    void testRevokeCredential_ConcurrentRequests() throws Exception {
-        String credentialId = "test-credential-123";
-        String revocationReason = "Test revocation";
-        String sdJwtVp = createMockSdJwtVP(credentialId);
+        // Test that the main service properly handles the error
+        assertTrue(exception.getMessage().contains("Status list publication failed"));
         
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                sdJwtVp, credentialId, revocationReason
-        );
-        
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(request);
-        });
-        
-        assertNotNull(exception.getMessage());
+        // Verify the complete flow was executed
+        verify(requestValidationService).validateRevocationRequest(any());
+        verify(sdJwtVPValidationService).parseAndValidateSdJwtVP(anyString(), anyString());
+        verify(sdJwtVPValidationService).verifyCredentialOwnership(any(SdJwtVP.class), anyString(), anyString());
+        verify(revocationRecordService).createRevocationRecord(any(), anyString());
+        verify(statusListService).publishRecord(any(TokenStatusRecord.class));
     }
 
     @Test
     void testRevokeCredential_RequestIdGeneration() throws Exception {
-        String credentialId = "test-credential-123";
-        String revocationReason = "Test revocation";
-        String sdJwtVp = createMockSdJwtVP(credentialId);
+        // Arrange
+        CredentialRevocationRequest request1 = createValidRequest();
+        CredentialRevocationRequest request2 = createValidRequest();
         
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                sdJwtVp, credentialId, revocationReason
-        );
+        // Mock all dependencies to succeed
+        doNothing().when(requestValidationService).validateRevocationRequest(any());
+        when(sdJwtVPValidationService.parseAndValidateSdJwtVP(anyString(), anyString())).thenReturn(sdJwtVP);
+        doNothing().when(sdJwtVPValidationService).verifyCredentialOwnership(any(SdJwtVP.class), anyString(), anyString());
+        when(revocationRecordService.createRevocationRecord(any(), anyString())).thenReturn(mockRevocationRecord);
+        doNothing().when(statusListService).publishRecord(any(TokenStatusRecord.class));
         
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(request);
-        });
+        // Act
+        service.revokeCredential(request1);
+        service.revokeCredential(request2);
         
-        assertNotNull(exception.getMessage());
+        // Assert - Verify that different request IDs were generated
+        verify(sdJwtVPValidationService, times(2)).parseAndValidateSdJwtVP(anyString(), anyString());
+        verify(revocationRecordService, times(2)).createRevocationRecord(any(), anyString());
+        verify(statusListService, times(2)).publishRecord(any());
     }
 
     @Test
-    void testRevokeCredential_StatusListServiceFailure() throws Exception {
-        String credentialId = "test-credential-123";
-        String revocationReason = "Test revocation";
-        String sdJwtVp = createMockSdJwtVP(credentialId);
+    void testRevokeCredential_UnexpectedException() throws Exception {
+        // Arrange
+        CredentialRevocationRequest request = createValidRequest();
         
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                sdJwtVp, credentialId, revocationReason
-        );
+        // Mock an unexpected exception
+        doNothing().when(requestValidationService).validateRevocationRequest(any());
+        when(sdJwtVPValidationService.parseAndValidateSdJwtVP(anyString(), anyString()))
+            .thenThrow(new RuntimeException("Unexpected error"));
         
+        // Act & Assert
         StatusListException exception = assertThrows(StatusListException.class, () -> {
             service.revokeCredential(request);
         });
         
-        assertNotNull(exception.getMessage());
-    }
-
-    @Test
-    void testRevokeCredential_NetworkTimeout() throws Exception {
-        String credentialId = "test-credential-123";
-        String revocationReason = "Test revocation";
-        String sdJwtVp = createMockSdJwtVP(credentialId);
-        
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                sdJwtVp, credentialId, revocationReason
-        );
-        
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(request);
-        });
-        
-        assertNotNull(exception.getMessage());
-    }
-
-    @Test
-    void testRevokeCredential_InvalidCredentialIdFormat() {
-        String credentialId = "invalid-credential-id-with-special-chars!@#$%";
-        String revocationReason = "Test revocation";
-        String sdJwtVp = createValidSdJwtVP(credentialId);
-        
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                sdJwtVp, credentialId, revocationReason
-        );
-        
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(request);
-        });
-        
-        assertNotNull(exception.getMessage());
-    }
-
-    @Test
-    void testRevokeCredential_ExpiredToken() {
-        String credentialId = "test-credential-123";
-        String revocationReason = "Test revocation";
-        String sdJwtVp = createExpiredSdJwtVP(credentialId);
-        
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                sdJwtVp, credentialId, revocationReason
-        );
-        
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(request);
-        });
-        
-        assertNotNull(exception.getMessage());
-    }
-
-    @Test
-    void testRevokeCredential_InvalidIssuer() {
-        String credentialId = "test-credential-123";
-        String revocationReason = "Test revocation";
-        String sdJwtVp = createSdJwtVPWithInvalidIssuer(credentialId);
-        
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                sdJwtVp, credentialId, revocationReason
-        );
-        
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(request);
-        });
-        
-        assertNotNull(exception.getMessage());
-    }
-
-    @Test
-    void testRevokeCredential_InvalidTokenStructure() {
-        String credentialId = "test-credential-123";
-        String revocationReason = "Test revocation";
-        String invalidSdJwtVp = "invalid.token.structure.without.tilde.separators";
-        
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                invalidSdJwtVp, credentialId, revocationReason
-        );
-        
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(request);
-        });
-        
-        assertNotNull(exception.getMessage());
-        assertTrue(exception.getMessage().contains("Invalid SD-JWT VP") || 
-                  exception.getMessage().contains("Failed to parse SD-JWT VP"));
-    }
-
-    @Test
-    void testRevokeCredential_MalformedToken() {
-        String credentialId = "test-credential-123";
-        String revocationReason = "Test revocation";
-        String malformedSdJwtVp = "not.a.valid.jwt.token";
-        
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                malformedSdJwtVp, credentialId, revocationReason
-        );
-        
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(request);
-        });
-        
-        assertNotNull(exception.getMessage());
-        assertTrue(exception.getMessage().contains("Invalid SD-JWT VP") || 
-                  exception.getMessage().contains("Failed to parse SD-JWT VP"));
+        // Test that the main service properly wraps unexpected exceptions
+        assertTrue(exception.getMessage().contains("Failed to process credential revocation"));
+        assertTrue(exception.getMessage().contains("Unexpected error"));
     }
 
     @Test
     void testRevokeCredential_ServiceInitialization() {
+        // Act & Assert
         CredentialRevocationService newService = new CredentialRevocationService(session);
         assertNotNull(newService);
     }
 
-    @Test
-    void testRevokeCredential_MissingHolderSigningKey() {
-        String credentialId = "test-credential-123";
-        String revocationReason = "Test revocation";
-        String sdJwtVp = createSdJwtVPWithoutHolderKey(credentialId);
-        
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                sdJwtVp, credentialId, revocationReason
+    private CredentialRevocationRequest createValidRequest() {
+        return new CredentialRevocationRequest(
+                "valid-sd-jwt-vp-token",
+                "test-credential-123",
+                "Test revocation"
         );
-        
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(request);
-        });
-        
-        assertNotNull(exception.getMessage());
-    }
-
-    @Test
-    void testRevokeCredential_InvalidHolderSignature() {
-        String credentialId = "test-credential-123";
-        String revocationReason = "Test revocation";
-        String sdJwtVp = createSdJwtVPWithInvalidHolderSignature(credentialId);
-        
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                sdJwtVp, credentialId, revocationReason
-        );
-        
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(request);
-        });
-        
-        assertNotNull(exception.getMessage());
-    }
-
-    @Test
-    void testRevokeCredential_KeyBindingVerificationRequired() {
-        String credentialId = "test-credential-123";
-        String revocationReason = "Test revocation";
-        String sdJwtVp = createSdJwtVPWithoutKeyBinding(credentialId);
-        
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                sdJwtVp, credentialId, revocationReason
-        );
-        
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(request);
-        });
-        
-        assertNotNull(exception.getMessage());
-    }
-
-    // ========== KEY COMPONENT TESTS ==========
-
-    @Test
-    void testStatusListService_Initialization() {
-        CredentialRevocationService newService = new CredentialRevocationService(session);
-        assertNotNull(newService);
-    }
-
-    @Test
-    void testStatusListService_ConfigurationFailure() {
-        CredentialRevocationService serviceWithInvalidConfig = new CredentialRevocationService(session);
-        assertNotNull(serviceWithInvalidConfig);
-    }
-
-    @Test
-    void testKeyManagement_NoActiveKey() {
-        String credentialId = "test-credential-123";
-        String revocationReason = "Test revocation";
-        String sdJwtVp = createValidSdJwtVP(credentialId);
-        
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                sdJwtVp, credentialId, revocationReason
-        );
-        
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(request);
-        });
-        
-        assertNotNull(exception.getMessage());
-    }
-
-    @Test
-    void testKeyManagement_KeyWithoutPublicKey() {
-        String credentialId = "test-credential-123";
-        String revocationReason = "Test revocation";
-        String sdJwtVp = createValidSdJwtVP(credentialId);
-        
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                sdJwtVp, credentialId, revocationReason
-        );
-        
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(request);
-        });
-        
-        assertNotNull(exception.getMessage());
-    }
-
-    @Test
-    void testKeyManagement_DifferentKeyAlgorithm() {
-        String credentialId = "test-credential-123";
-        String revocationReason = "Test revocation";
-        String sdJwtVp = createValidSdJwtVP(credentialId);
-        
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                sdJwtVp, credentialId, revocationReason
-        );
-        
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(request);
-        });
-        
-        assertNotNull(exception.getMessage());
-    }
-
-    @Test
-    void testRevocationRecordCreation_Success() throws Exception {
-        String credentialId = "test-credential-123";
-        String revocationReason = "User requested revocation";
-        String sdJwtVp = createValidSdJwtVP(credentialId);
-        
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                sdJwtVp, credentialId, revocationReason
-        );
-        
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(request);
-        });
-        
-        assertNotNull(exception.getMessage());
-    }
-
-    @Test
-    void testRevocationRecordCreation_WithNullReason() {
-        String credentialId = "test-credential-123";
-        String sdJwtVp = createValidSdJwtVP(credentialId);
-        
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                sdJwtVp, credentialId, null
-        );
-        
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(request);
-        });
-        
-        assertNotNull(exception.getMessage());
-    }
-
-    @Test
-    void testRevocationRecordCreation_WithEmptyReason() {
-        String credentialId = "test-credential-123";
-        String sdJwtVp = createValidSdJwtVP(credentialId);
-        
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                sdJwtVp, credentialId, ""
-        );
-        
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(request);
-        });
-        
-        assertNotNull(exception.getMessage());
-    }
-
-    @Test
-    void testJWKSIntegration_NetworkFailure() {
-        String credentialId = "test-credential-123";
-        String revocationReason = "Test revocation";
-        String sdJwtVp = createValidSdJwtVP(credentialId);
-        
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                sdJwtVp, credentialId, revocationReason
-        );
-        
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(request);
-        });
-        
-        assertNotNull(exception.getMessage());
-    }
-
-    @Test
-    void testJWKSIntegration_InvalidIssuer() {
-        String credentialId = "test-credential-123";
-        String revocationReason = "Test revocation";
-        String sdJwtVp = createValidSdJwtVP(credentialId);
-        
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                sdJwtVp, credentialId, revocationReason
-        );
-        
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(request);
-        });
-        
-        assertNotNull(exception.getMessage());
-    }
-
-    @Test
-    void testSignatureVerification_DifferentAlgorithms() {
-        String credentialId = "test-credential-123";
-        String revocationReason = "Test revocation";
-        String sdJwtVp = createValidSdJwtVP(credentialId);
-        
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                sdJwtVp, credentialId, revocationReason
-        );
-        
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(request);
-        });
-        
-        assertNotNull(exception.getMessage());
-    }
-
-    @Test
-    void testTokenFieldExtraction_IssuerExtraction() {
-        String credentialId = "test-credential-123";
-        String revocationReason = "Test revocation";
-        String sdJwtVp = createValidSdJwtVP(credentialId);
-        
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                sdJwtVp, credentialId, revocationReason
-        );
-        
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(request);
-        });
-        
-        assertNotNull(exception.getMessage());
-    }
-
-    @Test
-    void testTokenFieldExtraction_KeyIdExtraction() {
-        String credentialId = "test-credential-123";
-        String revocationReason = "Test revocation";
-        String sdJwtVp = createValidSdJwtVP(credentialId);
-        
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                sdJwtVp, credentialId, revocationReason
-        );
-        
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(request);
-        });
-        
-        assertNotNull(exception.getMessage());
-    }
-
-    @Test
-    void testCryptographicKeyProcessing_RSAKeyExtraction() {
-        String credentialId = "test-credential-123";
-        String revocationReason = "Test revocation";
-        String sdJwtVp = createValidSdJwtVP(credentialId);
-        
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                sdJwtVp, credentialId, revocationReason
-        );
-        
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(request);
-        });
-        
-        assertNotNull(exception.getMessage());
-    }
-
-    @Test
-    void testCryptographicKeyProcessing_ECKeyExtraction() {
-        String credentialId = "test-credential-123";
-        String revocationReason = "Test revocation";
-        String sdJwtVp = createValidSdJwtVP(credentialId);
-        
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                sdJwtVp, credentialId, revocationReason
-        );
-        
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(request);
-        });
-        
-        assertNotNull(exception.getMessage());
-    }
-
-    @Test
-    void testSignatureVerifierContext_Creation() {
-        String credentialId = "test-credential-123";
-        String revocationReason = "Test revocation";
-        String sdJwtVp = createValidSdJwtVP(credentialId);
-        
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                sdJwtVp, credentialId, revocationReason
-        );
-        
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(request);
-        });
-        
-        assertNotNull(exception.getMessage());
-    }
-
-    @Test
-    void testErrorHandling_UnexpectedExceptions() {
-        String credentialId = "test-credential-123";
-        String revocationReason = "Test revocation";
-        String sdJwtVp = createValidSdJwtVP(credentialId);
-        
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                sdJwtVp, credentialId, revocationReason
-        );
-        
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(request);
-        });
-        
-        assertNotNull(exception.getMessage());
-        assertTrue(exception.getMessage().length() > 0);
-    }
-
-    @Test
-    void testErrorHandling_StatusListExceptionPropagation() throws Exception {
-        String credentialId = "test-credential-123";
-        String revocationReason = "Test revocation";
-        String sdJwtVp = createValidSdJwtVP(credentialId);
-        
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                sdJwtVp, credentialId, revocationReason
-        );
-        
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(request);
-        });
-        
-        assertNotNull(exception.getMessage());
-    }
-
-    private String createValidSdJwtVP(String credentialId) {
-        return "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI" + credentialId + "IiwiaXNzIjoiaHR0cDovL2xvY2FsaG9zdDo4MDgwL3JlYWxtcy9tYXN0ZXIiLCJpYXQiOjE3NTQzOTQ3NjQsImV4cCI6MTc4NTkzMDc2NCwidmN0IjoiaHR0cHM6Ly9jcmVkZW50aWFscy5leGFtcGxlLmNvbS9pZGVudGl0eV9jcmVkZW50aWFsIiwianRpIjoidGVzdC1jcmVkZW50aWFsLTEyMyIsImNyZWRlbnRpYWxfaWQiOiI" + credentialId + "IiwiY25mIjp7Imp3ayI6eyJrdHkiOiJFQyIsImNydiI6IlAtMjU2IiwieCI6IlAtZ1hsNGZYbjZIc0ZFQ2JncUQweTZiYl9BVzhpc0NsTjFFUno3UlZYUGciLCJ5IjoiOXZQUWt4QmhtQTRFQW9IUXJQRmFoMkdUNHo1V0pmZHF4VTFtVi1tUDEwTSIsImFsZyI6IkVTMjU2Iiwia2lkIjoiaG9sZGVyLWtleSJ9fX0.signature";
-    }
-
-    private String createMockSdJwtVP(String credentialId) {
-        return "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI" + credentialId + "IiwiaXNzIjoiaHR0cDovL2xvY2FsaG9zdDo4MDgwL3JlYWxtcy9tYXN0ZXIiLCJpYXQiOjE3NTQzOTQ3NjQsImV4cCI6MTc4NTkzMDc2NCwidmN0IjoiaHR0cHM6Ly9jcmVkZW50aWFscy5leGFtcGxlLmNvbS9pZGVudGl0eV9jcmVkZW50aWFsIiwianRpIjoidGVzdC1jcmVkZW50aWFsLTEyMyIsImNyZWRlbnRpYWxfaWQiOiI" + credentialId + "IiwiY25mIjp7Imp3ayI6eyJrdHkiOiJFQyIsImNydiI6IlAtMjU2IiwieCI6IlAtZ1hsNGZYbjZIc0ZFQ2JncUQweTZiYl9BVzhpc0NsTjFFUno3UlZYUGciLCJ5IjoiOXZQUWt4QmhtQTRFQW9IUXJQRmFoMkdUNHo1V0pmZHF4VTFtVi1tUDEwTSIsImFsZyI6IkVTMjU2Iiwia2lkIjoiaG9sZGVyLWtleSJ9fX0.mock-signature";
-    }
-
-    private String createSdJwtVPWithoutHolderKey(String credentialId) {
-        return "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI" + credentialId + "IiwiaXNzIjoiaHR0cDovL2xvY2FsaG9zdDo4MDgwL3JlYWxtcy9tYXN0ZXIiLCJpYXQiOjE3NTQzOTQ3NjQsImV4cCI6MTc4NTkzMDc2NCwidmN0IjoiaHR0cHM6Ly9jcmVkZW50aWFscy5leGFtcGxlLmNvbS9pZGVudGl0eV9jcmVkZW50aWFsIiwianRpIjoidGVzdC1jcmVkZW50aWFsLTEyMyIsImNyZWRlbnRpYWxfaWQiOiI" + credentialId + "In0.signature";
-    }
-
-    private String createSdJwtVPWithInvalidHolderSignature(String credentialId) {
-        return "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI" + credentialId + "IiwiaXNzIjoiaHR0cDovL2xvY2FsaG9zdDo4MDgwL3JlYWxtcy9tYXN0ZXIiLCJpYXQiOjE3NTQzOTQ3NjQsImV4cCI6MTc4NTkzMDc2NCwidmN0IjoiaHR0cHM6Ly9jcmVkZW50aWFscy5leGFtcGxlLmNvbS9pZGVudGl0eV9jcmVkZW50aWFsIiwianRpIjoidGVzdC1jcmVkZW50aWFsLTEyMyIsImNyZWRlbnRpYWxfaWQiOiI" + credentialId + "IiwiY25mIjp7Imp3ayI6eyJrdHkiOiJJTlZBTElEIiwia2lkIjoiaW52YWxpZC1rZXkifX19.invalid-signature";
-    }
-
-    private String createSdJwtVPWithoutKeyBinding(String credentialId) {
-        return "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI" + credentialId + "IiwiaXNzIjoiaHR0cDovL2xvY2FsaG9zdDo4MDgwL3JlYWxtcy9tYXN0ZXIiLCJpYXQiOjE3NTQzOTQ3NjQsImV4cCI6MTc4NTkzMDc2NCwidmN0IjoiaHR0cHM6Ly9jcmVkZW50aWFscy5leGFtcGxlLmNvbS9pZGVudGl0eV9jcmVkZW50aWFsIiwianRpIjoidGVzdC1jcmVkZW50aWFsLTEyMyIsImNyZWRlbnRpYWxfaWQiOiI" + credentialId + "IiwiY25mIjp7Imp3ayI6eyJrdHkiOiJFQyIsImNydiI6IlAtMjU2IiwieCI6IlAtZ1hsNGZYbjZIc0ZFQ2JncUQweTZiYl9BVzhpc0NsTjFFUno3UlZYUGciLCJ5IjoiOXZQUWt4QmhtQTRFQW9IUXJQRmFoMkdUNHo1V0pmZHF4VTFtVi1tUDEwTSIsImFsZyI6IkVTMjU2Iiwia2lkIjoiaG9sZGVyLWtleSJ9fX0.signature";
-    }
-
-    private String createSdJwtVPWithInvalidIssuer(String credentialId) {
-        return "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI" + credentialId + "IiwiaXNzIjoiaHR0cDovL2xvY2FsaG9zdDo4MDgwL3JlYWxtcy9tYXN0ZXIiLCJpYXQiOjE3NTQzOTQ3NjQsImV4cCI6MTc4NTkzMDc2NCwidmN0IjoiaHR0cHM6Ly9jcmVkZW50aWFscy5leGFtcGxlLmNvbS9pZGVudGl0eV9jcmVkZW50aWFsIiwianRpIjoidGVzdC1jcmVkZW50aWFsLTEyMyIsImNyZWRlbnRpYWxfaWQiOiI" + credentialId + "IiwiY25mIjp7Imp3ayI6eyJrdHkiOiJFQyIsImNydiI6IlAtMjU2IiwieCI6IlAtZ1hsNGZYbjZIc0ZFQ2JncUQweTZiYl9BVzhpc0NsTjFFUno3UlZYUGciLCJ5IjoiOXZQUWt4QmhtQTRFQW9IUXJQRmFoMkdUNHo1V0pmZHF4VTFtVi1tUDEwTSIsImFsZyI6IkVTMjU2Iiwia2lkIjoiaG9sZGVyLWtleSJ9fX0.signature";
-    }
-
-    private String createExpiredSdJwtVP(String credentialId) {
-        return "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI" + credentialId + "IiwiaXNzIjoiaHR0cDovL2xvY2FsaG9zdDo4MDgwL3JlYWxtcy9tYXN0ZXIiLCJpYXQiOjE3NTQzOTQ3NjQsImV4cCI6MTc4NTkzMDc2NCwidmN0IjoiaHR0cHM6Ly9jcmVkZW50aWFscy5leGFtcGxlLmNvbS9pZGVudGl0eV9jcmVkZW50aWFsIiwianRpIjoidGVzdC1jcmVkZW50aWFsLTEyMyIsImNyZWRlbnRpYWxfaWQiOiI" + credentialId + "IiwiY25mIjp7Imp3ayI6eyJrdHkiOiJFQyIsImNydiI6IlAtMjU2IiwieCI6IlAtZ1hsNGZYbjZIc0ZFQ2JncUQweTZiYl9BVzhpc0NsTjFFUno3UlZYUGciLCJ5IjoiOXZQUWt4QmhtQTRFQW9IUXJQRmFoMkdUNHo1V0pmZHF4VTFtVi1tUDEwTSIsImFsZyI6IkVTMjU2Iiwia2lkIjoiaG9sZGVyLWtleSJ9fX0.signature";
     }
 } 
