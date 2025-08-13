@@ -11,8 +11,15 @@ import org.keycloak.sdjwt.vp.SdJwtVP;
 import org.keycloak.sdjwt.IssuerSignedJwtVerificationOpts;
 import org.keycloak.sdjwt.vp.KeyBindingJwtVerificationOpts;
 import org.keycloak.common.VerificationException;
+import org.keycloak.models.KeycloakSession;
 
+import java.security.KeyFactory;
 import java.security.PublicKey;
+import java.security.spec.RSAPublicKeySpec;
+import java.security.spec.ECPublicKeySpec;
+import java.security.spec.ECPoint;
+import java.math.BigInteger;
+import java.util.Base64;
 import java.util.List;
 import java.util.ArrayList;
 
@@ -24,10 +31,12 @@ public class SdJwtVPValidationService {
     
     private static final Logger logger = Logger.getLogger(SdJwtVPValidationService.class);
     
+    private final KeycloakSession session;
     private final JwksService jwksService;
     
-    public SdJwtVPValidationService() {
-        this.jwksService = new JwksService();
+    public SdJwtVPValidationService(KeycloakSession session) {
+        this.session = session;
+        this.jwksService = new JwksService(session);
     }
     
     /**
@@ -65,7 +74,7 @@ public class SdJwtVPValidationService {
     }
     
     /**
-     * Verifies the SD-JWT VP token's issuer signature using the issuer's public key from their JWKS endpoint.
+     * Verifies the SD-JWT VP token's issuer signature using Keycloak's internal key management.
      * This ensures the token was properly issued by the claimed issuer.
      */
     public void verifySdJwtVPSignature(SdJwtVP sdJwtVP, String requestId) throws StatusListException {
@@ -83,17 +92,12 @@ public class SdJwtVPValidationService {
             logger.infof("Extracted issuer: %s, keyId: %s, algorithm: %s. RequestId: %s", 
                          issuer, keyId, tokenAlgorithm, requestId);
             
-            List<PublicKey> issuerPublicKeys = jwksService.getAllIssuerPublicKeys(sdJwtVP, issuer, requestId);
-            if (issuerPublicKeys.isEmpty()) {
-                logger.errorf("No public keys found for issuer: %s. RequestId: %s", issuer, requestId);
-                throw new StatusListException("No public keys available for issuer: " + issuer);
-            }
-            
-            List<SignatureVerifierContext> verifyingKeys = createVerifierContexts(issuerPublicKeys, requestId);
+            // Use the new approach with internal key management
+            List<SignatureVerifierContext> verifyingKeys = jwksService.getSignatureVerifierContexts(sdJwtVP, issuer, requestId);
             
             if (verifyingKeys.isEmpty()) {
                 logger.errorf("No valid issuer signature verifier contexts created. RequestId: %s", requestId);
-                throw new StatusListException("Failed to create issuer signature verifier contexts for issuer: " + issuer);
+                throw new StatusListException("No public keys available for issuer: " + issuer);
             }
             
             logger.infof("Created %d issuer signature verifier contexts for issuer: %s. RequestId: %s", 
@@ -104,8 +108,8 @@ public class SdJwtVPValidationService {
             
             sdJwtVP.verify(
                 verifyingKeys,
-                new IssuerSignedJwtVerificationOpts(false, false, true),
-                new KeyBindingJwtVerificationOpts(false, 0, null, null, false, false)
+                getIssuerSignedJwtVerificationOpts(),
+                getKeyBindingJwtVerificationOpts(requestId)
             );
             
             logger.infof("SD-JWT VP issuer signature verification completed successfully. RequestId: %s", requestId);
@@ -162,22 +166,14 @@ public class SdJwtVPValidationService {
         try {
             logger.debugf("Verifying holder signature and key binding. RequestId: %s", requestId);
             
-            PublicKey holderPublicKey = extractSigningKeyFromToken(sdJwtVP);
-            if (holderPublicKey == null) {
-                logger.errorf("No holder signing key found in VP token. RequestId: %s", requestId);
-                throw new StatusListException("VP token missing holder's signing key (cnf.jwk) - cannot verify ownership");
-            }
-            
-            logger.debugf("Extracted holder public key: %s. RequestId: %s", holderPublicKey.getAlgorithm(), requestId);
-            
-            SignatureVerifierContext holderVerifier = createSignatureVerifierContextFromPublicKey(holderPublicKey, "RS256");
-            
             logger.infof("Attempting holder signature verification with key binding required. RequestId: %s", requestId);
             
+            // The SD-JWT library automatically handles key binding verification when enabled
+            // No need to manually extract and verify the holder's key
             sdJwtVP.verify(
-                List.of(holderVerifier),
-                new IssuerSignedJwtVerificationOpts(false, false, true),
-                new KeyBindingJwtVerificationOpts(true, 300, null, null, false, false)
+                List.of(), // Empty list - no additional verifiers needed for key binding
+                getIssuerSignedJwtVerificationOpts(),
+                getKeyBindingJwtVerificationOpts(requestId)
             );
             
             logger.infof("Holder signature verification completed successfully. RequestId: %s", requestId);
@@ -285,33 +281,19 @@ public class SdJwtVPValidationService {
      */
     public String extractIssuerFromToken(SdJwtVP sdJwtVP) {
         try {
-            var jwt = sdJwtVP.getIssuerSignedJWT();
-            var payload = jwt.getPayload();
-            if (payload instanceof JsonNode) {
-                JsonNode payloadNode = (JsonNode) payload;
-                JsonNode issuerNode = payloadNode.get("iss");
-                return issuerNode != null ? issuerNode.asText() : null;
-            }
-            return null;
+            return extractPayloadField(sdJwtVP, "iss");
         } catch (Exception e) {
             logger.warn("Failed to extract issuer from SD-JWT VP token", e);
             return null;
         }
     }
-    
+
     /**
      * Extracts the JWT ID from the SD-JWT VP token.
      */
     public String extractJwtIdFromToken(SdJwtVP sdJwtVP) {
         try {
-            var jwt = sdJwtVP.getIssuerSignedJWT();
-            var payload = jwt.getPayload();
-            if (payload instanceof JsonNode) {
-                JsonNode payloadNode = (JsonNode) payload;
-                JsonNode jtiNode = payloadNode.get("jti");
-                return jtiNode != null ? jtiNode.asText() : null;
-            }
-            return null;
+            return extractPayloadField(sdJwtVP, "jti");
         } catch (Exception e) {
             logger.warn("Failed to extract JWT ID from SD-JWT VP token", e);
             return null;
@@ -323,28 +305,36 @@ public class SdJwtVPValidationService {
      */
     public String extractKeyIdFromToken(SdJwtVP sdJwtVP) {
         try {
-            var jwt = sdJwtVP.getIssuerSignedJWT();
-            var header = jwt.getHeader();
-            return header.getKeyId();
+            return extractHeaderParam(sdJwtVP, "kid");
         } catch (Exception e) {
             logger.warn("Failed to extract key ID from SD-JWT VP token", e);
             return null;
         }
     }
-    
+
     /**
      * Extracts the algorithm from the SD-JWT VP token header.
      */
     public String extractAlgorithmFromToken(SdJwtVP sdJwtVP) {
         try {
-            var jwt = sdJwtVP.getIssuerSignedJWT();
-            var header = jwt.getHeader();
-            var algorithm = header.getAlgorithm();
-            return algorithm != null ? algorithm.name() : null;
+            return extractHeaderParam(sdJwtVP, "alg");
         } catch (Exception e) {
             logger.warn("Failed to extract algorithm from SD-JWT VP token", e);
             return null;
         }
+    }
+
+    private String extractHeaderParam(SdJwtVP sdJwtVP, String paramName) {
+        var jwt = sdJwtVP.getIssuerSignedJWT();
+        var header = jwt.getHeader();
+        if ("kid".equals(paramName)) {
+            return header != null ? header.getKeyId() : null;
+        }
+        if ("alg".equals(paramName)) {
+            var algorithm = header != null ? header.getAlgorithm() : null;
+            return algorithm != null ? algorithm.name() : null;
+        }
+        return null;
     }
     
     /**
@@ -379,7 +369,7 @@ public class SdJwtVPValidationService {
                 String keyType = jwkNode.get("kty").asText();
                 logger.debugf("Extracting holder signing key of type: %s", keyType);
                 
-                PublicKey publicKey = jwksService.extractPublicKeyFromJwksKey(jwkNode);
+                PublicKey publicKey = extractPublicKeyFromJwk(jwkNode);
                 if (publicKey != null) {
                     logger.debugf("Successfully extracted holder signing key: %s", publicKey.getAlgorithm());
                 } else {
@@ -398,6 +388,43 @@ public class SdJwtVPValidationService {
         }
     }
     
+    private PublicKey extractPublicKeyFromJwk(JsonNode jwkNode) throws StatusListException {
+        try {
+            if (!jwkNode.has("kty")) {
+                logger.warn("JWK missing required 'kty' field");
+                return null;
+            }
+
+            String keyType = jwkNode.get("kty").asText();
+            logger.debugf("Extracting public key of type: %s", keyType);
+
+            if (keyType.equals("RSA")) {
+                if (!jwkNode.has("n") || !jwkNode.has("e")) {
+                    logger.warn("RSA JWK missing required 'n' or 'e' fields");
+                    return null;
+                }
+                BigInteger modulus = new BigInteger(1, Base64.getUrlDecoder().decode(jwkNode.get("n").asText()));
+                BigInteger exponent = new BigInteger(1, Base64.getUrlDecoder().decode(jwkNode.get("e").asText()));
+                return KeyFactory.getInstance("RSA").generatePublic(new RSAPublicKeySpec(modulus, exponent));
+            } else if (keyType.equals("EC")) {
+                if (!jwkNode.has("x") || !jwkNode.has("y")) {
+                    logger.warn("EC JWK missing required 'x' or 'y' fields");
+                    return null;
+                }
+                ECPoint point = new ECPoint(
+                    new BigInteger(1, Base64.getUrlDecoder().decode(jwkNode.get("x").asText())),
+                    new BigInteger(1, Base64.getUrlDecoder().decode(jwkNode.get("y").asText()))
+                );
+                return KeyFactory.getInstance("EC").generatePublic(new ECPublicKeySpec(point, null)); // Elliptic curves don't have an exponent
+            }
+            logger.warnf("Unsupported JWK key type: %s", keyType);
+            return null;
+        } catch (Exception e) {
+            logger.error("Failed to extract public key from JWK", e);
+            throw new StatusListException("Failed to extract public key from JWK: " + e.getMessage(), e);
+        }
+    }
+
     private void logTokenStructure(SdJwtVP sdJwtVP, String requestId) {
         try {
             var issuerSignedJWT = sdJwtVP.getIssuerSignedJWT();
@@ -419,32 +446,6 @@ public class SdJwtVPValidationService {
         } catch (Exception e) {
             logger.debugf("Failed to log token structure. RequestId: %s, Error: %s", requestId, e.getMessage());
         }
-    }
-    
-    private List<SignatureVerifierContext> createVerifierContexts(List<PublicKey> publicKeys, String requestId) {
-        List<SignatureVerifierContext> verifyingKeys = new ArrayList<>();
-        for (int i = 0; i < publicKeys.size(); i++) {
-            PublicKey publicKey = publicKeys.get(i);
-            try {
-                logger.debugf("Processing issuer public key %d: %s. RequestId: %s", i + 1, publicKey.getAlgorithm(), requestId);
-                
-                String[] algorithms = {"RS256", "ES256", "PS256"};
-                for (String algorithm : algorithms) {
-                    try {
-                        SignatureVerifierContext verifierContext = createSignatureVerifierContextFromPublicKey(publicKey, algorithm);
-                        verifyingKeys.add(verifierContext);
-                        logger.debugf("Added issuer verifier context for key %d with algorithm: %s. RequestId: %s", i + 1, algorithm, requestId);
-                    } catch (Exception e) {
-                        logger.debugf("Failed to create issuer verifier context for key %d with algorithm: %s. RequestId: %s, Error: %s", 
-                                     i + 1, algorithm, requestId, e.getMessage());
-                    }
-                }
-            } catch (Exception e) {
-                logger.warnf("Failed to create issuer verifier context for public key %d. RequestId: %s, Error: %s", 
-                            i + 1, requestId, e.getMessage());
-            }
-        }
-        return verifyingKeys;
     }
     
     private String findCredentialIdRecursively(JsonNode node) {
@@ -489,5 +490,64 @@ public class SdJwtVPValidationService {
             logger.debug("Failed to extract field " + fieldName + " from payload", e);
         }
         return null;
+    }
+
+    /**
+     * Creates issuer signed JWT verification options with appropriate security settings.
+     * These options control how the issuer signature is validated.
+     */
+    private IssuerSignedJwtVerificationOpts getIssuerSignedJwtVerificationOpts() {
+        return IssuerSignedJwtVerificationOpts.builder()
+                .withValidateNotBeforeClaim(false)
+                .withValidateExpirationClaim(false)
+                .build();
+    }
+
+    /**
+     * Creates key binding JWT verification options that enforce presenter verification.
+     * This is critical for ensuring the presenter is actually the credential holder.
+     */
+    private KeyBindingJwtVerificationOpts getKeyBindingJwtVerificationOpts(String requestId) {
+        try {
+            String expectedKbJwtAud = this.session.getContext().getUri().getBaseUri().getHost();
+            logger.debugf("Setting expected key binding audience: %s. RequestId: %s", expectedKbJwtAud, requestId);
+            
+            return KeyBindingJwtVerificationOpts.builder()
+                    .withKeyBindingRequired(true)
+                    .withAllowedMaxAge(300)
+                    .withAud(expectedKbJwtAud)
+                    .withValidateExpirationClaim(true)
+                    .build();
+                    
+        } catch (Exception e) {
+            logger.warnf("Could not determine expected audience from session context, using default. RequestId: %s, Error: %s", 
+                        requestId, e.getMessage());
+            
+            // Fallback to secure defaults if we can't get the context
+            return KeyBindingJwtVerificationOpts.builder()
+                    .withKeyBindingRequired(true)
+                    .withAllowedMaxAge(300)
+                    .withValidateExpirationClaim(true)   
+                    .build();
+        }
+    }
+
+    /**
+     * Helper method to extract a field from the JWT payload.
+     */
+    private String extractPayloadField(SdJwtVP sdJwtVP, String fieldName) {
+        try {
+            var jwt = sdJwtVP.getIssuerSignedJWT();
+            var payload = jwt.getPayload();
+            if (payload instanceof JsonNode) {
+                JsonNode payloadNode = (JsonNode) payload;
+                JsonNode fieldNode = payloadNode.get(fieldName);
+                return fieldNode != null ? fieldNode.asText() : null;
+            }
+            return null;
+        } catch (Exception e) {
+            logger.debugf("Failed to extract field %s from JWT payload", fieldName, e);
+            return null;
+        }
     }
 } 

@@ -67,7 +67,7 @@ class RevocationRecordServiceTest {
         String requestId = "test-request-id";
         
         CredentialRevocationRequest request = new CredentialRevocationRequest(
-                "test-sd-jwt-vp", credentialId, revocationReason
+                credentialId, revocationReason
         );
         
         // Mock key manager
@@ -99,7 +99,7 @@ class RevocationRecordServiceTest {
         String requestId = "test-request-id";
         
         CredentialRevocationRequest request = new CredentialRevocationRequest(
-                "test-sd-jwt-vp", credentialId, null
+                credentialId, null
         );
         
         // Mock key manager
@@ -123,7 +123,7 @@ class RevocationRecordServiceTest {
         String requestId = "test-request-id";
         
         CredentialRevocationRequest request = new CredentialRevocationRequest(
-                "test-sd-jwt-vp", credentialId, ""
+                credentialId, ""
         );
         
         // Mock key manager
@@ -148,7 +148,7 @@ class RevocationRecordServiceTest {
         String requestId = "test-request-id";
         
         CredentialRevocationRequest request = new CredentialRevocationRequest(
-                "test-sd-jwt-vp", credentialId, revocationReason
+                credentialId, revocationReason
         );
         
         // Mock key manager to return null
@@ -170,7 +170,7 @@ class RevocationRecordServiceTest {
         String requestId = "test-request-id";
         
         CredentialRevocationRequest request = new CredentialRevocationRequest(
-                "test-sd-jwt-vp", credentialId, revocationReason
+                credentialId, revocationReason
         );
         
         // Mock key manager to return key without public key
@@ -193,7 +193,7 @@ class RevocationRecordServiceTest {
         String requestId = "test-request-id";
         
         CredentialRevocationRequest request = new CredentialRevocationRequest(
-                "test-sd-jwt-vp", credentialId, revocationReason
+                credentialId, revocationReason
         );
         
         // Mock key manager
@@ -218,7 +218,7 @@ class RevocationRecordServiceTest {
         String requestId = "test-request-id";
         
         CredentialRevocationRequest request = new CredentialRevocationRequest(
-                "test-sd-jwt-vp", credentialId, revocationReason
+                credentialId, revocationReason
         );
         
         // Mock key manager
@@ -243,7 +243,7 @@ class RevocationRecordServiceTest {
         String requestId = "test-request-id";
         
         CredentialRevocationRequest request = new CredentialRevocationRequest(
-                "test-sd-jwt-vp", credentialId, revocationReason
+                credentialId, revocationReason
         );
         
         // Mock key manager to throw exception
@@ -314,7 +314,7 @@ class RevocationRecordServiceTest {
         String requestId = "test-request-id";
         
         CredentialRevocationRequest request = new CredentialRevocationRequest(
-                "test-sd-jwt-vp", credentialId, revocationReason
+                credentialId, revocationReason
         );
         
         // Mock key manager
@@ -344,7 +344,7 @@ class RevocationRecordServiceTest {
         when(realm.getName()).thenReturn(realmName);
         
         CredentialRevocationRequest request = new CredentialRevocationRequest(
-                "test-sd-jwt-vp", credentialId, revocationReason
+                credentialId, revocationReason
         );
         
         // Mock key manager
@@ -369,7 +369,7 @@ class RevocationRecordServiceTest {
         String requestId = "test-request-id";
         
         CredentialRevocationRequest request = new CredentialRevocationRequest(
-                "test-sd-jwt-vp", credentialId, revocationReason
+                credentialId, revocationReason
         );
         
         // Mock key manager
@@ -393,7 +393,7 @@ class RevocationRecordServiceTest {
         String requestId = "test-request-id";
         
         CredentialRevocationRequest request = new CredentialRevocationRequest(
-                "test-sd-jwt-vp", credentialId, revocationReason
+                credentialId, revocationReason
         );
         
         // Mock key manager

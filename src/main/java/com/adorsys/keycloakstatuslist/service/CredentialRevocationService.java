@@ -29,7 +29,7 @@ public class CredentialRevocationService {
 
     public CredentialRevocationService(KeycloakSession session) {
         this.session = session;
-        this.sdJwtVPValidationService = new SdJwtVPValidationService();
+        this.sdJwtVPValidationService = new SdJwtVPValidationService(session);
         this.revocationRecordService = new RevocationRecordService(session);
         this.requestValidationService = new RequestValidationService();
     }
@@ -55,11 +55,12 @@ public class CredentialRevocationService {
     /**
      * Processes a credential revocation request.
      * 
-     * @param request the revocation request containing SD-JWT VP token
+     * @param request the revocation request containing credential ID and revocation reason
+     * @param sdJwtVpToken the SD-JWT VP token from the Authorization header
      * @return response indicating success or failure of the revocation
      * @throws StatusListException if revocation processing fails
      */
-    public CredentialRevocationResponse revokeCredential(CredentialRevocationRequest request) 
+    public CredentialRevocationResponse revokeCredential(CredentialRevocationRequest request, String sdJwtVpToken) 
             throws StatusListException {
         
         String requestId = UUID.randomUUID().toString();
@@ -70,7 +71,7 @@ public class CredentialRevocationService {
                     requestId, request.getCredentialId());
 
         try {
-            SdJwtVP sdJwtVP = sdJwtVPValidationService.parseAndValidateSdJwtVP(request.getSdJwtVp(), requestId);
+            SdJwtVP sdJwtVP = sdJwtVPValidationService.parseAndValidateSdJwtVP(sdJwtVpToken, requestId);
             sdJwtVPValidationService.verifyCredentialOwnership(sdJwtVP, request.getCredentialId(), requestId);
             
             TokenStatusRecord revocationRecord = revocationRecordService.createRevocationRecord(request, requestId);

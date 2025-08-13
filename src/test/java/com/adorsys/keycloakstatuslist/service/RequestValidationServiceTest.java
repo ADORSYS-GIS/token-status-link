@@ -26,7 +26,6 @@ class RequestValidationServiceTest {
     void testValidateRevocationRequest_Success() {
         // Arrange
         CredentialRevocationRequest request = new CredentialRevocationRequest(
-                "valid-sd-jwt-vp-token",
                 "test-credential-123",
                 "User requested revocation"
         );
@@ -48,61 +47,9 @@ class RequestValidationServiceTest {
     }
 
     @Test
-    void testValidateRevocationRequest_NullSdJwtVp() {
-        // Arrange
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                null,
-                "test-credential-123",
-                "User requested revocation"
-        );
-        
-        // Act & Assert
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.validateRevocationRequest(request);
-        });
-        
-        assertEquals("SD-JWT VP token is required", exception.getMessage());
-    }
-
-    @Test
-    void testValidateRevocationRequest_EmptySdJwtVp() {
-        // Arrange
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                "",
-                "test-credential-123",
-                "User requested revocation"
-        );
-        
-        // Act & Assert
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.validateRevocationRequest(request);
-        });
-        
-        assertEquals("SD-JWT VP token is required", exception.getMessage());
-    }
-
-    @Test
-    void testValidateRevocationRequest_WhitespaceSdJwtVp() {
-        // Arrange
-        CredentialRevocationRequest request = new CredentialRevocationRequest(
-                "   ",
-                "test-credential-123",
-                "User requested revocation"
-        );
-        
-        // Act & Assert
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.validateRevocationRequest(request);
-        });
-        
-        assertEquals("SD-JWT VP token is required", exception.getMessage());
-    }
-
-    @Test
     void testValidateRevocationRequest_NullCredentialId() {
         // Arrange
         CredentialRevocationRequest request = new CredentialRevocationRequest(
-                "valid-sd-jwt-vp-token",
                 null,
                 "User requested revocation"
         );
@@ -119,7 +66,6 @@ class RequestValidationServiceTest {
     void testValidateRevocationRequest_EmptyCredentialId() {
         // Arrange
         CredentialRevocationRequest request = new CredentialRevocationRequest(
-                "valid-sd-jwt-vp-token",
                 "",
                 "User requested revocation"
         );
@@ -136,7 +82,6 @@ class RequestValidationServiceTest {
     void testValidateRevocationRequest_WhitespaceCredentialId() {
         // Arrange
         CredentialRevocationRequest request = new CredentialRevocationRequest(
-                "valid-sd-jwt-vp-token",
                 "   ",
                 "User requested revocation"
         );
@@ -154,8 +99,7 @@ class RequestValidationServiceTest {
         // Arrange
         CredentialRevocationRequest request = new CredentialRevocationRequest(
                 null,
-                null,
-                "User requested revocation"
+                null
         );
         
         // Act & Assert 
@@ -163,7 +107,7 @@ class RequestValidationServiceTest {
             service.validateRevocationRequest(request);
         });
         
-        assertEquals("SD-JWT VP token is required", exception.getMessage());
+        assertEquals("Credential ID is required", exception.getMessage());
     }
 
     @Test
@@ -171,8 +115,7 @@ class RequestValidationServiceTest {
         // Arrange
         CredentialRevocationRequest request = new CredentialRevocationRequest(
                 "",
-                "",
-                "User requested revocation"
+                ""
         );
         
         // Act & Assert 
@@ -180,14 +123,13 @@ class RequestValidationServiceTest {
             service.validateRevocationRequest(request);
         });
         
-        assertEquals("SD-JWT VP token is required", exception.getMessage());
+        assertEquals("Credential ID is required", exception.getMessage());
     }
 
     @Test
     void testValidateRevocationRequest_ValidWithNullReason() {
         // Arrange
         CredentialRevocationRequest request = new CredentialRevocationRequest(
-                "valid-sd-jwt-vp-token",
                 "test-credential-123",
                 null
         );
@@ -202,7 +144,6 @@ class RequestValidationServiceTest {
     void testValidateRevocationRequest_ValidWithEmptyReason() {
         // Arrange
         CredentialRevocationRequest request = new CredentialRevocationRequest(
-                "valid-sd-jwt-vp-token",
                 "test-credential-123",
                 ""
         );
@@ -218,7 +159,6 @@ class RequestValidationServiceTest {
         // Arrange
         String longReason = "a".repeat(300);
         CredentialRevocationRequest request = new CredentialRevocationRequest(
-                "valid-sd-jwt-vp-token",
                 "test-credential-123",
                 longReason
         );
@@ -233,7 +173,6 @@ class RequestValidationServiceTest {
     void testValidateRevocationRequest_ValidWithSpecialCharacters() {
         // Arrange
         CredentialRevocationRequest request = new CredentialRevocationRequest(
-                "valid-sd-jwt-vp-token-with-special-chars!@#$%",
                 "test-credential-123-with-special-chars!@#$%",
                 "Reason with special chars: !@#$%^&*()"
         );
@@ -248,7 +187,6 @@ class RequestValidationServiceTest {
     void testValidateRevocationRequest_ValidWithUnicode() {
         // Arrange
         CredentialRevocationRequest request = new CredentialRevocationRequest(
-                "valid-sd-jwt-vp-token-üöä",
                 "test-credential-123-üöä",
                 "Reason with unicode: üöäéèê"
         );
@@ -263,7 +201,6 @@ class RequestValidationServiceTest {
     void testValidateRevocationRequest_ValidWithNumbers() {
         // Arrange
         CredentialRevocationRequest request = new CredentialRevocationRequest(
-                "valid-sd-jwt-vp-token-123",
                 "test-credential-456",
                 "Reason with numbers: 1234567890"
         );
@@ -278,7 +215,6 @@ class RequestValidationServiceTest {
     void testValidateRevocationRequest_ValidWithHyphens() {
         // Arrange
         CredentialRevocationRequest request = new CredentialRevocationRequest(
-                "valid-sd-jwt-vp-token-with-hyphens",
                 "test-credential-id-with-hyphens",
                 "Reason with hyphens: user-requested-revocation"
         );
@@ -293,7 +229,6 @@ class RequestValidationServiceTest {
     void testValidateRevocationRequest_ValidWithUnderscores() {
         // Arrange
         CredentialRevocationRequest request = new CredentialRevocationRequest(
-                "valid_sd_jwt_vp_token_with_underscores",
                 "test_credential_id_with_underscores",
                 "Reason with underscores: user_requested_revocation"
         );
@@ -308,7 +243,6 @@ class RequestValidationServiceTest {
     void testValidateRevocationRequest_ValidWithSpaces() {
         // Arrange
         CredentialRevocationRequest request = new CredentialRevocationRequest(
-                "valid sd jwt vp token with spaces",
                 "test credential id with spaces",
                 "Reason with spaces: user requested revocation"
         );
@@ -322,12 +256,10 @@ class RequestValidationServiceTest {
     @Test
     void testValidateRevocationRequest_ValidWithVeryLongValues() {
         // Arrange
-        String longToken = "a".repeat(10000);
         String longCredentialId = "b".repeat(1000);
         String longReason = "c".repeat(500);
         
         CredentialRevocationRequest request = new CredentialRevocationRequest(
-                longToken,
                 longCredentialId,
                 longReason
         );

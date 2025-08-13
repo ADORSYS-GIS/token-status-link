@@ -5,6 +5,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.keycloak.crypto.SignatureVerifierContext;
+import org.keycloak.models.KeycloakSession;
 import org.keycloak.sdjwt.vp.SdJwtVP;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -12,6 +13,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.security.PublicKey;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 /**
  * Unit tests for SdJwtVPValidationService.
@@ -20,7 +22,13 @@ import static org.junit.jupiter.api.Assertions.*;
 class SdJwtVPValidationServiceTest {
 
     @Mock
+    private KeycloakSession session;
+    
+    @Mock
     private JwksService jwksService;
+    
+    @Mock
+    private org.keycloak.models.KeycloakContext context;
     
     @Mock
     private SdJwtVP sdJwtVP;
@@ -35,14 +43,20 @@ class SdJwtVPValidationServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new SdJwtVPValidationService();
+        service = new SdJwtVPValidationService(session);
         
         try {
+            // Inject mocked JwksService
             java.lang.reflect.Field jwksField = SdJwtVPValidationService.class.getDeclaredField("jwksService");
             jwksField.setAccessible(true);
             jwksField.set(service, jwksService);
+            
+            // Inject mocked session
+            java.lang.reflect.Field sessionField = SdJwtVPValidationService.class.getDeclaredField("session");
+            sessionField.setAccessible(true);
+            sessionField.set(service, session);
         } catch (Exception e) {
-            fail("Failed to inject mocked JwksService: " + e.getMessage());
+            fail("Failed to inject mocked dependencies: " + e.getMessage());
         }
     }
     @Test

@@ -1,90 +1,149 @@
 package com.adorsys.keycloakstatuslist.service;
 
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
-import com.fasterxml.jackson.databind.JsonNode;
 import org.jboss.logging.Logger;
+import org.keycloak.crypto.KeyUse;
+import org.keycloak.crypto.KeyWrapper;
+import org.keycloak.crypto.SignatureProvider;
+import org.keycloak.crypto.SignatureVerifierContext;
+import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.RealmModel;
+import org.keycloak.sdjwt.IssuerSignedJWT;
 import org.keycloak.sdjwt.vp.SdJwtVP;
+import org.keycloak.common.VerificationException;
 
 import java.security.PublicKey;
 import java.util.List;
-import java.util.ArrayList;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
- * Main service for handling JWKS (JSON Web Key Set) operations.
- * Orchestrates the fetching, parsing, and extraction of public keys from issuer JWKS endpoints.
+ * Service for retrieving Keycloak's internal verifying keys.
+ * Leverages Keycloak's session and key management instead of external JWKS endpoints.
  */
 public class JwksService {
     
     private static final Logger logger = Logger.getLogger(JwksService.class);
     
-    private final JwksHttpClient httpClient;
-    private final JwksParser parser;
-    private final JwksKeyExtractor keyExtractor;
+    private final KeycloakSession session;
     
-    public JwksService() {
-        this.httpClient = new JwksHttpClient();
-        this.parser = new JwksParser();
-        this.keyExtractor = new JwksKeyExtractor();
+    public JwksService(KeycloakSession session) {
+        this.session = session;
     }
     
     /**
-     * Fetches all public keys from the issuer's JWKS endpoint.
+     * Retrieves all public keys from Keycloak's internal key management.
+     * This is more efficient than making HTTP requests to JWKS endpoints.
      */
     public List<PublicKey> getAllIssuerPublicKeys(SdJwtVP sdJwtVP, String issuer, String requestId) throws StatusListException {
         try {
-            String jwksUrl = httpClient.buildJwksUrl(issuer);
-            JsonNode jwksJson = httpClient.fetchJwks(jwksUrl, requestId);
+            RealmModel realm = session.getContext().getRealm();
+            var keyManager = session.keys();
             
-            List<PublicKey> publicKeys = new ArrayList<>();
-            JsonNode keysNode = jwksJson.get("keys");
+            Stream<KeyWrapper> keyStream = keyManager.getKeysStream(realm)
+                    .filter(key -> KeyUse.SIG.equals(key.getUse()));
             
-            if (keysNode != null && keysNode.isArray()) {
-                logger.debugf("Found %d keys in JWKS for issuer: %s. RequestId: %s", keysNode.size(), issuer, requestId);
-                
-                for (int i = 0; i < keysNode.size(); i++) {
-                    JsonNode jwk = keysNode.get(i);
-                    
-                    if (parser.isValidKeyForExtraction(jwk)) {
-                        try {
-                            String kid = parser.getKeyId(jwk);
-                            String kty = parser.getKeyType(jwk);
-                            
-                            logger.debugf("Processing key %d with kid: %s, type: %s. RequestId: %s", i + 1, kid, kty, requestId);
-                            
-                            PublicKey publicKey = keyExtractor.extractPublicKeyFromJwksKey(jwk);
-                            publicKeys.add(publicKey);
-                            
-                            logger.debugf("Successfully extracted %s public key %d. RequestId: %s", kty, i + 1, requestId);
-                            
-                        } catch (Exception e) {
-                            logger.warnf("Failed to extract public key from key %d. RequestId: %s, Error: %s", i + 1, requestId, e.getMessage());
-                        }
-                    } else {
-                        logger.warnf("Skipping key %d - unsupported type or missing required fields. RequestId: %s", i + 1, requestId);
-                    }
-                }
+            // If we have a specific key ID from the JWT header, filter by it
+            String signingKeyId = getSigningKeyId(sdJwtVP);
+            if (signingKeyId != null) {
+                keyStream = keyStream.filter(key -> signingKeyId.equals(key.getKid()));
+                logger.debugf("Filtering keys by kid: %s. RequestId: %s", signingKeyId, requestId);
             }
             
-            logger.infof("Successfully extracted %d public keys from JWKS for issuer: %s. RequestId: %s", publicKeys.size(), issuer, requestId);
+            List<PublicKey> publicKeys = keyStream
+                    .map(key -> {
+                        try {
+                            java.security.Key keyValue = key.getPublicKey();
+                            if (keyValue instanceof PublicKey) {
+                                PublicKey publicKey = (PublicKey) keyValue;
+                                logger.debugf("Retrieved public key: %s, algorithm: %s, kid: %s. RequestId: %s", 
+                                            publicKey.getAlgorithm(), key.getAlgorithm(), key.getKid(), requestId);
+                                return publicKey;
+                            } else {
+                                logger.warnf("Key %s is not a PublicKey (type: %s). RequestId: %s", 
+                                            key.getKid(), keyValue != null ? keyValue.getClass().getSimpleName() : "null", requestId);
+                                return null;
+                            }
+                        } catch (Exception e) {
+                            logger.warnf("Failed to retrieve public key from key %s. RequestId: %s, Error: %s", 
+                                        key.getKid(), requestId, e.getMessage());
+                            return null;
+                        }
+                    })
+                    .filter(publicKey -> publicKey != null)
+                    .collect(Collectors.toList());
+            
+            logger.infof("Successfully retrieved %d public keys from Keycloak session. RequestId: %s", 
+                        publicKeys.size(), requestId);
             return publicKeys;
-
+            
         } catch (Exception e) {
-            logger.errorf("Failed to fetch or parse issuer JWKS. RequestId: %s, Error: %s", requestId, e.getMessage());
-            throw new StatusListException("Failed to fetch or parse issuer JWKS: " + e.getMessage(), e);
+            logger.errorf("Failed to retrieve public keys from Keycloak session. RequestId: %s, Error: %s", 
+                         requestId, e.getMessage());
+            throw new StatusListException("Failed to retrieve public keys from Keycloak session: " + e.getMessage(), e);
         }
     }
     
     /**
-     * Finds a key in the JWKS JSON by its "kid" (Key ID).
+     * Creates signature verifier contexts directly from Keycloak's key management.
+     * This is the preferred approach as it avoids converting keys unnecessarily.
      */
-    public JsonNode findKeyByKid(JsonNode jwksJson, String kid) {
-        return parser.findKeyByKid(jwksJson, kid);
+    public List<SignatureVerifierContext> getSignatureVerifierContexts(SdJwtVP sdJwtVP, String issuer, String requestId) throws StatusListException {
+        try {
+            RealmModel realm = session.getContext().getRealm();
+            var keyManager = session.keys();
+            
+            Stream<KeyWrapper> keyStream = keyManager.getKeysStream(realm)
+                    .filter(key -> KeyUse.SIG.equals(key.getUse()));
+            
+            // If we have a specific key ID from the JWT header, filter by it
+            String signingKeyId = getSigningKeyId(sdJwtVP);
+            if (signingKeyId != null) {
+                keyStream = keyStream.filter(key -> signingKeyId.equals(key.getKid()));
+                logger.debugf("Filtering keys by kid: %s. RequestId: %s", signingKeyId, requestId);
+            }
+            
+            List<SignatureVerifierContext> verifiers = keyStream
+                    .map(key -> {
+                        try {
+                            SignatureProvider signatureProvider = session
+                                    .getProvider(SignatureProvider.class, key.getAlgorithmOrDefault());
+                            SignatureVerifierContext verifier = signatureProvider.verifier(key);
+                            logger.debugf("Created verifier for key: %s, algorithm: %s. RequestId: %s", 
+                                        key.getKid(), key.getAlgorithm(), requestId);
+                            return verifier;
+                        } catch (VerificationException e) {
+                            logger.warnf("Failed to create verifier for key %s. RequestId: %s, Error: %s", 
+                                        key.getKid(), requestId, e.getMessage());
+                            return null;
+                        }
+                    })
+                    .filter(verifier -> verifier != null)
+                    .collect(Collectors.toList());
+            
+            logger.infof("Successfully created %d signature verifier contexts. RequestId: %s", 
+                        verifiers.size(), requestId);
+            return verifiers;
+            
+        } catch (Exception e) {
+            logger.errorf("Failed to create signature verifier contexts. RequestId: %s, Error: %s", 
+                         requestId, e.getMessage());
+            throw new StatusListException("Failed to create signature verifier contexts: " + e.getMessage(), e);
+        }
     }
     
     /**
-     * Extracts the public key from a JWKS key node.
+     * Extracts the signing key ID from the JWT header if available.
      */
-    public PublicKey extractPublicKeyFromJwksKey(JsonNode keyNode) throws StatusListException {
-        return keyExtractor.extractPublicKeyFromJwksKey(keyNode);
+    private String getSigningKeyId(SdJwtVP sdJwtVP) {
+        try {
+            IssuerSignedJWT issuerSignedJWT = sdJwtVP.getIssuerSignedJWT();
+            if (issuerSignedJWT != null && issuerSignedJWT.getHeader() != null) {
+                return issuerSignedJWT.getHeader().getKeyId();
+            }
+        } catch (Exception e) {
+            logger.debug("Could not extract signing key ID from JWT header", e);
+        }
+        return null;
     }
 } 

@@ -136,7 +136,7 @@ class CredentialRevocationServiceTest {
         doNothing().when(statusListService).publishRecord(any(TokenStatusRecord.class));
         
         // Act
-        CredentialRevocationResponse response = service.revokeCredential(request);
+        CredentialRevocationResponse response = service.revokeCredential(request, "valid-sd-jwt-vp-token");
         
         // Assert - Test ONLY the main service's orchestration logic
         assertNotNull(response);
@@ -163,7 +163,7 @@ class CredentialRevocationServiceTest {
         
         // Act & Assert
         StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(request);
+            service.revokeCredential(request, "valid-sd-jwt-vp-token");
         });
         
         // Test that the main service properly handles the error
@@ -187,7 +187,7 @@ class CredentialRevocationServiceTest {
         
         // Act & Assert
         StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(request);
+            service.revokeCredential(request, "valid-sd-jwt-vp-token");
         });
         
         // Test that the main service properly handles the error
@@ -215,7 +215,7 @@ class CredentialRevocationServiceTest {
         
         // Act & Assert
         StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(request);
+            service.revokeCredential(request, "valid-sd-jwt-vp-token");
         });
         
         // Test that the main service properly handles the error
@@ -243,8 +243,8 @@ class CredentialRevocationServiceTest {
         doNothing().when(statusListService).publishRecord(any(TokenStatusRecord.class));
         
         // Act
-        service.revokeCredential(request1);
-        service.revokeCredential(request2);
+        service.revokeCredential(request1, "valid-sd-jwt-vp-token");
+        service.revokeCredential(request2, "valid-sd-jwt-vp-token");
         
         // Assert - Verify that different request IDs were generated
         verify(sdJwtVPValidationService, times(2)).parseAndValidateSdJwtVP(anyString(), anyString());
@@ -264,7 +264,7 @@ class CredentialRevocationServiceTest {
         
         // Act & Assert
         StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.revokeCredential(request);
+            service.revokeCredential(request, "valid-sd-jwt-vp-token");
         });
         
         // Test that the main service properly wraps unexpected exceptions
@@ -281,7 +281,6 @@ class CredentialRevocationServiceTest {
 
     private CredentialRevocationRequest createValidRequest() {
         return new CredentialRevocationRequest(
-                "valid-sd-jwt-vp-token",
                 "test-credential-123",
                 "Test revocation"
         );

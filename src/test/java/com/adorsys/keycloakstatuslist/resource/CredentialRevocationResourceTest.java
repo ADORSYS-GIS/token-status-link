@@ -63,14 +63,14 @@ class CredentialRevocationResourceTest {
     void testValidRequestParsing() throws Exception {
         // Arrange
         CredentialRevocationRequest request = new CredentialRevocationRequest(
-                "sd-jwt-vp-token", "test-credential-123", "Test revocation"
+                "test-credential-123", "Test revocation"
         );
         String requestBody = objectMapper.writeValueAsString(request);
         
         // Act & Assert - Just test that the request can be parsed
         assertNotNull(requestBody);
-        assertTrue(requestBody.contains("sd-jwt-vp-token"));
         assertTrue(requestBody.contains("test-credential-123"));
+        assertTrue(requestBody.contains("Test revocation"));
     }
 
     @Test
@@ -80,7 +80,6 @@ class CredentialRevocationResourceTest {
         
         // Act & Assert - Test that invalid JSON is handled gracefully
         assertNotNull(invalidJson);
-        assertFalse(invalidJson.contains("sd_jwt_vp"));
     }
 
     @Test

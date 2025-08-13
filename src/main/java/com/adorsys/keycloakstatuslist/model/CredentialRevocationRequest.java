@@ -4,12 +4,10 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
  * Request model for credential revocation.
- * Contains the SD-JWT VP token proving ownership and the credential to revoke.
+ * Contains the credential to revoke and optional revocation reason.
+ * Note: SD-JWT VP token should be passed as Bearer token in Authorization header.
  */
 public class CredentialRevocationRequest {
-    
-    @JsonProperty("sd_jwt_vp")
-    private String sdJwtVp;
     
     @JsonProperty("credential_id")
     private String credentialId;
@@ -21,18 +19,9 @@ public class CredentialRevocationRequest {
         // Default constructor for JSON deserialization
     }
     
-    public CredentialRevocationRequest(String sdJwtVp, String credentialId, String revocationReason) {
-        this.sdJwtVp = sdJwtVp;
+    public CredentialRevocationRequest(String credentialId, String revocationReason) {
         this.credentialId = credentialId;
         this.revocationReason = revocationReason;
-    }
-    
-    public String getSdJwtVp() {
-        return sdJwtVp;
-    }
-    
-    public void setSdJwtVp(String sdJwtVp) {
-        this.sdJwtVp = sdJwtVp;
     }
     
     public String getCredentialId() {
