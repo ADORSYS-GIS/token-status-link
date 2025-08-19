@@ -6,18 +6,14 @@ import static org.mockito.Mockito.*;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.net.URISyntaxException;
 import java.time.Instant;
 
 import com.adorsys.keycloakstatuslist.client.StatusListClient;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.apache.hc.client5.http.classic.methods.HttpPost;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpResponse;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.apache.hc.core5.http.HttpEntity;
-import org.apache.hc.core5.http.io.entity.StringEntity;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -53,12 +49,12 @@ public class StatusListClientTest {
 
     @Test
     void testPublishRecordServerError() throws IOException {
-        try (MockedStatic<org.apache.hc.client5.http.impl.classic.HttpClients> httpClientsMock =
-                     mockStatic(org.apache.hc.client5.http.impl.classic.HttpClients.class)) {
+        try (MockedStatic<org.apache.hc.client5.http.impl.classic.HttpClients> httpClientsMock = mockStatic(
+                org.apache.hc.client5.http.impl.classic.HttpClients.class)) {
 
             // Create the mock builder
-            org.apache.hc.client5.http.impl.classic.HttpClientBuilder mockBuilder =
-                    mock(org.apache.hc.client5.http.impl.classic.HttpClientBuilder.class);
+            org.apache.hc.client5.http.impl.classic.HttpClientBuilder mockBuilder = mock(
+                    org.apache.hc.client5.http.impl.classic.HttpClientBuilder.class);
 
             // Setup the static mock to return our mock builder
             httpClientsMock.when(HttpClients::custom)
@@ -96,12 +92,12 @@ public class StatusListClientTest {
 
     @Test
     void testPublishRecordNetworkError() throws IOException {
-        try (MockedStatic<org.apache.hc.client5.http.impl.classic.HttpClients> httpClientsMock =
-                     mockStatic(org.apache.hc.client5.http.impl.classic.HttpClients.class)) {
+        try (MockedStatic<org.apache.hc.client5.http.impl.classic.HttpClients> httpClientsMock = mockStatic(
+                org.apache.hc.client5.http.impl.classic.HttpClients.class)) {
 
             // Create the mock builder
-            org.apache.hc.client5.http.impl.classic.HttpClientBuilder mockBuilder =
-                    mock(org.apache.hc.client5.http.impl.classic.HttpClientBuilder.class);
+            org.apache.hc.client5.http.impl.classic.HttpClientBuilder mockBuilder = mock(
+                    org.apache.hc.client5.http.impl.classic.HttpClientBuilder.class);
 
             // Setup the static mock
             httpClientsMock.when(HttpClients::custom)
@@ -155,9 +151,11 @@ public class StatusListClientTest {
 
     @Test
     void testRevokedTokenValidation() throws IOException {
-        try (MockedStatic<org.apache.hc.client5.http.impl.classic.HttpClients> httpClientsMock = mockStatic(org.apache.hc.client5.http.impl.classic.HttpClients.class)) {
+        try (MockedStatic<org.apache.hc.client5.http.impl.classic.HttpClients> httpClientsMock = mockStatic(
+                org.apache.hc.client5.http.impl.classic.HttpClients.class)) {
             // Create and configure the mock builder
-            org.apache.hc.client5.http.impl.classic.HttpClientBuilder mockBuilder = mock(org.apache.hc.client5.http.impl.classic.HttpClientBuilder.class);
+            org.apache.hc.client5.http.impl.classic.HttpClientBuilder mockBuilder = mock(
+                    org.apache.hc.client5.http.impl.classic.HttpClientBuilder.class);
             when(mockBuilder.setDefaultRequestConfig(any())).thenReturn(mockBuilder);
             when(mockBuilder.build()).thenReturn(httpClient);
 

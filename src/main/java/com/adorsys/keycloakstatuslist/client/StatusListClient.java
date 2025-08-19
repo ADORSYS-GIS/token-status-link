@@ -12,7 +12,9 @@ import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.apache.hc.core5.http.ContentType;
 import org.apache.hc.core5.http.io.entity.StringEntity;
 import org.apache.hc.core5.util.Timeout;
+import org.jboss.logging.Logger;
 
+import com.adorsys.keycloakstatuslist.StatusListProtocolMapper;
 import com.adorsys.keycloakstatuslist.model.TokenStatus;
 import com.adorsys.keycloakstatuslist.model.TokenStatusRecord;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -23,6 +25,8 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
  * This can be used for testing or direct integrations.
  */
 public class StatusListClient {
+
+    private static final Logger logger = Logger.getLogger(StatusListClient.class);
     private static final ObjectMapper objectMapper = new ObjectMapper()
             .registerModule(new JavaTimeModule());
 
@@ -44,10 +48,10 @@ public class StatusListClient {
     /**
      * Creates a new StatusListClient with custom timeouts.
      *
-     * @param serverUrl the URL of the status list server
-     * @param authToken the authentication token for the server
+     * @param serverUrl      the URL of the status list server
+     * @param authToken      the authentication token for the server
      * @param connectTimeout connection timeout in milliseconds
-     * @param readTimeout read timeout in milliseconds
+     * @param readTimeout    read timeout in milliseconds
      */
     public StatusListClient(String serverUrl, String authToken, int connectTimeout, int readTimeout) {
         // Ensure server URL ends with a slash
@@ -81,37 +85,36 @@ public class StatusListClient {
                 request.setHeader("Authorization", "Bearer " + authToken);
             }
 
-            // Ensure all required fields are set
             validateStatusRecord(statusRecord);
 
             String jsonPayload = objectMapper.writeValueAsString(statusRecord);
-            System.out.println("Sending payload: " + jsonPayload);
+            logger.info("Sending payload: " + jsonPayload);
             request.setEntity(new StringEntity(jsonPayload, ContentType.APPLICATION_JSON));
 
             try (CloseableHttpResponse response = httpClient.execute(request)) {
                 int statusCode = response.getCode();
-                System.out.println("Status code: " + statusCode);
+                logger.info("Status code: " + statusCode);
 
                 if (statusCode < 200 || statusCode >= 300) {
                     try {
                         String responseBody = new String(response.getEntity().getContent().readAllBytes());
-                        System.out.println("Response body: " + responseBody);
+                        logger.warn("Response body: " + responseBody);
                     } catch (Exception e) {
-                        System.out.println("Could not read response body: " + e.getMessage());
+                        logger.warn("Could not read response body: " + e.getMessage());
                     }
                 }
 
                 return statusCode >= 200 && statusCode < 300;
             }
         } catch (IOException e) {
-            System.out.println("Error publishing record: " + e.getMessage());
-            e.printStackTrace();
+            logger.error("Error publishing record", e);
             return false;
         }
     }
 
     /**
-     * Validates that all required fields are set in the status record according to OAuth Status List spec.
+     * Validates that all required fields are set in the status record according to
+     * OAuth Status List spec.
      *
      * @param statusRecord The record to validate
      */
