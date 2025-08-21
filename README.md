@@ -90,6 +90,20 @@ mvn clean package
 
 5. Configure the plugin using the realm attributes described in the Configuration Properties section above.
 
+### Configuring Keycloak's credential issuance to use the Status List protocol mapper
+
+For the Status List protocol mapper to come into effect, you need to explicitly attach it to the client scope
+corresponding to a specific credential's configuration. Below is a sample such configuration:
+
+```json
+{
+   "name": "status-list-claim-mapper",
+   "protocol": "oid4vc",
+   "protocolMapper": "oid4vc-status-list-claim-mapper",
+   "config": {}
+}
+```
+
 ## Performance Considerations
 
 - The plugin performs non-blocking HTTP requests to minimize impact on Keycloak performance
