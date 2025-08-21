@@ -98,6 +98,13 @@
             <version>3.1.0</version>
             <scope>provided</scope>
         </dependency>
+        <!-- Jakarta REST API for JAX-RS endpoints -->
+        <dependency>
+            <groupId>jakarta.ws.rs</groupId>
+            <artifactId>jakarta.ws.rs-api</artifactId>
+            <version>3.1.0</version>
+            <scope>compile</scope>
+        </dependency>
         <!-- HTTP Client for statuslist server communication -->
         <dependency>
             <groupId>org.apache.httpcomponents.client5</groupId>
@@ -160,6 +167,7 @@
             <version>1.15.11</version>
             <scope>test</scope>
         </dependency>
+
         <!-- JAX-RS Implementation required by tests -->
         <dependency>
             <groupId>org.jboss.resteasy</groupId>
