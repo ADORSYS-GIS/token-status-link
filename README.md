@@ -132,3 +132,11 @@ For manual testing with a local status list server:
 1. Configure the `status-list-server-url` to point to your test server
 2. Set the appropriate `status-list-auth-token` if required
 3. Enable debug logging to see detailed request/response information
+
+### TODO
+
+- Remove logic depending on `REVOKE_GRANT` events. These merely do not serve the purpose of this plugin.
+- Unify HTTP interaction with the status list server in the dedicated `StatusListService` class.
+- Improve persistence layer as the plugin interacts with the database.
+- Drop unnecessary configuration properties. For instance, `status-list-auth-token` is better derived than configured.
+- Implement HTTP retry strategy within the framework of the HTTP client library, not manually. For readability.

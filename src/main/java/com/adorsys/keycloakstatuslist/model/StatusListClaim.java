@@ -49,7 +49,7 @@ public class StatusListClaim {
      * @param uri The URI of the status list resource where the token's status is
      *            published.
      */
-    public StatusListClaim(int idx, String uri) {
+    public StatusListClaim(String idx, String uri) {
         this.idx = String.valueOf(idx);
         this.uri = uri;
     }
@@ -59,7 +59,7 @@ public class StatusListClaim {
      * Internally converts URI to string.
      */
     public StatusListClaim(int idx, URI uri) {
-        this(idx, uri.toString());
+        this(String.valueOf(idx), uri.toString());
     }
 
     /**

@@ -1,4 +1,4 @@
-package com.adorsys.keycloakstatuslist.model;
+package com.adorsys.keycloakstatuslist.jpa.entity;
 
 import jakarta.persistence.*;
 import java.util.Objects;

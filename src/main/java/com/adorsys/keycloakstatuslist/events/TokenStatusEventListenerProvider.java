@@ -1,8 +1,11 @@
 package com.adorsys.keycloakstatuslist.events;
 
-import java.time.Instant;
-import java.util.Map;
-
+import com.adorsys.keycloakstatuslist.config.StatusListConfig;
+import com.adorsys.keycloakstatuslist.exception.StatusListException;
+import com.adorsys.keycloakstatuslist.exception.StatusListServerException;
+import com.adorsys.keycloakstatuslist.model.TokenStatus;
+import com.adorsys.keycloakstatuslist.model.TokenStatusRecord;
+import com.adorsys.keycloakstatuslist.service.StatusListService;
 import org.jboss.logging.Logger;
 import org.keycloak.crypto.KeyUse;
 import org.keycloak.crypto.KeyWrapper;
@@ -12,14 +15,9 @@ import org.keycloak.events.EventType;
 import org.keycloak.events.admin.AdminEvent;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
-import org.keycloak.models.KeyManager;
 
-import com.adorsys.keycloakstatuslist.config.StatusListConfig;
-import com.adorsys.keycloakstatuslist.exception.StatusListException;
-import com.adorsys.keycloakstatuslist.exception.StatusListServerException;
-import com.adorsys.keycloakstatuslist.model.TokenStatus;
-import com.adorsys.keycloakstatuslist.model.TokenStatusRecord;
-import com.adorsys.keycloakstatuslist.service.StatusListService;
+import java.time.Instant;
+import java.util.Map;
 
 /**
  * Event listener for Keycloak token events to update the status list.
@@ -29,9 +27,6 @@ public class TokenStatusEventListenerProvider implements EventListenerProvider {
 
     private final KeycloakSession session;
     private final StatusListService statusListService;
-
-    // Default public key placeholder when none is available from the realm
-    private static final String DEFAULT_PUBLIC_KEY = "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAolpIHxdSlTXLo1s6H1OCdpSj/4C0R3iT4QkP/ihstbuZxnSBVHUI0GWsteQV63hzKvKj5cuAQ9B8QcitOzpL5Y4sJKqy0gC9WoKjXJbflQBLsq+VzKXgPn2u02oLLbL2aVeOAzzVuZndMMwi5dWK3StCnxq7N77LFScjIiX+W6aS+RYFjD+rW3FUEmRKkbjLqt13i4FIXSQiIm5SHNJLIh5WM2XMk4LF9+C91kYkzXrWahQNAP4K466FbDeTZcvQsXPPMxzjf9HgGTjBUT1hYHK2dEI37kjGVTRRwj5bVjfmL+tkIF7RtLQXkGUDcOYqZe0APuBVvRhS6iDvRbK3FwIDAQAB";
 
     public TokenStatusEventListenerProvider(KeycloakSession session) {
         this.session = session;
@@ -142,8 +137,7 @@ public class TokenStatusEventListenerProvider implements EventListenerProvider {
             statusRecord.setAlg(keyAndAlg[1]);
         } catch (Exception e) {
             logger.warn("Could not retrieve realm public key and algorithm, using default", e);
-            statusRecord.setPublicKey(DEFAULT_PUBLIC_KEY);
-            statusRecord.setAlg("RS256");
+            return null;
         }
 
         statusRecord.setCredentialType("oauth2");
@@ -201,20 +195,20 @@ public class TokenStatusEventListenerProvider implements EventListenerProvider {
      * Get the public key and algorithm for the realm.
      */
     private String[] getRealmPublicKeyAndAlg(RealmModel realm) {
-        try {
-            KeyManager keyManager = session.keys();
-            // Fixed: Properly use KeyUse.SIG instead of valueOf("RS256")
-            KeyWrapper activeKey = keyManager.getActiveKey(realm, KeyUse.SIG, "RS256");
-            if (activeKey != null) {
-                String publicKey = activeKey.getPublicKey() != null ? activeKey.getPublicKey().toString() : DEFAULT_PUBLIC_KEY;
-                String algorithm = activeKey.getAlgorithm() != null ? activeKey.getAlgorithm() : "RS256";
-                return new String[]{publicKey, algorithm};
-            }
-            logger.warn("No active key found for realm: " + realm.getName());
-            return new String[]{DEFAULT_PUBLIC_KEY, "RS256"};
-        } catch (Exception e) {
-            logger.error("Error retrieving realm public key and algorithm", e);
-            return new String[]{DEFAULT_PUBLIC_KEY, "RS256"};
+        // Fixed: Properly use KeyUse.SIG instead of valueOf("RS256")
+        KeyWrapper activeKey = getActiveKey(session);
+        String publicKey = activeKey.getPublicKey().toString();
+        String algorithm = activeKey.getAlgorithmOrDefault();
+        return new String[]{publicKey, algorithm};
+    }
+
+    public static KeyWrapper getActiveKey(KeycloakSession session) {
+        RealmModel realm = session.getContext().getRealm();
+        KeyWrapper activeKey = session.keys().getActiveKey(realm, KeyUse.SIG, "RS256");
+        if (activeKey == null) {
+            throw new IllegalStateException("No active signing key found for realm: " + realm.getName());
         }
+
+        return activeKey;
     }
 }

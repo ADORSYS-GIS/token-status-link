@@ -238,6 +238,7 @@ public class TokenStatusEventListenerProviderFactory implements EventListenerPro
             }
 
             // Register the realm as an issuer
+            // TODO: Use a less clash-prone issuer identifier
             statusListService.registerIssuer(realm.getName(), publicKey, algorithm);
             registeredRealms.add(realm.getName());
             logger.info("Successfully registered realm as issuer: " + realm.getName());

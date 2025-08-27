@@ -1,4 +1,4 @@
-package com.adorsys.keycloakstatuslist;
+package com.adorsys.keycloakstatuslist.jpa;
 
 import org.keycloak.Config;
 import org.keycloak.connections.jpa.entityprovider.JpaEntityProvider;
