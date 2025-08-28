@@ -1,27 +1,25 @@
 package com.adorsys.keycloakstatuslist;
 
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
-import com.adorsys.keycloakstatuslist.events.TokenStatusEventListenerProvider;
 import com.adorsys.keycloakstatuslist.jpa.entity.StatusListCounterEntity;
 import com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
 import com.adorsys.keycloakstatuslist.model.Status;
 import com.adorsys.keycloakstatuslist.model.StatusListClaim;
+import com.adorsys.keycloakstatuslist.service.CryptoIdentityService;
 import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.EntityManager;
 import jakarta.ws.rs.core.UriBuilder;
 import org.apache.hc.client5.http.classic.methods.HttpGet;
+import org.apache.hc.client5.http.classic.methods.HttpPatch;
 import org.apache.hc.client5.http.classic.methods.HttpPost;
+import org.apache.hc.client5.http.classic.methods.HttpUriRequestBase;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.core5.http.ContentType;
 import org.apache.hc.core5.http.HttpHeaders;
 import org.apache.hc.core5.http.io.entity.StringEntity;
 import org.jboss.logging.Logger;
-import org.keycloak.common.util.Time;
 import org.keycloak.connections.jpa.JpaConnectionProvider;
-import org.keycloak.crypto.AsymmetricSignatureSignerContext;
-import org.keycloak.crypto.KeyWrapper;
-import org.keycloak.jose.jws.JWSBuilder;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserSessionModel;
@@ -37,7 +35,6 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -55,15 +52,14 @@ public class StatusListProtocolMapper extends OID4VCMapper {
     private static final List<ProviderConfigProperty> CONFIG_PROPERTIES = new ArrayList<>();
 
     private final KeycloakSession session;
+    private final CryptoIdentityService cryptoIdentityService;
 
     protected interface Constants {
         String MAPPER_ID = "oid4vc-status-list-claim-mapper";
-        int DEFAULT_AUTH_TOKEN_LIFETIME = 600; // 1O minutes in seconds
+        String CONFIG_LIST_ID_PROPERTY = "status.list.list_id";
 
         String ID_CLAIM_KEY = "id";
         String STATUS_CLAIM_KEY = "status";
-
-        String LIST_ID_PROPERTY = "status.list.list_id";
         String TOKEN_STATUS_VALID = "VALID";
 
         String BEARER_PREFIX = "Bearer ";
@@ -73,11 +69,14 @@ public class StatusListProtocolMapper extends OID4VCMapper {
     }
 
     public StatusListProtocolMapper() {
+        // An empty mapper constructor is required by Keycloak
         this.session = null;
+        this.cryptoIdentityService = null;
     }
 
     public StatusListProtocolMapper(KeycloakSession session) {
         this.session = session;
+        this.cryptoIdentityService = new CryptoIdentityService(session);
     }
 
     @Override
@@ -152,10 +151,9 @@ public class StatusListProtocolMapper extends OID4VCMapper {
             return;
         }
 
-
         // Build URI for status list
         Map<String, String> mapperConfig = mapperModel.getConfig();
-        String listId = mapperConfig.getOrDefault(Constants.LIST_ID_PROPERTY, realmId);
+        String listId = mapperConfig.getOrDefault(Constants.CONFIG_LIST_ID_PROPERTY, realmId);
         URI uri = UriBuilder.fromUri(serverUrl)
                 .path(String.format(Constants.HTTP_ENDPOINT_RETRIEVE_PATH, listId))
                 .build();
@@ -258,8 +256,10 @@ public class StatusListProtocolMapper extends OID4VCMapper {
     }
 
     private void sendStatusToServer(long idx, String statusListId, StatusListConfig realmConfig) throws IOException {
+        Objects.requireNonNull(cryptoIdentityService);
+
         // Generate authentication token
-        String jwtToken = getJwtToken();
+        String jwtToken = cryptoIdentityService.getJwtToken(realmConfig);
         logger.infof("Dangeroussss: JWT Bearer Token: %s", jwtToken);
         if (jwtToken == null || jwtToken.isEmpty()) {
             logger.error("JWT token is required for status server authentication but is missing or empty.");
@@ -285,22 +285,19 @@ public class StatusListProtocolMapper extends OID4VCMapper {
 
         try (CloseableHttpClient httpClient = CustomHttpClient.getHttpClient(realmConfig)) {
             boolean statusListExists = checkStatusListExists(httpClient, serverUrl, payload.listId);
-            String endpoint = UriBuilder.fromUri(serverUrl)
-                    .path(statusListExists
-                            ? Constants.HTTP_ENDPOINT_UPDATE_PATH
-                            : Constants.HTTP_ENDPOINT_PUBLISH_PATH)
-                    .build()
-                    .toString();
+            UriBuilder uriBuilder = UriBuilder.fromUri(serverUrl);
+            HttpUriRequestBase httpRequest = statusListExists
+                    ? new HttpPatch(uriBuilder.path(Constants.HTTP_ENDPOINT_UPDATE_PATH).build())
+                    : new HttpPost(uriBuilder.path(Constants.HTTP_ENDPOINT_PUBLISH_PATH).build());
 
-            HttpPost httpPost = new HttpPost(endpoint);
-            httpPost.setHeader(HttpHeaders.CONTENT_TYPE, ContentType.APPLICATION_JSON);
-            httpPost.setHeader(HttpHeaders.AUTHORIZATION, Constants.BEARER_PREFIX + bearerToken);
+            httpRequest.setHeader(HttpHeaders.CONTENT_TYPE, ContentType.APPLICATION_JSON);
+            httpRequest.setHeader(HttpHeaders.AUTHORIZATION, Constants.BEARER_PREFIX + bearerToken);
 
             String jsonPayload = JsonSerialization.mapper.writeValueAsString(payload);
             logger.infof("Sending payload: %s", jsonPayload);
-            httpPost.setEntity(new StringEntity(jsonPayload, StandardCharsets.UTF_8, false));
+            httpRequest.setEntity(new StringEntity(jsonPayload, StandardCharsets.UTF_8, false));
 
-            httpClient.execute(httpPost, response -> {
+            httpClient.execute(httpRequest, response -> {
                 if (response.getCode() < 200 || response.getCode() >= 300) {
                     logger.errorf("Failed to %s status list %s: %d %s",
                             statusListExists ? "update" : "publish",
@@ -344,22 +341,6 @@ public class StatusListProtocolMapper extends OID4VCMapper {
                 throw new IOException("Failed to verify status list existence: " + response.getCode());
             }
         });
-    }
-
-    private String getJwtToken() {
-        Objects.requireNonNull(session);
-        KeyWrapper keyWrapper = TokenStatusEventListenerProvider.getActiveKey(session);
-
-        // Payload
-        Map<String, Object> payload = new HashMap<>();
-        payload.put("iss", session.getContext().getRealm().getName());
-        payload.put("iat", Time.currentTime());
-        payload.put("exp", Time.currentTime() + Constants.DEFAULT_AUTH_TOKEN_LIFETIME);
-
-        // Build and sign JWT
-        return new JWSBuilder()
-                .jsonContent(payload)
-                .sign(new AsymmetricSignatureSignerContext(keyWrapper));
     }
 
     public record StatusListPayload(

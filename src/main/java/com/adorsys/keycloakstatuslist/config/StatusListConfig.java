@@ -1,18 +1,24 @@
 package com.adorsys.keycloakstatuslist.config;
 
+import org.jboss.logging.Logger;
 import org.keycloak.models.RealmModel;
+
+import java.util.UUID;
 
 /**
  * Configuration holder for the Token Status plugin.
  * This class provides access to the plugin configuration, which can be set in
  * the Keycloak Admin Console.
  */
+@SuppressWarnings("ClassCanBeRecord")
 public class StatusListConfig {
+
+    private static final Logger logger = Logger.getLogger(StatusListConfig.class);
 
     // Configuration keys
     public static final String STATUS_LIST_ENABLED = "status-list-enabled";
     public static final String STATUS_LIST_SERVER_URL = "status-list-server-url";
-    public static final String STATUS_LIST_AUTH_TOKEN = "status-list-auth-token";
+    public static final String STATUS_LIST_TOKEN_ISSUER_PREFIX = "status-list-token-issuer-prefix";
     public static final String STATUS_LIST_CONNECT_TIMEOUT = "status-list-connect-timeout";
     public static final String STATUS_LIST_READ_TIMEOUT = "status-list-read-timeout";
     public static final String STATUS_LIST_RETRY_COUNT = "status-list-retry-count";
@@ -20,15 +26,21 @@ public class StatusListConfig {
     // Default values
     private static final boolean DEFAULT_ENABLED = true;
     private static final String DEFAULT_SERVER_URL = "https://statuslist.eudi-adorsys.com/";
-    private static final String DEFAULT_AUTH_TOKEN = "";
-    private static final int DEFAULT_CONNECT_TIMEOUT = 5000;
-    private static final int DEFAULT_READ_TIMEOUT = 5000;
-    private static final int DEFAULT_RETRY_COUNT = 3;
+    private static final int DEFAULT_CONNECT_TIMEOUT = 30000;
+    private static final int DEFAULT_READ_TIMEOUT = 60000;
+    private static final int DEFAULT_RETRY_COUNT = -1;
 
     private final RealmModel realm;
 
     public StatusListConfig(RealmModel realm) {
         this.realm = realm;
+    }
+
+    /**
+     * Gets the realm associated with this configuration.
+     */
+    public RealmModel getRealm() {
+        return realm;
     }
 
     /**
@@ -52,13 +64,20 @@ public class StatusListConfig {
     }
 
     /**
-     * Gets the authentication token for the status list server.
+     * Gets the Token Issuer ID for the current realm.
      *
-     * @return the authentication token
+     * @return the token issuer ID
      */
-    public String getAuthToken() {
-        String value = realm.getAttribute(STATUS_LIST_AUTH_TOKEN);
-        return value != null ? value : DEFAULT_AUTH_TOKEN;
+    public String getTokenIssuerId() {
+        String prefix = realm.getAttribute(STATUS_LIST_TOKEN_ISSUER_PREFIX);
+        if (prefix == null) {
+            prefix = UUID.randomUUID().toString();
+            realm.setAttribute(STATUS_LIST_TOKEN_ISSUER_PREFIX, prefix);
+            logger.warnf("No token issuer prefix configured for realm %s. Using generated: %s",
+                    realm.getName(), prefix);
+        }
+
+        return String.format("%s::%s", prefix, realm.getName());
     }
 
     /**
