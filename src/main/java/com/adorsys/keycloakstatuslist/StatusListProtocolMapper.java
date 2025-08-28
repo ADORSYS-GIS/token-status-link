@@ -244,7 +244,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
                 em.flush();
 
                 sendStatusToServer(idx, statusListId, realmConfig);
-                StatusListClaim statusList = new StatusListClaim(String.valueOf(idx), uri);
+                StatusListClaim statusList = new StatusListClaim(idx, uri);
                 status.set(new Status(statusList));
             } catch (Exception e) {
                 logger.error("Failed to store index mapping", e);

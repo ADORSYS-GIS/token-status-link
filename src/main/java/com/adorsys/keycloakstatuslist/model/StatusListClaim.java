@@ -19,16 +19,14 @@ import java.util.Map;
  * `{ "idx": <index>, "uri": <uri> }`.
  */
 public class StatusListClaim {
+
     /**
      * The index of the token in the status list, as per Section 6.1 of the IETF
-     * OAuth Status List specification.
-     * This integer, represented as a string, identifies the bit position in the
-     * status list where the token's status is stored.
-     * Annotated with `@JsonProperty("idx")` to map to the `idx` key in the JSON
-     * output.
+     * OAuth Status List specification. As an integer, it identifies the bit position
+     * in the status list where the token's status is stored.
      */
     @JsonProperty("idx")
-    private final String idx;
+    private final long idx;
 
     /**
      * The URI of the status list resource, as per Section 6.1 of the IETF OAuth
@@ -44,13 +42,12 @@ public class StatusListClaim {
     /**
      * Constructs a StatusListClaim with the specified index and URI.
      *
-     * @param idx The index of the token in the status list, as a string
-     *            representation of an integer.
+     * @param idx The index of the token in the status list.
      * @param uri The URI of the status list resource where the token's status is
      *            published.
      */
-    public StatusListClaim(String idx, String uri) {
-        this.idx = String.valueOf(idx);
+    public StatusListClaim(long idx, String uri) {
+        this.idx = idx;
         this.uri = uri;
     }
 
@@ -58,8 +55,8 @@ public class StatusListClaim {
      * Overloaded constructor — accepts index as int and URI object.
      * Internally converts URI to string.
      */
-    public StatusListClaim(int idx, URI uri) {
-        this(String.valueOf(idx), uri.toString());
+    public StatusListClaim(long idx, URI uri) {
+        this(idx, uri.toString());
     }
 
     /**
@@ -69,7 +66,7 @@ public class StatusListClaim {
      *
      * @return The index as a string.
      */
-    public String getIdx() {
+    public long getIdx() {
         return idx;
     }
 
