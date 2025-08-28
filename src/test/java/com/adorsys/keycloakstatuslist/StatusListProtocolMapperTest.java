@@ -4,7 +4,6 @@ import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import nl.altindag.log.LogCaptor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
 import org.keycloak.models.ClientModel;
 import org.keycloak.models.KeycloakContext;
 import org.keycloak.models.KeycloakSession;
@@ -13,6 +12,9 @@ import org.keycloak.models.UserSessionModel;
 
 import java.util.HashMap;
 
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.hasItem;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
@@ -58,7 +60,7 @@ class StatusListProtocolMapperTest {
         mapper.setClaimsForSubject(claims, mock(UserSessionModel.class));
 
         assertTrue(claims.isEmpty(), "Claims should be empty if feature disabled");
-        System.out.println(logCaptor.getDebugLogs());
+        assertThat(logCaptor.getDebugLogs(), hasItem(containsString("Status list is disabled")));
     }
 
     @Test
@@ -70,6 +72,6 @@ class StatusListProtocolMapperTest {
         mapper.setClaimsForSubject(claims, mock(UserSessionModel.class));
 
         assertTrue(claims.isEmpty(), "Claims should remain empty if server URL invalid");
-        System.out.println(logCaptor.getDebugLogs());
+        assertThat(logCaptor.getErrorLogs(), hasItem(containsString("Invalid status list server URL")));
     }
 }
