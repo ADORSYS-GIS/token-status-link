@@ -27,22 +27,25 @@ public class TokenStatusEventListenerProvider implements EventListenerProvider {
     private static final Logger logger = Logger.getLogger(TokenStatusEventListenerProvider.class);
 
     private final KeycloakSession session;
-    private final StatusListService statusListService;
     private final CryptoIdentityService cryptoIdentityService;
 
     public TokenStatusEventListenerProvider(KeycloakSession session) {
         this.session = session;
         this.cryptoIdentityService = new CryptoIdentityService(session);
         RealmModel realm = session.getContext().getRealm();
+        logger.info("TokenStatusEventListenerProvider initialized with realm: " + (realm != null ? realm.getName() : "null"));
+    }
+
+    private StatusListService getStatusListService(RealmModel realm) {
         StatusListConfig config = new StatusListConfig(realm);
-        this.statusListService = new StatusListService(
+        CryptoIdentityService cryptoIdentityService = new CryptoIdentityService(session);
+        return new StatusListService(
                 config.getServerUrl(),
                 cryptoIdentityService.getJwtToken(config),
                 config.getConnectTimeout(),
                 config.getReadTimeout(),
                 config.getRetryCount()
         );
-        logger.info("TokenStatusEventListenerProvider initialized with realm: " + (realm != null ? realm.getName() : "null"));
     }
 
     @Override
@@ -76,6 +79,7 @@ public class TokenStatusEventListenerProvider implements EventListenerProvider {
                 logger.info("Processing token status for event type: " + event.getType().name());
                 logger.debug("Status record: " + statusRecord);
 
+                StatusListService statusListService = getStatusListService(realm);
                 statusListService.publishRecord(statusRecord);
                 logger.info("Successfully published token status: " + statusRecord.getCredentialId() +
                         ", Status: " + statusRecord.getStatus());
