@@ -146,3 +146,4 @@ For manual testing with a local status list server:
 - Improve persistence layer as the plugin interacts with the database.
 - Drop unnecessary configuration properties.
 - Implement HTTP retry strategy within the framework of the HTTP client library, not manually. For readability.
+- Clean up dependencies.

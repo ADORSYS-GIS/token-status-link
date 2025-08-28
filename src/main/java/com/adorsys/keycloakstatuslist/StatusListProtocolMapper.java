@@ -112,7 +112,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         return CONFIG_PROPERTIES;
     }
 
-    public StatusListConfig getStatusListConfig(RealmModel realm) {
+    private StatusListConfig getStatusListConfig(RealmModel realm) {
         return new StatusListConfig(realm);
     }
 
@@ -124,11 +124,14 @@ public class StatusListProtocolMapper extends OID4VCMapper {
     @Override
     public void setClaimsForSubject(Map<String, Object> claims, UserSessionModel userSessionModel) {
         logger.debugf("Adding status list data to credential claims (TokenStatusList)");
-        Objects.requireNonNull(session, "Keycloak session is required");
+        if (session == null) {
+            logger.error("Keycloak session is not available.");
+            return;
+        }
 
         String clientId = session.getContext().getClient().getClientId();
         String realmId = session.getContext().getRealm().getId();
-        logger.infof("Setting claim for client: %s, realm: %s", clientId, realmId);
+        logger.debugf("Setting claim for client: %s, realm: %s", clientId, realmId);
 
         StatusListConfig config = getStatusListConfig(session.getContext().getRealm());
 
@@ -184,7 +187,6 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         logger.infof("Adding status claim of value: %s", status.toMap());
         claims.put(Constants.STATUS_CLAIM_KEY, status);
     }
-
 
     private boolean isValidHttpUrl(String url) {
         try {
