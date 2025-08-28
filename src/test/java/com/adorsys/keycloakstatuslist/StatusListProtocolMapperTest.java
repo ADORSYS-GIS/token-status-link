@@ -1,8 +1,10 @@
 package com.adorsys.keycloakstatuslist;
 
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
+import nl.altindag.log.LogCaptor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.keycloak.models.ClientModel;
 import org.keycloak.models.KeycloakContext;
 import org.keycloak.models.KeycloakSession;
@@ -18,6 +20,7 @@ import static org.mockito.Mockito.when;
 
 class StatusListProtocolMapperTest {
 
+    LogCaptor logCaptor = LogCaptor.forClass(StatusListProtocolMapper.class);
     private StatusListProtocolMapper mapper;
 
     private KeycloakSession session;
@@ -55,6 +58,7 @@ class StatusListProtocolMapperTest {
         mapper.setClaimsForSubject(claims, mock(UserSessionModel.class));
 
         assertTrue(claims.isEmpty(), "Claims should be empty if feature disabled");
+        System.out.println(logCaptor.getDebugLogs());
     }
 
     @Test
@@ -66,5 +70,6 @@ class StatusListProtocolMapperTest {
         mapper.setClaimsForSubject(claims, mock(UserSessionModel.class));
 
         assertTrue(claims.isEmpty(), "Claims should remain empty if server URL invalid");
+        System.out.println(logCaptor.getDebugLogs());
     }
 }
