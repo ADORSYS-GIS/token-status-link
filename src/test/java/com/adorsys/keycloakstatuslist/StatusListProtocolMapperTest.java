@@ -4,6 +4,7 @@ import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import com.adorsys.keycloakstatuslist.helpers.MockKeycloakTest;
 import com.adorsys.keycloakstatuslist.model.Status;
 import com.adorsys.keycloakstatuslist.model.StatusListClaim;
+import jakarta.persistence.PersistenceException;
 import jakarta.persistence.Query;
 import jakarta.ws.rs.HttpMethod;
 import jakarta.ws.rs.core.UriBuilder;
@@ -26,8 +27,9 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.hasItems;
+import static org.hamcrest.Matchers.not;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.startsWith;
@@ -56,9 +58,16 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
         // Initialize claims (credential payload)
         claims = new HashMap<>();
+        claims.put(Constants.ID_CLAIM_KEY, "did:example:123456789");
 
         // Run mocks
         mockDefaultRealmConfig();
+    }
+
+    @Test
+    void testDefaultConstructor() {
+        // An empty mapper constructor is required by Keycloak
+        new StatusListProtocolMapper();
     }
 
     @Test
@@ -103,27 +112,80 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
     }
 
     @Test
-    void testSetClaimsForSubjectWhenFeatureDisabled() {
+    void shouldNotMap_IfFeatureDisabled() {
         when(realm.getAttribute(StatusListConfig.STATUS_LIST_ENABLED))
                 .thenReturn("false");
 
-        HashMap<String, Object> claims = new HashMap<>();
         mapper.setClaimsForSubject(claims, userSession);
 
-        assertTrue(claims.isEmpty(), "Claims should be empty if feature disabled");
+        assertThat("Claims should remain unmapped", claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
         assertThat(logCaptor.getDebugLogs(), hasItem(containsString("Status list is disabled")));
     }
 
     @Test
-    void testSetClaimsForSubjectWithInvalidUrl() {
+    void shouldNotMap_IfInvalidStatusServerUrl() {
         when(realm.getAttribute(StatusListConfig.STATUS_LIST_SERVER_URL))
                 .thenReturn("invalid-url");
 
-        HashMap<String, Object> claims = new HashMap<>();
         mapper.setClaimsForSubject(claims, userSession);
 
-        assertTrue(claims.isEmpty(), "Claims should remain empty if server URL invalid");
+        assertThat("Claims should remain unmapped", claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
         assertThat(logCaptor.getErrorLogs(), hasItem(containsString("Invalid status list server URL")));
+    }
+
+    @Test
+    void shouldNotMap_IfCantGetNextIndex() {
+        mockFailingGetNextIndex();
+
+        mapper.setClaimsForSubject(claims, userSession);
+
+        assertThat("Claims should remain unmapped", claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
+        assertThat(logCaptor.getErrorLogs(), hasItem(containsString("Failed to get next index")));
+    }
+
+    @Test
+    void shouldNotMap_IfCantCheckStatusListExists() {
+        mockGetNextIndex();
+        mockHttpClientExecute((req) -> {
+            // Check if status list already exists
+            if (req.getMethod().equals(HttpMethod.GET)) {
+                when(httpResponse.getCode()).thenReturn(HttpStatus.SC_INTERNAL_SERVER_ERROR);
+            } else {
+                fail("Unexpected HTTP call: " + req.getMethod());
+            }
+        });
+
+        mapper.setClaimsForSubject(claims, userSession);
+
+        assertThat("Claims should remain unmapped", claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
+        assertThat(logCaptor.getErrorLogs(), hasItems(
+                containsString("Failed to verify existence of status list"),
+                containsString("Error publishing or updating status list on server"),
+                containsString("Failed to store index mapping")
+        ));
+    }
+
+    @Test
+    void shouldNotMap_IfCantPublishStatus() {
+        mockGetNextIndex();
+        mockHttpClientExecute((req) -> {
+            switch (req.getMethod()) {
+                // Check if status list already exists
+                case HttpMethod.GET -> when(httpResponse.getCode()).thenReturn(HttpStatus.SC_NOT_FOUND);
+                // Create new status list
+                case HttpMethod.POST -> when(httpResponse.getCode()).thenReturn(HttpStatus.SC_INTERNAL_SERVER_ERROR);
+                default -> fail("Unexpected HTTP call: " + req.getMethod());
+            }
+        });
+
+        mapper.setClaimsForSubject(claims, userSession);
+
+        assertThat("Claims should remain unmapped", claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
+        assertThat(logCaptor.getErrorLogs(), hasItems(
+                containsString("Failed to publish status list %s".formatted(TEST_REALM_ID)),
+                containsString("Error publishing or updating status list on server"),
+                containsString("Failed to store index mapping")
+        ));
     }
 
     private void mockDefaultRealmConfig() {
@@ -137,6 +199,12 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         when(entityManager.createNativeQuery(startsWith("SELECT nextval"))).thenReturn(query);
         when(query.getSingleResult()).thenAnswer(invocation -> nextIndex);
         return nextIndex;
+    }
+
+    private void mockFailingGetNextIndex() {
+        Query query = mock(Query.class);
+        when(entityManager.createNativeQuery(startsWith("SELECT nextval"))).thenReturn(query);
+        when(query.getSingleResult()).thenThrow(new PersistenceException());
     }
 
     @FunctionalInterface

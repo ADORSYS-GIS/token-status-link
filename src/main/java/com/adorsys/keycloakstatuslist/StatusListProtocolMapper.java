@@ -68,7 +68,6 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         String HTTP_ENDPOINT_RETRIEVE_PATH = "/statuslists/%s";
     }
 
-    @SuppressWarnings("unused")
     public StatusListProtocolMapper() {
         // An empty mapper constructor is required by Keycloak
         this.session = null;
@@ -142,14 +141,8 @@ public class StatusListProtocolMapper extends OID4VCMapper {
             return;
         }
 
-        // Guard: Server URL missing or empty
-        String serverUrl = config.getServerUrl();
-        if (serverUrl == null || serverUrl.trim().isEmpty()) {
-            logger.errorf("Status list server URL is not configured for realm: %s", realmId);
-            return;
-        }
-
         // Guard: Server URL is invalid
+        String serverUrl = config.getServerUrl();
         if (!isValidHttpUrl(serverUrl)) {
             logger.errorf("Invalid status list server URL for realm %s: %s", realmId, serverUrl);
             return;
@@ -301,7 +294,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
             httpRequest.setHeader(HttpHeaders.AUTHORIZATION, Constants.BEARER_PREFIX + bearerToken);
 
             String jsonPayload = JsonSerialization.mapper.writeValueAsString(payload);
-            logger.infof("Sending payload: %s", jsonPayload);
+            logger.debugf("Sending payload: %s", jsonPayload);
             httpRequest.setEntity(new StringEntity(jsonPayload, StandardCharsets.UTF_8, false));
 
             httpClient.execute(httpRequest, response -> {
