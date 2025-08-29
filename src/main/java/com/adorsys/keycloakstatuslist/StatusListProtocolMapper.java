@@ -68,6 +68,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         String HTTP_ENDPOINT_RETRIEVE_PATH = "/statuslists/%s";
     }
 
+    @SuppressWarnings("unused")
     public StatusListProtocolMapper() {
         // An empty mapper constructor is required by Keycloak
         this.session = null;
@@ -163,6 +164,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         logger.debugf("Configuration: listId=%s, uri=%s", listId, uri);
 
         // Retrieve next available index
+        Objects.requireNonNull(session);
         Long idx = getNextIndex(session);
         if (idx == null) {
             logger.error("Failed to get next index");
@@ -199,6 +201,15 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         }
     }
 
+    private static EntityManager getEntityManager(KeycloakSession session) {
+        EntityManager em = session.getProvider(JpaConnectionProvider.class).getEntityManager();
+        if (em == null) {
+            throw new IllegalStateException("EntityManager is null for JpaConnectionProvider");
+        }
+
+        return em;
+    }
+
     private static void withEntityManagerInTransaction(KeycloakSession session, Consumer<EntityManager> action) {
         KeycloakModelUtils.runJobInTransaction(session.getKeycloakSessionFactory(), s -> {
             EntityManager em = s.getProvider(JpaConnectionProvider.class).getEntityManager();
@@ -213,13 +224,8 @@ public class StatusListProtocolMapper extends OID4VCMapper {
 
     private Long getNextIndex(KeycloakSession session) {
         logger.debugf("Getting next index for realm: %s", session.getContext().getRealm().getId());
-        EntityManager em = session.getProvider(JpaConnectionProvider.class).getEntityManager();
-        if (em == null) {
-            logger.error("EntityManager is null for JpaConnectionProvider");
-            return null;
-        }
-
         try {
+            EntityManager em = getEntityManager(session);
             String query = String.format("SELECT nextval('%s')", StatusListCounterEntity.SEQUENCE_NAME);
             return (Long) em.createNativeQuery(query).getSingleResult();
         } catch (Exception e) {
@@ -262,7 +268,6 @@ public class StatusListProtocolMapper extends OID4VCMapper {
 
         // Generate authentication token
         String jwtToken = cryptoIdentityService.getJwtToken(realmConfig);
-        logger.infof("Dangeroussss: JWT Bearer Token: %s", jwtToken);
         if (jwtToken == null || jwtToken.isEmpty()) {
             logger.error("JWT token is required for status server authentication but is missing or empty.");
             throw new IllegalArgumentException("JWT token is required for status server authentication.");

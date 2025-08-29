@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.net.URI;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Represents the `status_list` claim object for a token, as defined in the
@@ -85,5 +86,17 @@ public class StatusListClaim {
         return Map.of(
                 "idx", idx,
                 "uri", uri);
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (o == null || getClass() != o.getClass()) return false;
+        StatusListClaim that = (StatusListClaim) o;
+        return idx == that.idx && Objects.equals(uri, that.uri);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(idx, uri);
     }
 }
