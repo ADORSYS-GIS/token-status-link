@@ -28,7 +28,7 @@ public class StatusListConfig {
     private static final String DEFAULT_SERVER_URL = "https://statuslist.eudi-adorsys.com/";
     private static final int DEFAULT_CONNECT_TIMEOUT = 30000;
     private static final int DEFAULT_READ_TIMEOUT = 60000;
-    private static final int DEFAULT_RETRY_COUNT = -1;
+    private static final int DEFAULT_RETRY_COUNT = 0; // Retry disabled by default
 
     private final RealmModel realm;
 

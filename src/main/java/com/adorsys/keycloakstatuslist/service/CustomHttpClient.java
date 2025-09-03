@@ -1,6 +1,5 @@
 package com.adorsys.keycloakstatuslist.service;
 
-import com.adorsys.keycloakstatuslist.StatusListProtocolMapper;
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import org.apache.hc.client5.http.HttpRequestRetryStrategy;
 import org.apache.hc.client5.http.config.RequestConfig;

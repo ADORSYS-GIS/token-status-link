@@ -34,7 +34,7 @@ The plugin can be configured at the realm level with the following properties:
 | `status-list-token-issuer-prefix` | Prefix for building the Token Issuer ID      | Generated UUID                         |
 | `status-list-connect-timeout`     | Connection timeout in milliseconds           | `30000`                                |
 | `status-list-read-timeout`        | Read timeout in milliseconds                 | `60000`                                |
-| `status-list-retry-count`         | Number of retry attempts for failed requests | `-1`                                   |
+| `status-list-retry-count`         | Number of retry attempts for failed requests | `0`                                    |
 
 ## Supported Events
 

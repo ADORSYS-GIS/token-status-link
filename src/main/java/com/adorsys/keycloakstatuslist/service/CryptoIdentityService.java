@@ -17,7 +17,7 @@ import java.util.Map;
  */
 public class CryptoIdentityService {
 
-    private static final int DEFAULT_AUTH_TOKEN_LIFETIME = 600; // 1O minutes in seconds
+    private static final int DEFAULT_AUTH_TOKEN_LIFETIME = 600; // 10 minutes in seconds
 
     private final KeycloakSession session;
 
