@@ -41,9 +41,10 @@ public class CredentialRevocationService {
         if (statusListService == null) {
             RealmModel realm = session.getContext().getRealm();
             StatusListConfig config = new StatusListConfig(realm);
+            CryptoIdentityService cryptoIdentityService = new CryptoIdentityService(session);
             this.statusListService = new StatusListService(
                     config.getServerUrl(),
-                    config.getAuthToken(),
+                    cryptoIdentityService.getJwtToken(config),
                     config.getConnectTimeout(),
                     config.getReadTimeout(),
                     config.getRetryCount()

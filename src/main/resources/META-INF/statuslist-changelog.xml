@@ -19,6 +19,11 @@
             <column name="realm_id" type="varchar(255)"/>
             <constraints primaryKey="true" primaryKeyName="pk_status_list_mapping" columns="status_list_id,idx"/>
         </createTable>
+
+        <createSequence
+                sequenceName="status_list_counter_seq"
+                startValue="1"
+                incrementBy="1"/>
     </changeSet>
 
     <changeSet id="add-indices-to-status-list-mapping" author="adorsys">

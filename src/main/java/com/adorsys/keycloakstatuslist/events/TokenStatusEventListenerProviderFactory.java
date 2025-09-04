@@ -1,32 +1,32 @@
 package com.adorsys.keycloakstatuslist.events;
 
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.List;
-import java.util.ArrayList;
-
+import com.adorsys.keycloakstatuslist.config.StatusListConfig;
+import com.adorsys.keycloakstatuslist.exception.StatusListException;
+import com.adorsys.keycloakstatuslist.service.CryptoIdentityService;
+import com.adorsys.keycloakstatuslist.service.StatusListService;
 import org.jboss.logging.Logger;
 import org.keycloak.Config;
+import org.keycloak.crypto.Algorithm;
+import org.keycloak.crypto.KeyUse;
+import org.keycloak.crypto.KeyWrapper;
 import org.keycloak.events.EventListenerProvider;
 import org.keycloak.events.EventListenerProviderFactory;
+import org.keycloak.models.KeyManager;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.models.RealmModel;
-import org.keycloak.models.KeyManager;
-import org.keycloak.crypto.KeyUse;
-import org.keycloak.crypto.KeyWrapper;
-import com.adorsys.keycloakstatuslist.config.StatusListConfig;
-import com.adorsys.keycloakstatuslist.service.StatusListService;
-import com.adorsys.keycloakstatuslist.exception.StatusListException;
-import org.keycloak.crypto.Algorithm;
 
+import java.io.IOException;
+import java.net.ConnectException;
+import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.net.URI;
 import java.time.Duration;
-import java.io.IOException;
-import java.net.ConnectException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Factory for creating TokenStatusEventListenerProvider instances.
@@ -53,7 +53,7 @@ public class TokenStatusEventListenerProviderFactory implements EventListenerPro
     public void postInit(KeycloakSessionFactory factory) {
         logger.info("Post-initializing TokenStatusEventListenerProviderFactory");
         this.sessionFactory = factory;
-        
+
         // Initialize realms directly since we're already in the postInit phase
         // which means Keycloak's database is ready
         try {
@@ -92,8 +92,8 @@ public class TokenStatusEventListenerProviderFactory implements EventListenerPro
                     successfulRegistrations++;
                 } else {
                     // Check if this was due to server unavailability
-                    if (realm.getAttribute("status-list-enabled") != null && 
-                        "true".equals(realm.getAttribute("status-list-enabled"))) {
+                    if (realm.getAttribute("status-list-enabled") != null &&
+                            "true".equals(realm.getAttribute("status-list-enabled"))) {
                         skippedRegistrations++;
                         skippedRealmNames.add(realm.getName());
                     } else {
@@ -106,11 +106,11 @@ public class TokenStatusEventListenerProviderFactory implements EventListenerPro
             session.getTransactionManager().commit();
 
             // Report results based on registration outcomes
-            logger.info("Registration results - Total: " + totalRealms + 
-                ", Successful: " + successfulRegistrations + 
-                ", Failed: " + failedRegistrations + 
-                ", Skipped: " + skippedRegistrations);
-            
+            logger.info("Registration results - Total: " + totalRealms +
+                    ", Successful: " + successfulRegistrations +
+                    ", Failed: " + failedRegistrations +
+                    ", Skipped: " + skippedRegistrations);
+
             if (failedRegistrations == 0 && skippedRegistrations == 0) {
                 logger.info("Successfully completed realm initialization - all " + totalRealms + " realms registered");
                 initialized = true;
@@ -119,14 +119,14 @@ public class TokenStatusEventListenerProviderFactory implements EventListenerPro
                         + " realms failed to register. Failed realms: " + String.join(", ", failedRealmNames));
             } else {
                 if (skippedRegistrations > 0) {
-                    logger.warn("Realm initialization completed with some realms skipped due to server unavailability - " 
-                        + successfulRegistrations + " successful, " + skippedRegistrations + " skipped. Skipped realms: "
-                        + String.join(", ", skippedRealmNames));
+                    logger.warn("Realm initialization completed with some realms skipped due to server unavailability - "
+                            + successfulRegistrations + " successful, " + skippedRegistrations + " skipped. Skipped realms: "
+                            + String.join(", ", skippedRealmNames));
                 }
                 if (failedRegistrations > 0) {
-                    logger.warn("Realm initialization completed with some failures - " 
-                        + successfulRegistrations + " successful, " + failedRegistrations + " failed. Failed realms: "
-                        + String.join(", ", failedRealmNames));
+                    logger.warn("Realm initialization completed with some failures - "
+                            + successfulRegistrations + " successful, " + failedRegistrations + " failed. Failed realms: "
+                            + String.join(", ", failedRealmNames));
                 }
                 initialized = true;
             }
@@ -137,7 +137,7 @@ public class TokenStatusEventListenerProviderFactory implements EventListenerPro
 
     /**
      * Checks the health status of the status list server before proceeding with operations.
-     * 
+     *
      * @param serverUrl the server URL to check
      * @return true if the server is healthy, false otherwise
      */
@@ -145,11 +145,11 @@ public class TokenStatusEventListenerProviderFactory implements EventListenerPro
         try {
             String healthUrl = serverUrl.endsWith("/") ? serverUrl + "health" : serverUrl + "/health";
             logger.debugf("Checking server health at: %s", healthUrl);
-            
+
             HttpClient httpClient = HttpClient.newBuilder()
                     .connectTimeout(Duration.ofSeconds(10))
                     .build();
-                    
+
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(healthUrl))
                     .timeout(Duration.ofSeconds(10))
@@ -157,7 +157,7 @@ public class TokenStatusEventListenerProviderFactory implements EventListenerPro
                     .build();
 
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            
+
             if (response.statusCode() == 200) {
                 logger.debug("Server health check passed");
                 return true;
@@ -199,9 +199,10 @@ public class TokenStatusEventListenerProviderFactory implements EventListenerPro
                 return false;
             }
 
+            CryptoIdentityService cryptoIdentityService = new CryptoIdentityService(session);
             StatusListService statusListService = new StatusListService(
                     config.getServerUrl(),
-                    config.getAuthToken(),
+                    cryptoIdentityService.getJwtToken(config),
                     config.getConnectTimeout(),
                     config.getReadTimeout(),
                     config.getRetryCount()
@@ -212,7 +213,7 @@ public class TokenStatusEventListenerProviderFactory implements EventListenerPro
             KeyWrapper activeKey = keyManager.getActiveKey(realm, KeyUse.SIG, Algorithm.RS256);
             if (activeKey == null) {
                 logger.warn("No active key found for realm: " + realm.getName());
-                return false; 
+                return false;
             }
 
             // Convert public key to PEM format
@@ -222,8 +223,8 @@ public class TokenStatusEventListenerProviderFactory implements EventListenerPro
                     byte[] encoded = activeKey.getPublicKey().getEncoded();
                     String base64 = java.util.Base64.getEncoder().encodeToString(encoded);
                     publicKey = "-----BEGIN PUBLIC KEY-----\n" +
-                              base64.replaceAll("(.{64})", "$1\n") +
-                              "\n-----END PUBLIC KEY-----";
+                            base64.replaceAll("(.{64})", "$1\n") +
+                            "\n-----END PUBLIC KEY-----";
                 } catch (Exception e) {
                     logger.error("Failed to convert public key to PEM format for realm: " + realm.getName(), e);
                     return false;
@@ -238,7 +239,7 @@ public class TokenStatusEventListenerProviderFactory implements EventListenerPro
             }
 
             // Register the realm as an issuer
-            statusListService.registerIssuer(realm.getName(), publicKey, algorithm);
+            statusListService.registerIssuer(config.getTokenIssuerId(), publicKey, algorithm);
             registeredRealms.add(realm.getName());
             logger.info("Successfully registered realm as issuer: " + realm.getName());
             return true;

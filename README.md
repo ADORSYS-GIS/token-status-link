@@ -1,8 +1,13 @@
 # Keycloak Token Status Plugin
 
-This plugin lets Keycloak send the status of long-lived tokens or verifiable credentials to an external status list server. It helps you quickly revoke credentials before they expire. The plugin uses the `REVOKE_GRANT` event to detect when a credential should be marked as revoked.
+This plugin lets Keycloak send the status of long-lived tokens or verifiable credentials to an external status list
+server. It helps you quickly revoke credentials before they expire. The plugin uses the `REVOKE_GRANT` event to detect
+when a credential should be marked as revoked.
 
-The primary use case is for verifiable credentials or other long-lived tokens that may need to be invalidated before their expiration (for example, if a credential is compromised or must be revoked for compliance reasons). The `REVOKE_GRANT` event is used as the closest available event to signal such revocations. Please note that this event may not cover all possible credential types, but it is currently the best fit for this purpose in Keycloak.
+The primary use case is for verifiable credentials or other long-lived tokens that may need to be invalidated before
+their expiration (for example, if a credential is compromised or must be revoked for compliance reasons). The
+`REVOKE_GRANT` event is used as the closest available event to signal such revocations. Please note that this event may
+not cover all possible credential types, but it is currently the best fit for this purpose in Keycloak.
 
 The status list server should implement the OAuth 2.0 Status List pattern.
 
@@ -22,14 +27,14 @@ The status list server should implement the OAuth 2.0 Status List pattern.
 
 The plugin can be configured at the realm level with the following properties:
 
-| Property | Description | Default Value |
-|----------|-------------|---------------|
-| `status-list-enabled` | Enables or disables the status list service | `true` |
-| `status-list-server-url` | URL of the status list server | `https://statuslist.eudi-adorsys.com/` |
-| `status-list-auth-token` | Authentication token for the status list server | (empty) |
-| `status-list-connect-timeout` | Connection timeout in milliseconds | `5000` |
-| `status-list-read-timeout` | Read timeout in milliseconds | `5000` |
-| `status-list-retry-count` | Number of retry attempts for failed requests | `3` |
+| Property                          | Description                                  | Default Value                          |
+|-----------------------------------|----------------------------------------------|----------------------------------------|
+| `status-list-enabled`             | Enables or disables the status list service  | `true`                                 |
+| `status-list-server-url`          | URL of the status list server                | `https://statuslist.eudi-adorsys.com/` |
+| `status-list-token-issuer-prefix` | Prefix for building the Token Issuer ID      | Generated UUID                         |
+| `status-list-connect-timeout`     | Connection timeout in milliseconds           | `30000`                                |
+| `status-list-read-timeout`        | Read timeout in milliseconds                 | `60000`                                |
+| `status-list-retry-count`         | Number of retry attempts for failed requests | `0`                                    |
 
 ## Supported Events
 
@@ -39,7 +44,8 @@ The plugin processes the following Keycloak events:
 
 ## Token Status Record Format
 
-The plugin sends token status information to the status list server in the following JSON format, compliant with the OAuth 2.0 Status List specification:
+The plugin sends token status information to the status list server in the following JSON format, compliant with the
+OAuth 2.0 Status List specification:
 
 ```json
 {
@@ -79,16 +85,31 @@ The plugin sends token status information to the status list server in the follo
 mvn clean package
 ```
 
-2. Copy the resulting JAR file from `target/keycloak-token-status-plugin-1.0.0-SNAPSHOT.jar` to Keycloak's `providers` directory.
+2. Copy the resulting JAR file from `target/keycloak-token-status-plugin-1.0.0-SNAPSHOT.jar` to Keycloak's `providers`
+   directory.
 
 3. Restart Keycloak to load the plugin.
 
 4. Enable the event listener in your Keycloak realm:
-   - Navigate to the Realm Settings
-   - Go to Events tab
-   - Add "token-status-event-listener" to the Event Listeners
+    - Navigate to the Realm Settings
+    - Go to Events tab
+    - Add "token-status-event-listener" to the Event Listeners
 
 5. Configure the plugin using the realm attributes described in the Configuration Properties section above.
+
+### Configuring Keycloak's credential issuance to use the Status List protocol mapper
+
+For the Status List protocol mapper to come into effect, you need to explicitly attach it to the client scope
+corresponding to a specific credential's configuration. Below is a sample such configuration:
+
+```json
+{
+  "name": "status-list-claim-mapper",
+  "protocol": "oid4vc",
+  "protocolMapper": "oid4vc-status-list-claim-mapper",
+  "config": {}
+}
+```
 
 ## Performance Considerations
 
@@ -116,5 +137,13 @@ mvn test
 For manual testing with a local status list server:
 
 1. Configure the `status-list-server-url` to point to your test server
-2. Set the appropriate `status-list-auth-token` if required
-3. Enable debug logging to see detailed request/response information
+2. Enable debug logging to see detailed request/response information
+
+### TODO
+
+- Remove logic depending on `REVOKE_GRANT` events. These merely do not serve the purpose of this plugin.
+- Unify HTTP interaction with the status list server in the dedicated `StatusListService` class.
+- Improve persistence layer as the plugin interacts with the database.
+- Drop unnecessary configuration properties.
+- Implement HTTP retry strategy within the framework of the HTTP client library, not manually. For readability.
+- Clean up dependencies.
