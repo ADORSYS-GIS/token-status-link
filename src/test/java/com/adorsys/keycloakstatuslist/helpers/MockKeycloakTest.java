@@ -11,6 +11,7 @@ import org.keycloak.connections.jpa.JpaConnectionProvider;
 import org.keycloak.crypto.Algorithm;
 import org.keycloak.crypto.KeyWrapper;
 import org.keycloak.jose.jwk.JWK;
+import org.keycloak.common.ClientConnection;
 import org.keycloak.models.ClientModel;
 import org.keycloak.models.KeyManager;
 import org.keycloak.models.KeycloakContext;
@@ -64,6 +65,8 @@ public class MockKeycloakTest {
     protected ClientModel client;
     @Mock
     protected UserSessionModel userSession;
+    @Mock
+    protected ClientConnection clientConnection;
 
     private MockedStatic<CustomHttpClient> mocked;
 
@@ -73,7 +76,7 @@ public class MockKeycloakTest {
     protected CloseableHttpResponse httpResponse;
 
     @BeforeEach
-    void rootSetup() {
+    protected void rootSetup() {
         lenient().when(session.keys()).thenReturn(keyManager);
         lenient().when(keyManager.getActiveKey(any(), any(), eq(Algorithm.RS256))).thenReturn(getActiveRsaKey());
 
@@ -88,6 +91,8 @@ public class MockKeycloakTest {
         lenient().when(session.getContext()).thenReturn(context);
         lenient().when(context.getRealm()).thenReturn(realm);
         lenient().when(context.getClient()).thenReturn(client);
+        lenient().when(context.getConnection()).thenReturn(clientConnection);
+        lenient().when(clientConnection.getRemoteHost()).thenReturn("127.0.0.1");
         lenient().when(realm.getName()).thenReturn(TEST_REALM_NAME);
         lenient().when(realm.getId()).thenReturn(TEST_REALM_ID);
         lenient().when(client.getClientId()).thenReturn(TEST_CLIENT_ID);
