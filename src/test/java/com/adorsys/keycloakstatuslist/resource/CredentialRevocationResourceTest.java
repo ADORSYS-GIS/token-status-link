@@ -330,6 +330,6 @@ class CredentialRevocationResourceTest {
         // Assert
         assertNotNull(response);
         assertEquals(200, response.getStatus());
-        verify(revocationService).revokeCredential(any(CredentialRevocationRequest.class), eq("  token-with-spaces  "));
+        verify(revocationService).revokeCredential(any(CredentialRevocationRequest.class), eq("token-with-spaces"));
     }
 }
