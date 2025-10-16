@@ -10,7 +10,6 @@ import jakarta.ws.rs.core.Response;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.keycloak.events.EventBuilder;
 import org.keycloak.http.HttpRequest;
 import org.keycloak.models.KeycloakContext;
 import org.keycloak.models.KeycloakSession;
@@ -19,7 +18,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -154,7 +152,6 @@ class CredentialRevocationResourceTest {
 
     @Test
     void testRevoke_Success() throws Exception {
-        // Arrange
         MultivaluedMap<String, String> formParams = new MultivaluedHashMap<>();
         formParams.add("token", "test-credential-123");
         formParams.add("reason", "Test revocation");
@@ -163,10 +160,8 @@ class CredentialRevocationResourceTest {
         when(httpRequest.getDecodedFormParameters()).thenReturn(formParams);
         when(headers.getHeaderString(HttpHeaders.AUTHORIZATION)).thenReturn("Bearer test-token");
         
-        // Act
         Response response = resource.revoke();
         
-        // Assert
         assertNotNull(response);
         assertEquals(200, response.getStatus());
         verify(revocationService).revokeCredential(any(CredentialRevocationRequest.class), eq("test-token"));
@@ -174,7 +169,6 @@ class CredentialRevocationResourceTest {
 
     @Test
     void testRevoke_NoAuthorizationHeader() throws Exception {
-        // Arrange
         MultivaluedMap<String, String> formParams = new MultivaluedHashMap<>();
         formParams.add("token", "test-credential-123");
         
@@ -182,10 +176,8 @@ class CredentialRevocationResourceTest {
         when(httpRequest.getDecodedFormParameters()).thenReturn(formParams);
         when(headers.getHeaderString(HttpHeaders.AUTHORIZATION)).thenReturn(null);
         
-        // Act
         Response response = resource.revoke();
         
-        // Assert
         assertNotNull(response);
         assertEquals(200, response.getStatus());
         verify(revocationService, never()).revokeCredential(any(), anyString());
@@ -193,7 +185,6 @@ class CredentialRevocationResourceTest {
 
     @Test
     void testRevoke_EmptyAuthorizationHeader() throws Exception {
-        // Arrange
         MultivaluedMap<String, String> formParams = new MultivaluedHashMap<>();
         formParams.add("token", "test-credential-123");
         
@@ -201,10 +192,8 @@ class CredentialRevocationResourceTest {
         when(httpRequest.getDecodedFormParameters()).thenReturn(formParams);
         when(headers.getHeaderString(HttpHeaders.AUTHORIZATION)).thenReturn("");
         
-        // Act
         Response response = resource.revoke();
         
-        // Assert
         assertNotNull(response);
         assertEquals(200, response.getStatus());
         verify(revocationService, never()).revokeCredential(any(), anyString());
@@ -212,7 +201,6 @@ class CredentialRevocationResourceTest {
 
     @Test
     void testRevoke_InvalidAuthorizationHeader() throws Exception {
-        // Arrange
         MultivaluedMap<String, String> formParams = new MultivaluedHashMap<>();
         formParams.add("token", "test-credential-123");
         
@@ -220,10 +208,8 @@ class CredentialRevocationResourceTest {
         when(httpRequest.getDecodedFormParameters()).thenReturn(formParams);
         when(headers.getHeaderString(HttpHeaders.AUTHORIZATION)).thenReturn("InvalidFormat token");
         
-        // Act
         Response response = resource.revoke();
         
-        // Assert
         assertNotNull(response);
         assertEquals(200, response.getStatus());
         verify(revocationService, never()).revokeCredential(any(), anyString());
@@ -231,7 +217,6 @@ class CredentialRevocationResourceTest {
 
     @Test
     void testRevoke_NoTokenInForm() throws Exception {
-        // Arrange
         MultivaluedMap<String, String> formParams = new MultivaluedHashMap<>();
         formParams.add("reason", "Test revocation");
         
@@ -239,10 +224,8 @@ class CredentialRevocationResourceTest {
         when(httpRequest.getDecodedFormParameters()).thenReturn(formParams);
         when(headers.getHeaderString(HttpHeaders.AUTHORIZATION)).thenReturn("Bearer test-token");
         
-        // Act
         Response response = resource.revoke();
         
-        // Assert
         assertNotNull(response);
         assertEquals(200, response.getStatus());
         verify(revocationService, never()).revokeCredential(any(), anyString());
@@ -250,7 +233,6 @@ class CredentialRevocationResourceTest {
 
     @Test
     void testRevoke_EmptyTokenInForm() throws Exception {
-        // Arrange
         MultivaluedMap<String, String> formParams = new MultivaluedHashMap<>();
         formParams.add("token", "");
         formParams.add("reason", "Test revocation");
@@ -259,10 +241,8 @@ class CredentialRevocationResourceTest {
         when(httpRequest.getDecodedFormParameters()).thenReturn(formParams);
         when(headers.getHeaderString(HttpHeaders.AUTHORIZATION)).thenReturn("Bearer test-token");
         
-        // Act
         Response response = resource.revoke();
         
-        // Assert
         assertNotNull(response);
         assertEquals(200, response.getStatus());
         verify(revocationService, never()).revokeCredential(any(), anyString());
@@ -270,7 +250,6 @@ class CredentialRevocationResourceTest {
 
     @Test
     void testRevoke_ServiceThrowsException() throws Exception {
-        // Arrange
         MultivaluedMap<String, String> formParams = new MultivaluedHashMap<>();
         formParams.add("token", "test-credential-123");
         formParams.add("reason", "Test revocation");
@@ -282,10 +261,8 @@ class CredentialRevocationResourceTest {
         doThrow(new StatusListException("Invalid token format")).when(revocationService)
             .revokeCredential(any(CredentialRevocationRequest.class), anyString());
         
-        // Act
         Response response = resource.revoke();
         
-        // Assert
         assertNotNull(response);
         assertEquals(200, response.getStatus());
         verify(revocationService).revokeCredential(any(CredentialRevocationRequest.class), eq("test-token"));
@@ -293,7 +270,6 @@ class CredentialRevocationResourceTest {
 
     @Test
     void testRevoke_ServiceThrowsRuntimeException() throws Exception {
-        // Arrange
         MultivaluedMap<String, String> formParams = new MultivaluedHashMap<>();
         formParams.add("token", "test-credential-123");
         formParams.add("reason", "Test revocation");
@@ -305,10 +281,8 @@ class CredentialRevocationResourceTest {
         doThrow(new RuntimeException("Unexpected error")).when(revocationService)
             .revokeCredential(any(CredentialRevocationRequest.class), anyString());
         
-        // Act
         Response response = resource.revoke();
         
-        // Assert
         assertNotNull(response);
         assertEquals(200, response.getStatus());
         verify(revocationService).revokeCredential(any(CredentialRevocationRequest.class), eq("test-token"));
@@ -316,7 +290,6 @@ class CredentialRevocationResourceTest {
 
     @Test
     void testRevoke_ExtractsBearerTokenWithSpaces() throws Exception {
-        // Arrange
         MultivaluedMap<String, String> formParams = new MultivaluedHashMap<>();
         formParams.add("token", "test-credential-123");
         
@@ -324,10 +297,8 @@ class CredentialRevocationResourceTest {
         when(httpRequest.getDecodedFormParameters()).thenReturn(formParams);
         when(headers.getHeaderString(HttpHeaders.AUTHORIZATION)).thenReturn("Bearer   token-with-spaces  ");
         
-        // Act
         Response response = resource.revoke();
         
-        // Assert
         assertNotNull(response);
         assertEquals(200, response.getStatus());
         verify(revocationService).revokeCredential(any(CredentialRevocationRequest.class), eq("token-with-spaces"));
