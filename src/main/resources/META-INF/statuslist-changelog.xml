@@ -24,6 +24,7 @@
                 sequenceName="status_list_counter_seq"
                 startValue="1"
                 incrementBy="1"/>
+        <validCheckSum>9:84e6b8d766f94239175c403fc1293920</validCheckSum>
     </changeSet>
 
     <changeSet id="add-indices-to-status-list-mapping" author="adorsys">

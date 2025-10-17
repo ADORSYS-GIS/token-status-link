@@ -56,11 +56,18 @@ public class TokenStatusEventListenerProviderFactory implements EventListenerPro
 
         // Initialize realms directly since we're already in the postInit phase
         // which means Keycloak's database is ready
-        try {
-            initializeRealms();
-        } catch (Exception e) {
-            logger.error("Error during initialization", e);
-        }
+        // Initialize realms in a separate thread after a delay to ensure Keycloak's database is fully ready
+        new Thread(() -> {
+            try {
+                waitForMasterRealm();
+                initializeRealms();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                logger.error("Realm initialization thread interrupted.", e);
+            } catch (Exception e) {
+                logger.error("Error during initialization in background thread", e);
+            }
+        }).start();
     }
 
     private void initializeRealms() {
@@ -175,6 +182,47 @@ public class TokenStatusEventListenerProviderFactory implements EventListenerPro
             }
             return false;
         }
+    }
+
+    /**
+     * Waits for the master realm to be initialized by Keycloak.
+     * Implements a polling mechanism to avoid timing issues.
+     */
+    private void waitForMasterRealm() throws InterruptedException {
+        final long MAX_WAIT_TIME_MS = 60000; // 60 seconds max wait
+        final long POLL_INTERVAL_MS = 1000; // 1 second poll interval
+        long startTime = System.currentTimeMillis();
+
+        logger.info("Waiting for master realm initialization...");
+
+        while (System.currentTimeMillis() - startTime < MAX_WAIT_TIME_MS) {
+            KeycloakSession session = sessionFactory.create();
+            try {
+                session.getTransactionManager().begin();
+
+                // Keycloak's admin realm is typically named "master"
+                RealmModel masterRealm = session.realms().getRealmByName("master");
+
+                session.getTransactionManager().commit();
+
+                if (masterRealm != null) {
+                    logger.info("Master realm found. Proceeding with initialization.");
+                    return;
+                }
+            } catch (Exception e) {
+                if (session.getTransactionManager().isActive()) {
+                    session.getTransactionManager().rollback();
+                }
+                // Log exception but continue polling if it's not a critical failure
+                logger.debug("Error while checking for master realm, continuing to wait: " + e.getMessage());
+            } finally {
+                session.close();
+            }
+
+            performSleep(POLL_INTERVAL_MS);
+        }
+
+        logger.warn("Timed out waiting for master realm initialization after " + MAX_WAIT_TIME_MS / 1000 + " seconds. Proceeding anyway.");
     }
 
     protected void performSleep(long millis) throws InterruptedException {

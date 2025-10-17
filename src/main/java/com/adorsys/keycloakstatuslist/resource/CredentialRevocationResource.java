@@ -136,9 +136,8 @@ public class CredentialRevocationResource {
      */
     private boolean isServiceEnabled() {
         try {
-            RealmModel realm = session.getContext().getRealm();
-            String enabled = realm.getAttribute("status-list-enabled");
-            return "true".equalsIgnoreCase(enabled);
+            StatusListConfig config = new StatusListConfig(session.getContext().getRealm());
+            return config.isEnabled();
         } catch (Exception e) {
             logger.warn("Error checking service status, defaulting to disabled", e);
             return false;
