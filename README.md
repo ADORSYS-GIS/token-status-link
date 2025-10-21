@@ -1,19 +1,15 @@
 # Keycloak Token Status Plugin
 
 This plugin lets Keycloak send the status of long-lived tokens or verifiable credentials to an external status list
-server. It helps you quickly revoke credentials before they expire. The plugin uses the `REVOKE_GRANT` event to detect
-when a credential should be marked as revoked.
+server. It helps you quickly revoke credentials before they expire.
 
 The primary use case is for verifiable credentials or other long-lived tokens that may need to be invalidated before
-their expiration (for example, if a credential is compromised or must be revoked for compliance reasons). The
-`REVOKE_GRANT` event is used as the closest available event to signal such revocations. Please note that this event may
-not cover all possible credential types, but it is currently the best fit for this purpose in Keycloak.
+their expiration (for example, if a credential is compromised or must be revoked for compliance reasons).
 
 The status list server should implement the OAuth 2.0 Status List pattern.
 
 ## Features
 
-- Track long-lived token revocation events
 - Publish token status to an external status list server
 - Support for different token statuses (VALID, REVOKED)
 - Configurable connection parameters with sensible defaults
@@ -35,12 +31,6 @@ The plugin can be configured at the realm level with the following properties:
 | `status-list-connect-timeout`     | Connection timeout in milliseconds           | `30000`                                |
 | `status-list-read-timeout`        | Read timeout in milliseconds                 | `60000`                                |
 | `status-list-retry-count`         | Number of retry attempts for failed requests | `0`                                    |
-
-## Supported Events
-
-The plugin processes the following Keycloak events:
-
-- REVOKE_GRANT
 
 ## Token Status Record Format
 
@@ -90,12 +80,7 @@ mvn clean package
 
 3. Restart Keycloak to load the plugin.
 
-4. Enable the event listener in your Keycloak realm:
-    - Navigate to the Realm Settings
-    - Go to Events tab
-    - Add "token-status-event-listener" to the Event Listeners
-
-5. Configure the plugin using the realm attributes described in the Configuration Properties section above.
+4. Configure the plugin using the realm attributes described in the Configuration Properties section above.
 
 ### Configuring Keycloak's credential issuance to use the Status List protocol mapper
 
@@ -141,7 +126,6 @@ For manual testing with a local status list server:
 
 ### TODO
 
-- Remove logic depending on `REVOKE_GRANT` events. These merely do not serve the purpose of this plugin.
 - Unify HTTP interaction with the status list server in the dedicated `StatusListService` class.
 - Improve persistence layer as the plugin interacts with the database.
 - Drop unnecessary configuration properties.
