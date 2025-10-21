@@ -42,9 +42,7 @@ public class TokenStatusEventListenerProvider implements EventListenerProvider {
         return new StatusListService(
                 config.getServerUrl(),
                 cryptoIdentityService.getJwtToken(config),
-                config.getConnectTimeout(),
-                config.getReadTimeout(),
-                config.getRetryCount()
+                config
         );
     }
 

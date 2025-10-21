@@ -45,9 +45,7 @@ public class CredentialRevocationService {
             this.statusListService = new StatusListService(
                     config.getServerUrl(),
                     cryptoIdentityService.getJwtToken(config),
-                    config.getConnectTimeout(),
-                    config.getReadTimeout(),
-                    config.getRetryCount()
+                    config
             );
         }
         return statusListService;

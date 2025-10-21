@@ -6,18 +6,10 @@ import com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
 import com.adorsys.keycloakstatuslist.model.Status;
 import com.adorsys.keycloakstatuslist.model.StatusListClaim;
 import com.adorsys.keycloakstatuslist.service.CryptoIdentityService;
-import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
+import com.adorsys.keycloakstatuslist.service.StatusListService;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.EntityManager;
 import jakarta.ws.rs.core.UriBuilder;
-import org.apache.hc.client5.http.classic.methods.HttpGet;
-import org.apache.hc.client5.http.classic.methods.HttpPatch;
-import org.apache.hc.client5.http.classic.methods.HttpPost;
-import org.apache.hc.client5.http.classic.methods.HttpUriRequestBase;
-import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
-import org.apache.hc.core5.http.ContentType;
-import org.apache.hc.core5.http.HttpHeaders;
-import org.apache.hc.core5.http.io.entity.StringEntity;
 import org.jboss.logging.Logger;
 import org.keycloak.connections.jpa.JpaConnectionProvider;
 import org.keycloak.models.KeycloakSession;
@@ -28,12 +20,10 @@ import org.keycloak.protocol.ProtocolMapper;
 import org.keycloak.protocol.oid4vc.issuance.mappers.OID4VCMapper;
 import org.keycloak.protocol.oid4vc.model.VerifiableCredential;
 import org.keycloak.provider.ProviderConfigProperty;
-import org.keycloak.util.JsonSerialization;
 
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -53,6 +43,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
 
     private final KeycloakSession session;
     private final CryptoIdentityService cryptoIdentityService;
+    private StatusListService statusListService;
 
     protected interface Constants {
         String MAPPER_ID = "oid4vc-status-list-claim-mapper";
@@ -62,9 +53,6 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         String STATUS_CLAIM_KEY = "status";
         String TOKEN_STATUS_VALID = "VALID";
 
-        String BEARER_PREFIX = "Bearer ";
-        String HTTP_ENDPOINT_PUBLISH_PATH = "/statuslists/publish";
-        String HTTP_ENDPOINT_UPDATE_PATH = "/statuslists/update";
         String HTTP_ENDPOINT_RETRIEVE_PATH = "/statuslists/%s";
     }
 
@@ -114,6 +102,17 @@ public class StatusListProtocolMapper extends OID4VCMapper {
 
     private StatusListConfig getStatusListConfig(RealmModel realm) {
         return new StatusListConfig(realm);
+    }
+
+    protected StatusListService getStatusListService(StatusListConfig config) {
+        if (statusListService == null) {
+            statusListService = new StatusListService(
+                    config.getServerUrl(),
+                    cryptoIdentityService.getJwtToken(config),
+                    config
+            );
+        }
+        return statusListService;
     }
 
     @Override
@@ -259,13 +258,6 @@ public class StatusListProtocolMapper extends OID4VCMapper {
     private void sendStatusToServer(long idx, String statusListId, StatusListConfig realmConfig) throws IOException {
         Objects.requireNonNull(cryptoIdentityService);
 
-        // Generate authentication token
-        String jwtToken = cryptoIdentityService.getJwtToken(realmConfig);
-        if (jwtToken == null || jwtToken.isEmpty()) {
-            logger.error("JWT token is required for status server authentication but is missing or empty.");
-            throw new IllegalArgumentException("JWT token is required for status server authentication.");
-        }
-
         // Prepare payload
         StatusListPayload payload = new StatusListPayload(
                 statusListId,
@@ -273,74 +265,20 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         );
 
         // Publish or update status list on server
-        publishOrUpdateNewList(payload, jwtToken, realmConfig);
+        publishOrUpdateNewList(payload, realmConfig);
     }
 
     private void publishOrUpdateNewList(
             StatusListPayload payload,
-            String bearerToken,
             StatusListConfig realmConfig
     ) throws IOException {
-        String serverUrl = realmConfig.getServerUrl();
-
-        try (CloseableHttpClient httpClient = CustomHttpClient.getHttpClient(realmConfig)) {
-            boolean statusListExists = checkStatusListExists(httpClient, serverUrl, payload.listId);
-            UriBuilder uriBuilder = UriBuilder.fromUri(serverUrl);
-            HttpUriRequestBase httpRequest = statusListExists
-                    ? new HttpPatch(uriBuilder.path(Constants.HTTP_ENDPOINT_UPDATE_PATH).build())
-                    : new HttpPost(uriBuilder.path(Constants.HTTP_ENDPOINT_PUBLISH_PATH).build());
-
-            httpRequest.setHeader(HttpHeaders.CONTENT_TYPE, ContentType.APPLICATION_JSON);
-            httpRequest.setHeader(HttpHeaders.AUTHORIZATION, Constants.BEARER_PREFIX + bearerToken);
-
-            String jsonPayload = JsonSerialization.mapper.writeValueAsString(payload);
-            logger.debugf("Sending payload: %s", jsonPayload);
-            httpRequest.setEntity(new StringEntity(jsonPayload, StandardCharsets.UTF_8, false));
-
-            httpClient.execute(httpRequest, response -> {
-                if (response.getCode() < 200 || response.getCode() >= 300) {
-                    logger.errorf("Failed to %s status list %s: %d %s",
-                            statusListExists ? "update" : "publish",
-                            payload.listId, response.getCode(), response.getReasonPhrase());
-                    throw new IOException("Non-success response: " + response.getCode());
-                } else {
-                    logger.infof("Successfully %s status list %s on server.",
-                            statusListExists ? "updated" : "published", payload.listId);
-                    return null;
-                }
-            });
-        } catch (Exception e) {
-            logger.errorf("Error publishing or updating status list on server: %s", e.getMessage());
-            throw e;
+        StatusListService service = getStatusListService(realmConfig);
+        boolean statusListExists = service.checkStatusListExists(payload.listId);
+        if (statusListExists) {
+            service.updateList(payload);
+        } else {
+            service.publishNewList(payload);
         }
-    }
-
-    private boolean checkStatusListExists(
-            CloseableHttpClient httpClient,
-            String serverUrl,
-            String statusListId
-    ) throws IOException {
-        String endpoint = UriBuilder.fromUri(serverUrl)
-                .path(String.format(Constants.HTTP_ENDPOINT_RETRIEVE_PATH, statusListId))
-                .build()
-                .toString();
-
-        HttpGet httpGet = new HttpGet(endpoint);
-
-        return httpClient.execute(httpGet, response -> {
-            if (response.getCode() == 404) {
-                logger.infof("Status list %s does not exist on server.", statusListId);
-                return false;
-            } else if (response.getCode() == 200) {
-                logger.infof("Status list %s exists on server.", statusListId);
-                return true;
-            } else {
-                String reason = response.getReasonPhrase();
-                logger.errorf("Failed to verify existence of status list %s: %d %s", statusListId,
-                        response.getCode(), reason);
-                throw new IOException("Failed to verify status list existence: " + response.getCode());
-            }
-        });
     }
 
     public record StatusListPayload(

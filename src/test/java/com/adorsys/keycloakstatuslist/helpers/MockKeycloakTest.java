@@ -1,6 +1,5 @@
 package com.adorsys.keycloakstatuslist.helpers;
 
-import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
 import jakarta.persistence.EntityManager;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpResponse;
@@ -21,7 +20,6 @@ import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserSessionModel;
 import org.keycloak.util.JsonSerialization;
 import org.mockito.Mock;
-import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.io.IOException;
@@ -33,7 +31,6 @@ import java.security.spec.InvalidKeySpecException;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
-import static org.mockito.Mockito.mockStatic;
 
 @ExtendWith(MockitoExtension.class)
 public class MockKeycloakTest {
@@ -65,7 +62,6 @@ public class MockKeycloakTest {
     @Mock
     protected UserSessionModel userSession;
 
-    private MockedStatic<CustomHttpClient> mocked;
 
     @Mock
     protected CloseableHttpClient httpClient;
@@ -95,14 +91,10 @@ public class MockKeycloakTest {
 
     @BeforeEach
     void httpSetUp() {
-        mocked = mockStatic(CustomHttpClient.class);
-        mocked.when(() -> CustomHttpClient.getHttpClient(any()))
-                .thenReturn(httpClient);
     }
 
     @AfterEach
     void httpTearDown() {
-        mocked.close();
     }
 
     static KeyWrapper getActiveRsaKey() {

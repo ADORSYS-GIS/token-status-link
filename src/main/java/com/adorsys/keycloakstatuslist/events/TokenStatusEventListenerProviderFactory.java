@@ -203,9 +203,7 @@ public class TokenStatusEventListenerProviderFactory implements EventListenerPro
             StatusListService statusListService = new StatusListService(
                     config.getServerUrl(),
                     cryptoIdentityService.getJwtToken(config),
-                    config.getConnectTimeout(),
-                    config.getReadTimeout(),
-                    config.getRetryCount()
+                    config
             );
 
             // Get realm's public key and algorithm
