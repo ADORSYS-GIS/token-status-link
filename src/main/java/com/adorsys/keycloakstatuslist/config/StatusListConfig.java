@@ -19,9 +19,9 @@ public class StatusListConfig {
     public static final String STATUS_LIST_ENABLED = "status-list-enabled";
     public static final String STATUS_LIST_SERVER_URL = "status-list-server-url";
     public static final String STATUS_LIST_TOKEN_ISSUER_PREFIX = "status-list-token-issuer-prefix";
-    public static final String STATUS_LIST_CONNECT_TIMEOUT = "status-list-connect-timeout";
-    public static final String STATUS_LIST_READ_TIMEOUT = "status-list-read-timeout";
-    public static final String STATUS_LIST_RETRY_COUNT = "status-list-retry-count";
+    // Note: connection/read timeouts and retry count are internal defaults and
+    // are no longer configurable via realm attributes. They remain as internal
+    // constants below.
 
     // Default values
     private static final boolean DEFAULT_ENABLED = true;
@@ -86,14 +86,6 @@ public class StatusListConfig {
      * @return connection timeout in milliseconds
      */
     public int getConnectTimeout() {
-        String value = realm.getAttribute(STATUS_LIST_CONNECT_TIMEOUT);
-        if (value != null) {
-            try {
-                return Integer.parseInt(value);
-            } catch (NumberFormatException e) {
-                return DEFAULT_CONNECT_TIMEOUT;
-            }
-        }
         return DEFAULT_CONNECT_TIMEOUT;
     }
 
@@ -103,14 +95,6 @@ public class StatusListConfig {
      * @return read timeout in milliseconds
      */
     public int getReadTimeout() {
-        String value = realm.getAttribute(STATUS_LIST_READ_TIMEOUT);
-        if (value != null) {
-            try {
-                return Integer.parseInt(value);
-            } catch (NumberFormatException e) {
-                return DEFAULT_READ_TIMEOUT;
-            }
-        }
         return DEFAULT_READ_TIMEOUT;
     }
 
@@ -121,14 +105,6 @@ public class StatusListConfig {
      * @return number of retry attempts
      */
     public int getRetryCount() {
-        String value = realm.getAttribute(STATUS_LIST_RETRY_COUNT);
-        if (value != null) {
-            try {
-                return Integer.parseInt(value);
-            } catch (NumberFormatException e) {
-                return DEFAULT_RETRY_COUNT;
-            }
-        }
         return DEFAULT_RETRY_COUNT;
     }
 }

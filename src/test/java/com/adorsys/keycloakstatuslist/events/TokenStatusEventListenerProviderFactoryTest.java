@@ -80,9 +80,7 @@ class TokenStatusEventListenerProviderFactoryTest {
         lenient().when(realm.getAttribute("status-list-enabled")).thenReturn("true");
         lenient().when(realm.getAttribute("status-list-server-url")).thenReturn("http://localhost:8000");
         lenient().when(realm.getAttribute("status-list-auth-token")).thenReturn("test-token");
-        lenient().when(realm.getAttribute("status-list-connect-timeout")).thenReturn("5000");
-        lenient().when(realm.getAttribute("status-list-read-timeout")).thenReturn("5000");
-        lenient().when(realm.getAttribute("status-list-retry-count")).thenReturn("3");
+    // timeouts and retry count are internal defaults; tests rely on defaults and don't stub them
         
         // Setup key wrapper and public key
         lenient().when(keyWrapper.getPublicKey()).thenReturn(publicKey);
@@ -205,18 +203,14 @@ class TokenStatusEventListenerProviderFactoryTest {
         lenient().when(realm1.getAttribute("status-list-enabled")).thenReturn("true");
         lenient().when(realm1.getAttribute("status-list-server-url")).thenReturn("http://localhost:8000");
         lenient().when(realm1.getAttribute("status-list-auth-token")).thenReturn("test-token");
-        lenient().when(realm1.getAttribute("status-list-connect-timeout")).thenReturn("5000");
-        lenient().when(realm1.getAttribute("status-list-read-timeout")).thenReturn("5000");
-        lenient().when(realm1.getAttribute("status-list-retry-count")).thenReturn("3");
+        
 
         // Setup realm2 to fail - use unhealthy server URL so it returns early
         lenient().when(realm2.getName()).thenReturn("failed-realm");
         lenient().when(realm2.getAttribute("status-list-enabled")).thenReturn("true");
         lenient().when(realm2.getAttribute("status-list-server-url")).thenReturn("http://unhealthy-server:9999");
         lenient().when(realm2.getAttribute("status-list-auth-token")).thenReturn("test-token");
-        lenient().when(realm2.getAttribute("status-list-connect-timeout")).thenReturn("5000");
-        lenient().when(realm2.getAttribute("status-list-read-timeout")).thenReturn("5000");
-        lenient().when(realm2.getAttribute("status-list-retry-count")).thenReturn("3");
+        
 
         // Create separate key wrappers and public keys for realm1 only
         KeyWrapper keyWrapper1 = mock(KeyWrapper.class);
@@ -252,18 +246,14 @@ class TokenStatusEventListenerProviderFactoryTest {
         lenient().when(successRealm.getAttribute("status-list-enabled")).thenReturn("true");
         lenient().when(successRealm.getAttribute("status-list-server-url")).thenReturn("http://localhost:8000");
         lenient().when(successRealm.getAttribute("status-list-auth-token")).thenReturn("test-token");
-        lenient().when(successRealm.getAttribute("status-list-connect-timeout")).thenReturn("5000");
-        lenient().when(successRealm.getAttribute("status-list-read-timeout")).thenReturn("5000");
-        lenient().when(successRealm.getAttribute("status-list-retry-count")).thenReturn("3");
+        
 
         // Setup failed realm - use unhealthy server URL so it returns early
         lenient().when(failedRealm.getName()).thenReturn("failed-realm");
         lenient().when(failedRealm.getAttribute("status-list-enabled")).thenReturn("true");
         lenient().when(failedRealm.getAttribute("status-list-server-url")).thenReturn("http://unhealthy-server:9999");
         lenient().when(failedRealm.getAttribute("status-list-auth-token")).thenReturn("test-token");
-        lenient().when(failedRealm.getAttribute("status-list-connect-timeout")).thenReturn("5000");
-        lenient().when(failedRealm.getAttribute("status-list-read-timeout")).thenReturn("5000");
-        lenient().when(failedRealm.getAttribute("status-list-retry-count")).thenReturn("3");
+        
 
         // Setup disabled realm
         lenient().when(disabledRealm.getName()).thenReturn("disabled-realm");
@@ -368,18 +358,14 @@ class TokenStatusEventListenerProviderFactoryTest {
         lenient().when(healthyRealm.getAttribute("status-list-enabled")).thenReturn("true");
         lenient().when(healthyRealm.getAttribute("status-list-server-url")).thenReturn("http://localhost:8000");
         lenient().when(healthyRealm.getAttribute("status-list-auth-token")).thenReturn("test-token");
-        lenient().when(healthyRealm.getAttribute("status-list-connect-timeout")).thenReturn("5000");
-        lenient().when(healthyRealm.getAttribute("status-list-read-timeout")).thenReturn("5000");
-        lenient().when(healthyRealm.getAttribute("status-list-retry-count")).thenReturn("3");
+        
 
         // Setup unhealthy realm
         lenient().when(unhealthyRealm.getName()).thenReturn("unhealthy-realm");
         lenient().when(unhealthyRealm.getAttribute("status-list-enabled")).thenReturn("true");
         lenient().when(unhealthyRealm.getAttribute("status-list-server-url")).thenReturn("http://unhealthy-server:9999");
         lenient().when(unhealthyRealm.getAttribute("status-list-auth-token")).thenReturn("test-token");
-        lenient().when(unhealthyRealm.getAttribute("status-list-connect-timeout")).thenReturn("5000");
-        lenient().when(unhealthyRealm.getAttribute("status-list-read-timeout")).thenReturn("5000");
-        lenient().when(unhealthyRealm.getAttribute("status-list-retry-count")).thenReturn("3");
+        
 
         // Setup key manager for healthy realm only
         KeyWrapper healthyKeyWrapper = mock(KeyWrapper.class);

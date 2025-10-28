@@ -16,8 +16,8 @@ The status list server should implement the OAuth 2.0 Status List pattern.
 - Track long-lived token revocation events
 - Publish token status to an external status list server
 - Support for different token statuses (VALID, REVOKED)
-- Configurable connection parameters with sensible defaults
-- Robust retry mechanism for failed publishing attempts with exponential backoff
+- Fixed connection parameters with safe defaults
+- Fast-fail mechanism (no retries) for failed publishing attempts
 - Secure communication with TLS 1.2/1.3
 - Support for authentication with the status list server
 - Detailed logging with unique request IDs for better traceability
@@ -32,9 +32,11 @@ The plugin can be configured at the realm level with the following properties:
 | `status-list-enabled`             | Enables or disables the status list service  | `true`                                 |
 | `status-list-server-url`          | URL of the status list server                | `https://statuslist.eudi-adorsys.com/` |
 | `status-list-token-issuer-prefix` | Prefix for building the Token Issuer ID      | Generated UUID                         |
-| `status-list-connect-timeout`     | Connection timeout in milliseconds           | `30000`                                |
-| `status-list-read-timeout`        | Read timeout in milliseconds                 | `60000`                                |
-| `status-list-retry-count`         | Number of retry attempts for failed requests | `0`                                    |
+
+Note: The following configuration properties have been removed and are now internal constants:
+- Connection timeout: Fixed at 30 seconds
+- Read timeout: Fixed at 60 seconds
+- Retry count: Fixed at 0 (no retries)
 
 ## Supported Events
 
@@ -113,9 +115,9 @@ corresponding to a specific credential's configuration. Below is a sample such c
 
 ## Performance Considerations
 
-- The plugin performs non-blocking HTTP requests to minimize impact on Keycloak performance
-- Failed requests are retried with exponential backoff (1s, 2s, 3s, etc.)
-- Connection and read timeouts are configurable to prevent hanging connections
+- The plugin performs HTTP requests using the bundled HTTP clients; calls are synchronous (blocking) in the current implementation and execute on the caller's thread.
+- **No retry mechanism** is used by default (retry count = 0) to ensure fast failure and avoid prolonged thread blocking. Some internal clients include retry strategies but the default configuration disables retries.
+- Connection and read timeouts are **fixed at safe defaults** (30s connect, 60s read) to prevent hanging connections.
 
 ## Security Features
 
