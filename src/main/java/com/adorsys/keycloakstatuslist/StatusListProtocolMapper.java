@@ -8,8 +8,8 @@ import com.adorsys.keycloakstatuslist.model.StatusListClaim;
 import com.adorsys.keycloakstatuslist.service.CryptoIdentityService;
 import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import jakarta.persistence.EntityManager;
 import jakarta.ws.rs.core.UriBuilder;
+import jakarta.persistence.EntityManager;
 import org.apache.hc.client5.http.classic.methods.HttpGet;
 import org.apache.hc.client5.http.classic.methods.HttpPatch;
 import org.apache.hc.client5.http.classic.methods.HttpPost;
@@ -38,11 +38,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Consumer;
-
-/**
- * Protocol mapper for adding `status_list` claims to issued Verifiable Credentials, as per the
+ 
+ /**
+  * Protocol mapper for adding `status_list` claims to issued Verifiable Credentials, as per the
  * <a href="https://www.ietf.org/archive/id/draft-ietf-oauth-status-list-11.html#name-referenced-token">
  * Token Status List </a> specification.
  */
@@ -194,16 +194,31 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         }
     }
 
-    private static EntityManager getEntityManager(KeycloakSession session) {
-        EntityManager em = session.getProvider(JpaConnectionProvider.class).getEntityManager();
-        if (em == null) {
-            throw new IllegalStateException("EntityManager is null for JpaConnectionProvider");
-        }
+    private Status storeIndexMapping(String statusListId, Long idx, String uri, String userId, String tokenId,
+                                     KeycloakSession session, StatusListConfig realmConfig) {
+        logger.debugf("Storing index mapping: status_list_id=%s, idx=%d, userId=%s, tokenId=%s",
+                statusListId, idx, userId, tokenId);
 
-        return em;
+        try {
+            StatusListMappingEntity mapping = new StatusListMappingEntity();
+            mapping.setStatusListId(statusListId);
+            mapping.setIdx(idx);
+            mapping.setUserId(userId);
+            mapping.setTokenId(tokenId);
+            mapping.setRealmId(session.getContext().getRealm().getId());
+            saveInTransaction(session, mapping);
+
+            sendStatusToServer(idx, statusListId, realmConfig);
+            StatusListClaim statusList = new StatusListClaim(idx, uri);
+            return new Status(statusList);
+        } catch (Exception e) {
+            logger.error("Failed to store index mapping", e);
+            return null;
+        }
     }
 
-    private static void withEntityManagerInTransaction(KeycloakSession session, Consumer<EntityManager> action) {
+    private void saveInTransaction(KeycloakSession session, StatusListMappingEntity entity) {
+        AtomicReference<StatusListMappingEntity> result = new AtomicReference<>();
         KeycloakModelUtils.runJobInTransaction(session.getKeycloakSessionFactory(), s -> {
             EntityManager em = s.getProvider(JpaConnectionProvider.class).getEntityManager();
             if (em == null) {
@@ -211,49 +226,28 @@ public class StatusListProtocolMapper extends OID4VCMapper {
                 s.getTransactionManager().setRollbackOnly();
                 return;
             }
-            action.accept(em);
+            em.persist(entity);
+            em.flush();
+            result.set(entity);
         });
     }
 
     private Long getNextIndex(KeycloakSession session) {
         logger.debugf("Getting next index for realm: %s", session.getContext().getRealm().getId());
         try {
-            EntityManager em = getEntityManager(session);
+            EntityManager em = session.getProvider(JpaConnectionProvider.class).getEntityManager();
             String query = String.format("SELECT nextval('%s')", StatusListCounterEntity.SEQUENCE_NAME);
-            return (Long) em.createNativeQuery(query).getSingleResult();
+            Object result = em.createNativeQuery(query).getSingleResult();
+
+            if (result instanceof Optional) {
+                return ((Optional<?>) result).map(o -> ((Number) o).longValue()).orElse(null);
+            }
+
+            return ((Number) result).longValue();
         } catch (Exception e) {
             logger.error("Failed to get next index", e);
             return null;
         }
-    }
-
-    private Status storeIndexMapping(String statusListId, Long idx, String uri, String userId, String tokenId,
-                                     KeycloakSession session, StatusListConfig realmConfig) {
-        logger.debugf("Storing index mapping: status_list_id=%s, idx=%d, userId=%s, tokenId=%s",
-                statusListId, idx, userId, tokenId);
-        AtomicReference<Status> status = new AtomicReference<>();
-
-        withEntityManagerInTransaction(session, em -> {
-            try {
-                StatusListMappingEntity mapping = new StatusListMappingEntity();
-                mapping.setStatusListId(statusListId);
-                mapping.setIdx(idx);
-                mapping.setUserId(userId);
-                mapping.setTokenId(tokenId);
-                mapping.setRealmId(session.getContext().getRealm().getId());
-                em.persist(mapping);
-                em.flush();
-
-                sendStatusToServer(idx, statusListId, realmConfig);
-                StatusListClaim statusList = new StatusListClaim(idx, uri);
-                status.set(new Status(statusList));
-            } catch (Exception e) {
-                logger.error("Failed to store index mapping", e);
-                session.getTransactionManager().setRollbackOnly();
-            }
-        });
-
-        return status.get();
     }
 
     private void sendStatusToServer(long idx, String statusListId, StatusListConfig realmConfig) throws IOException {

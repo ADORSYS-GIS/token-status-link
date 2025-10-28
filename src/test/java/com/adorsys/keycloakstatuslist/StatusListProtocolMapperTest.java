@@ -20,6 +20,7 @@ import org.mockito.Mock;
 import java.io.IOException;
 import java.net.URI;
 import java.util.HashMap;
+import java.util.Optional;
 import java.util.Random;
 
 import static com.adorsys.keycloakstatuslist.StatusListProtocolMapper.Constants;
@@ -32,14 +33,13 @@ import static org.hamcrest.Matchers.not;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.startsWith;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.when;
-
-class StatusListProtocolMapperTest extends MockKeycloakTest {
-
+ 
+ class StatusListProtocolMapperTest extends MockKeycloakTest {
+ 
     LogCaptor logCaptor = LogCaptor.forClass(StatusListProtocolMapper.class);
 
     protected static final String TEST_SERVER_URL = "https://example.com";
@@ -49,6 +49,8 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
     StatusListProtocolMapper mapper;
     HashMap<String, Object> claims;
+    @Mock
+    Query query;
 
     @BeforeEach
     void setup() {
@@ -135,12 +137,25 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
     @Test
     void shouldNotMap_IfCantGetNextIndex() {
-        mockFailingGetNextIndex();
+        when(entityManager.createNativeQuery(any(String.class))).thenReturn(query);
+        when(query.getSingleResult()).thenThrow(new RuntimeException("Database connection failed"));
 
         mapper.setClaimsForSubject(claims, userSession);
 
         assertThat("Claims should remain unmapped", claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
         assertThat(logCaptor.getErrorLogs(), hasItem(containsString("Failed to get next index")));
+    }
+
+    @Test
+    void shouldNotMap_IfCantStoreMapping() {
+        mockGetNextIndex();
+        doThrow(new PersistenceException("Database connection failed"))
+                .when(entityManager).persist(any());
+
+        mapper.setClaimsForSubject(claims, userSession);
+
+        assertThat("Claims should remain unmapped", claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
+        assertThat(logCaptor.getErrorLogs(), hasItem(containsString("Failed to store index mapping")));
     }
 
     @Test
@@ -195,16 +210,9 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
     private long mockGetNextIndex() {
         long nextIndex = new Random().nextLong();
-        Query query = mock(Query.class);
-        when(entityManager.createNativeQuery(startsWith("SELECT nextval"))).thenReturn(query);
-        when(query.getSingleResult()).thenAnswer(invocation -> nextIndex);
+        when(entityManager.createNativeQuery(any(String.class))).thenReturn(query);
+        when(query.getSingleResult()).thenReturn(Optional.of(nextIndex));
         return nextIndex;
-    }
-
-    private void mockFailingGetNextIndex() {
-        Query query = mock(Query.class);
-        when(entityManager.createNativeQuery(startsWith("SELECT nextval"))).thenReturn(query);
-        when(query.getSingleResult()).thenThrow(new PersistenceException());
     }
 
     @FunctionalInterface
