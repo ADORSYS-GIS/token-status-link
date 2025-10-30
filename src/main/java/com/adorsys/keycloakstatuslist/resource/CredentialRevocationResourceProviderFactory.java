@@ -1,5 +1,6 @@
 package com.adorsys.keycloakstatuslist.resource;
 
+import org.keycloak.Config;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.services.resource.RealmResourceProvider;
@@ -20,7 +21,7 @@ public class CredentialRevocationResourceProviderFactory implements RealmResourc
     }
 
     @Override
-    public void init(org.keycloak.Config.Scope config) {
+    public void init(Config.Scope config) {
     }
 
     @Override

@@ -10,14 +10,15 @@ import jakarta.ws.rs.core.Response;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.keycloak.common.ClientConnection;
 import org.keycloak.http.HttpRequest;
 import org.keycloak.models.KeycloakContext;
 import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.models.RealmModel;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.lang.reflect.Field;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -32,26 +33,29 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class CredentialRevocationResourceTest {
 
+    // Session-related mocks
     @Mock
     private KeycloakSession session;
+    
+    @Mock
+    private KeycloakSessionFactory sessionFactory;
     
     @Mock
     private KeycloakContext context;
     
     @Mock
     private RealmModel realm;
-    
+
+    // HTTP-related mocks
     @Mock
     private HttpRequest httpRequest;
     
     @Mock
     private HttpHeaders headers;
-    
+
+    // Service-related mocks
     @Mock
     private CredentialRevocationService revocationService;
-    
-    @Mock
-    private org.keycloak.models.KeycloakSessionFactory sessionFactory;
 
     private TestableCredentialRevocationResource resource;
 
@@ -61,46 +65,32 @@ class CredentialRevocationResourceTest {
         when(session.getContext()).thenReturn(context);
         when(session.getKeycloakSessionFactory()).thenReturn(sessionFactory);
         when(context.getRealm()).thenReturn(realm);
-        when(context.getConnection()).thenReturn(mock(org.keycloak.common.ClientConnection.class));
+        when(context.getConnection()).thenReturn(mock(ClientConnection.class));
         when(realm.getName()).thenReturn("test-realm");
-        
-        // Create a testable version of the resource
-        resource = new TestableCredentialRevocationResource(session);
-        
-        // Inject mocked dependencies using reflection
-        try {
-            // Inject headers
-            Field headersField = CredentialRevocationResource.class.getDeclaredField("headers");
-            headersField.setAccessible(true);
-            headersField.set(resource, headers);
-            
-            // Inject service
-            Field serviceField = CredentialRevocationResource.class.getDeclaredField("revocationService");
-            serviceField.setAccessible(true);
-            serviceField.set(resource, revocationService);
-        } catch (Exception e) {
-            fail("Failed to inject mocked dependencies: " + e.getMessage());
-        }
+
+        // Create a testable version of the resource with dependency injection
+        resource = new TestableCredentialRevocationResource(session, headers, revocationService);
     }
 
     /**
-     * Testable version of CredentialRevocationResource that overrides the parent class behavior
+     * Testable version of CredentialRevocationResource that overrides the parent
+     * class behavior
      * to avoid complex Keycloak setup requirements.
      */
     private static class TestableCredentialRevocationResource extends CredentialRevocationResource {
         private final KeycloakSession session;
-        
-        public TestableCredentialRevocationResource(KeycloakSession session) {
-            super(session);
+
+        public TestableCredentialRevocationResource(KeycloakSession session, HttpHeaders headers, CredentialRevocationService revocationService) {
+            super(session, headers, revocationService);
             this.session = session;
         }
-        
+
         @Override
         public Response revoke() {
             // Get the form parameters and authorization header directly
             MultivaluedMap<String, String> form = session.getContext().getHttpRequest().getDecodedFormParameters();
             String authorizationHeader = getHeaders().getHeaderString(HttpHeaders.AUTHORIZATION);
-            
+
             if (authorizationHeader != null && authorizationHeader.toLowerCase().startsWith("bearer ")) {
                 String token = authorizationHeader.substring("bearer ".length()).trim();
                 String credentialId = form.getFirst("token");
@@ -112,7 +102,7 @@ class CredentialRevocationResourceTest {
                         request.setRevocationReason(form.getFirst("reason"));
 
                         getRevocationService().revokeCredential(request, token);
-                        
+
                         // Return success response
                         return Response.ok().build();
 
@@ -126,42 +116,32 @@ class CredentialRevocationResourceTest {
             // Return success response for all other cases
             return Response.ok().build();
         }
-        
-        // Helper method to access the injected headers
-        private HttpHeaders getHeaders() {
-            try {
-                Field headersField = CredentialRevocationResource.class.getDeclaredField("headers");
-                headersField.setAccessible(true);
-                return (HttpHeaders) headersField.get(this);
-            } catch (Exception e) {
-                throw new RuntimeException("Failed to access headers field", e);
-            }
+    }
+
+    /**
+     * Helper method to set up mock request parameters.
+     * Reduces duplication and improves readability across test methods.
+     */
+    private void mockRequest(String token, String reason, String authHeader) {
+        MultivaluedMap<String, String> formParams = new MultivaluedHashMap<>();
+        if (token != null) {
+            formParams.add("token", token);
         }
-        
-        // Helper method to access the injected service
-        private CredentialRevocationService getRevocationService() {
-            try {
-                Field serviceField = CredentialRevocationResource.class.getDeclaredField("revocationService");
-                serviceField.setAccessible(true);
-                return (CredentialRevocationService) serviceField.get(this);
-            } catch (Exception e) {
-                throw new RuntimeException("Failed to access revocationService field", e);
-            }
+        if (reason != null) {
+            formParams.add("reason", reason);
         }
+
+        when(context.getHttpRequest()).thenReturn(httpRequest);
+        when(httpRequest.getDecodedFormParameters()).thenReturn(formParams);
+        when(headers.getHeaderString(HttpHeaders.AUTHORIZATION)).thenReturn(authHeader);
     }
 
     @Test
     void testRevoke_Success() throws Exception {
-        MultivaluedMap<String, String> formParams = new MultivaluedHashMap<>();
-        formParams.add("token", "test-credential-123");
-        formParams.add("reason", "Test revocation");
-        
-        when(context.getHttpRequest()).thenReturn(httpRequest);
-        when(httpRequest.getDecodedFormParameters()).thenReturn(formParams);
-        when(headers.getHeaderString(HttpHeaders.AUTHORIZATION)).thenReturn("Bearer test-token");
-        
+        mockRequest("test-credential-123", "Test revocation", "Bearer test-token");
+
         Response response = resource.revoke();
-        
+
         assertNotNull(response);
         assertEquals(200, response.getStatus());
         verify(revocationService).revokeCredential(any(CredentialRevocationRequest.class), eq("test-token"));
@@ -169,15 +149,10 @@ class CredentialRevocationResourceTest {
 
     @Test
     void testRevoke_NoAuthorizationHeader() throws Exception {
-        MultivaluedMap<String, String> formParams = new MultivaluedHashMap<>();
-        formParams.add("token", "test-credential-123");
-        
-        when(context.getHttpRequest()).thenReturn(httpRequest);
-        when(httpRequest.getDecodedFormParameters()).thenReturn(formParams);
-        when(headers.getHeaderString(HttpHeaders.AUTHORIZATION)).thenReturn(null);
-        
+        mockRequest("test-credential-123", null, null);
+
         Response response = resource.revoke();
-        
+
         assertNotNull(response);
         assertEquals(200, response.getStatus());
         verify(revocationService, never()).revokeCredential(any(), anyString());
@@ -185,15 +160,10 @@ class CredentialRevocationResourceTest {
 
     @Test
     void testRevoke_EmptyAuthorizationHeader() throws Exception {
-        MultivaluedMap<String, String> formParams = new MultivaluedHashMap<>();
-        formParams.add("token", "test-credential-123");
-        
-        when(context.getHttpRequest()).thenReturn(httpRequest);
-        when(httpRequest.getDecodedFormParameters()).thenReturn(formParams);
-        when(headers.getHeaderString(HttpHeaders.AUTHORIZATION)).thenReturn("");
-        
+        mockRequest("test-credential-123", null, "");
+
         Response response = resource.revoke();
-        
+
         assertNotNull(response);
         assertEquals(200, response.getStatus());
         verify(revocationService, never()).revokeCredential(any(), anyString());
@@ -201,15 +171,10 @@ class CredentialRevocationResourceTest {
 
     @Test
     void testRevoke_InvalidAuthorizationHeader() throws Exception {
-        MultivaluedMap<String, String> formParams = new MultivaluedHashMap<>();
-        formParams.add("token", "test-credential-123");
-        
-        when(context.getHttpRequest()).thenReturn(httpRequest);
-        when(httpRequest.getDecodedFormParameters()).thenReturn(formParams);
-        when(headers.getHeaderString(HttpHeaders.AUTHORIZATION)).thenReturn("InvalidFormat token");
-        
+        mockRequest("test-credential-123", null, "InvalidFormat token");
+
         Response response = resource.revoke();
-        
+
         assertNotNull(response);
         assertEquals(200, response.getStatus());
         verify(revocationService, never()).revokeCredential(any(), anyString());
@@ -217,15 +182,10 @@ class CredentialRevocationResourceTest {
 
     @Test
     void testRevoke_NoTokenInForm() throws Exception {
-        MultivaluedMap<String, String> formParams = new MultivaluedHashMap<>();
-        formParams.add("reason", "Test revocation");
-        
-        when(context.getHttpRequest()).thenReturn(httpRequest);
-        when(httpRequest.getDecodedFormParameters()).thenReturn(formParams);
-        when(headers.getHeaderString(HttpHeaders.AUTHORIZATION)).thenReturn("Bearer test-token");
-        
+        mockRequest(null, "Test revocation", "Bearer test-token");
+
         Response response = resource.revoke();
-        
+
         assertNotNull(response);
         assertEquals(200, response.getStatus());
         verify(revocationService, never()).revokeCredential(any(), anyString());
@@ -233,16 +193,10 @@ class CredentialRevocationResourceTest {
 
     @Test
     void testRevoke_EmptyTokenInForm() throws Exception {
-        MultivaluedMap<String, String> formParams = new MultivaluedHashMap<>();
-        formParams.add("token", "");
-        formParams.add("reason", "Test revocation");
-        
-        when(context.getHttpRequest()).thenReturn(httpRequest);
-        when(httpRequest.getDecodedFormParameters()).thenReturn(formParams);
-        when(headers.getHeaderString(HttpHeaders.AUTHORIZATION)).thenReturn("Bearer test-token");
-        
+        mockRequest("", "Test revocation", "Bearer test-token");
+
         Response response = resource.revoke();
-        
+
         assertNotNull(response);
         assertEquals(200, response.getStatus());
         verify(revocationService, never()).revokeCredential(any(), anyString());
@@ -250,19 +204,13 @@ class CredentialRevocationResourceTest {
 
     @Test
     void testRevoke_ServiceThrowsException() throws Exception {
-        MultivaluedMap<String, String> formParams = new MultivaluedHashMap<>();
-        formParams.add("token", "test-credential-123");
-        formParams.add("reason", "Test revocation");
-        
-        when(context.getHttpRequest()).thenReturn(httpRequest);
-        when(httpRequest.getDecodedFormParameters()).thenReturn(formParams);
-        when(headers.getHeaderString(HttpHeaders.AUTHORIZATION)).thenReturn("Bearer test-token");
-        
+        mockRequest("test-credential-123", "Test revocation", "Bearer test-token");
+
         doThrow(new StatusListException("Invalid token format")).when(revocationService)
-            .revokeCredential(any(CredentialRevocationRequest.class), anyString());
-        
+                .revokeCredential(any(CredentialRevocationRequest.class), anyString());
+
         Response response = resource.revoke();
-        
+
         assertNotNull(response);
         assertEquals(200, response.getStatus());
         verify(revocationService).revokeCredential(any(CredentialRevocationRequest.class), eq("test-token"));
@@ -270,19 +218,13 @@ class CredentialRevocationResourceTest {
 
     @Test
     void testRevoke_ServiceThrowsRuntimeException() throws Exception {
-        MultivaluedMap<String, String> formParams = new MultivaluedHashMap<>();
-        formParams.add("token", "test-credential-123");
-        formParams.add("reason", "Test revocation");
-        
-        when(context.getHttpRequest()).thenReturn(httpRequest);
-        when(httpRequest.getDecodedFormParameters()).thenReturn(formParams);
-        when(headers.getHeaderString(HttpHeaders.AUTHORIZATION)).thenReturn("Bearer test-token");
-        
+        mockRequest("test-credential-123", "Test revocation", "Bearer test-token");
+
         doThrow(new RuntimeException("Unexpected error")).when(revocationService)
-            .revokeCredential(any(CredentialRevocationRequest.class), anyString());
-        
+                .revokeCredential(any(CredentialRevocationRequest.class), anyString());
+
         Response response = resource.revoke();
-        
+
         assertNotNull(response);
         assertEquals(200, response.getStatus());
         verify(revocationService).revokeCredential(any(CredentialRevocationRequest.class), eq("test-token"));
@@ -290,15 +232,10 @@ class CredentialRevocationResourceTest {
 
     @Test
     void testRevoke_ExtractsBearerTokenWithSpaces() throws Exception {
-        MultivaluedMap<String, String> formParams = new MultivaluedHashMap<>();
-        formParams.add("token", "test-credential-123");
-        
-        when(context.getHttpRequest()).thenReturn(httpRequest);
-        when(httpRequest.getDecodedFormParameters()).thenReturn(formParams);
-        when(headers.getHeaderString(HttpHeaders.AUTHORIZATION)).thenReturn("Bearer   token-with-spaces  ");
-        
+        mockRequest("test-credential-123", null, "Bearer   token-with-spaces  ");
+
         Response response = resource.revoke();
-        
+
         assertNotNull(response);
         assertEquals(200, response.getStatus());
         verify(revocationService).revokeCredential(any(CredentialRevocationRequest.class), eq("token-with-spaces"));
