@@ -19,16 +19,11 @@ public class StatusListConfig {
     public static final String STATUS_LIST_ENABLED = "status-list-enabled";
     public static final String STATUS_LIST_SERVER_URL = "status-list-server-url";
     public static final String STATUS_LIST_TOKEN_ISSUER_PREFIX = "status-list-token-issuer-prefix";
-    // Note: connection/read timeouts and retry count are internal defaults and
-    // are no longer configurable via realm attributes. They remain as internal
-    // constants below.
+   
 
     // Default values
     private static final boolean DEFAULT_ENABLED = true;
     private static final String DEFAULT_SERVER_URL = "https://statuslist.eudi-adorsys.com/";
-    private static final int DEFAULT_CONNECT_TIMEOUT = 30000;
-    private static final int DEFAULT_READ_TIMEOUT = 60000;
-    private static final int DEFAULT_RETRY_COUNT = 0; // Retry disabled by default
 
     private final RealmModel realm;
 
@@ -80,31 +75,4 @@ public class StatusListConfig {
         return String.format("%s::%s", prefix, realm.getName());
     }
 
-    /**
-     * Gets the connection timeout for the status list server.
-     *
-     * @return connection timeout in milliseconds
-     */
-    public int getConnectTimeout() {
-        return DEFAULT_CONNECT_TIMEOUT;
-    }
-
-    /**
-     * Gets the read timeout for the status list server.
-     *
-     * @return read timeout in milliseconds
-     */
-    public int getReadTimeout() {
-        return DEFAULT_READ_TIMEOUT;
-    }
-
-    /**
-     * Gets the number of retry attempts when communicating with the status list
-     * server.
-     *
-     * @return number of retry attempts
-     */
-    public int getRetryCount() {
-        return DEFAULT_RETRY_COUNT;
-    }
 }

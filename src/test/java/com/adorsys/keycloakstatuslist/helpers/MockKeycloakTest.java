@@ -96,7 +96,7 @@ public class MockKeycloakTest {
     @BeforeEach
     void httpSetUp() {
         mocked = mockStatic(CustomHttpClient.class);
-        mocked.when(() -> CustomHttpClient.getHttpClient(any()))
+        mocked.when(CustomHttpClient::getHttpClient)
                 .thenReturn(httpClient);
     }
 

@@ -283,7 +283,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
     ) throws IOException {
         String serverUrl = realmConfig.getServerUrl();
 
-        try (CloseableHttpClient httpClient = CustomHttpClient.getHttpClient(realmConfig)) {
+        try (CloseableHttpClient httpClient = CustomHttpClient.getHttpClient()) {
             boolean statusListExists = checkStatusListExists(httpClient, serverUrl, payload.listId);
             UriBuilder uriBuilder = UriBuilder.fromUri(serverUrl);
             HttpUriRequestBase httpRequest = statusListExists

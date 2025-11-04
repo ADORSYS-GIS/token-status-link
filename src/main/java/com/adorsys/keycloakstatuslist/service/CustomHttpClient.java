@@ -1,6 +1,5 @@
 package com.adorsys.keycloakstatuslist.service;
 
-import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import org.apache.hc.client5.http.HttpRequestRetryStrategy;
 import org.apache.hc.client5.http.config.RequestConfig;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
@@ -18,9 +17,13 @@ public class CustomHttpClient {
 
     private static final Logger logger = Logger.getLogger(CustomHttpClient.class);
 
-    public static CloseableHttpClient getHttpClient(StatusListConfig realmConfig) {
-        RequestConfig requestConfig = getRequestConfig(realmConfig);
-        HttpRequestRetryStrategy retryStrategy = getHttpRequestRetryStrategy(realmConfig);
+    private static final int DEFAULT_CONNECT_TIMEOUT = 30000;
+    private static final int DEFAULT_READ_TIMEOUT = 60000;
+    private static final int DEFAULT_RETRY_COUNT = 0; // Retry disabled by default
+
+    public static CloseableHttpClient getHttpClient() {
+        RequestConfig requestConfig = getRequestConfig();
+        HttpRequestRetryStrategy retryStrategy = getHttpRequestRetryStrategy();
 
         return HttpClients.custom()
                 .setDefaultRequestConfig(requestConfig)
@@ -28,9 +31,9 @@ public class CustomHttpClient {
                 .build();
     }
 
-    private static RequestConfig getRequestConfig(StatusListConfig realmConfig) {
-        Timeout connectTimeout = Timeout.ofMilliseconds(realmConfig.getConnectTimeout());
-        Timeout responseTimeout = Timeout.ofMilliseconds(realmConfig.getReadTimeout());
+    private static RequestConfig getRequestConfig() {
+        Timeout connectTimeout = Timeout.ofMilliseconds(DEFAULT_CONNECT_TIMEOUT);
+        Timeout responseTimeout = Timeout.ofMilliseconds(DEFAULT_READ_TIMEOUT);
 
         return RequestConfig.custom()
                 .setConnectionRequestTimeout(connectTimeout)
@@ -38,8 +41,8 @@ public class CustomHttpClient {
                 .build();
     }
 
-    private static HttpRequestRetryStrategy getHttpRequestRetryStrategy(StatusListConfig realmConfig) {
-        int maxRetries = realmConfig.getRetryCount();
+    private static HttpRequestRetryStrategy getHttpRequestRetryStrategy() {
+        int maxRetries = DEFAULT_RETRY_COUNT;
 
         return new HttpRequestRetryStrategy() {
             @Override

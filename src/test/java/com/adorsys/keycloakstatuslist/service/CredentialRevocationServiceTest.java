@@ -78,8 +78,6 @@ class CredentialRevocationServiceTest {
         
         // Setup realm attributes
         lenient().when(realm.getAttribute("status-list-enabled")).thenReturn("true");
-        lenient().when(realm.getAttribute("status-list-auth-token")).thenReturn("test-auth-token");
-        // timeouts and retry count are internal defaults; tests rely on defaults and don't stub them
         lenient().when(realm.getAttribute(anyString())).thenReturn(null);
         
         // Setup key management

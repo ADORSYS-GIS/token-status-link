@@ -17,7 +17,6 @@ The status list server should implement the OAuth 2.0 Status List pattern.
 - Publish token status to an external status list server
 - Support for different token statuses (VALID, REVOKED)
 - Fixed connection parameters with safe defaults
-- Fast-fail mechanism (no retries) for failed publishing attempts
 - Secure communication with TLS 1.2/1.3
 - Support for authentication with the status list server
 - Detailed logging with unique request IDs for better traceability
@@ -31,12 +30,7 @@ The plugin can be configured at the realm level with the following properties:
 |-----------------------------------|----------------------------------------------|----------------------------------------|
 | `status-list-enabled`             | Enables or disables the status list service  | `true`                                 |
 | `status-list-server-url`          | URL of the status list server                | `https://statuslist.eudi-adorsys.com/` |
-| `status-list-token-issuer-prefix` | Prefix for building the Token Issuer ID      | Generated UUID                         |
-
-Note: The following configuration properties have been removed and are now internal constants:
-- Connection timeout: Fixed at 30 seconds
-- Read timeout: Fixed at 60 seconds
-- Retry count: Fixed at 0 (no retries)
+| `status-list-token-issuer-prefix` | Prefix for building the Token Issuer ID      | `keycloak-status-list::`                |
 
 ## Supported Events
 

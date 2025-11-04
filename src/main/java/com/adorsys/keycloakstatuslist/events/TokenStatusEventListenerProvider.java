@@ -6,7 +6,9 @@ import com.adorsys.keycloakstatuslist.exception.StatusListServerException;
 import com.adorsys.keycloakstatuslist.model.TokenStatus;
 import com.adorsys.keycloakstatuslist.model.TokenStatusRecord;
 import com.adorsys.keycloakstatuslist.service.CryptoIdentityService;
+import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.jboss.logging.Logger;
 import org.keycloak.crypto.KeyWrapper;
 import org.keycloak.events.Event;
@@ -39,12 +41,11 @@ public class TokenStatusEventListenerProvider implements EventListenerProvider {
     private StatusListService getStatusListService(RealmModel realm) {
         StatusListConfig config = new StatusListConfig(realm);
         CryptoIdentityService cryptoIdentityService = new CryptoIdentityService(session);
+        CloseableHttpClient httpClient = CustomHttpClient.getHttpClient();
         return new StatusListService(
                 config.getServerUrl(),
                 cryptoIdentityService.getJwtToken(config),
-                config.getConnectTimeout(),
-                config.getReadTimeout(),
-                config.getRetryCount()
+                httpClient
         );
     }
 
