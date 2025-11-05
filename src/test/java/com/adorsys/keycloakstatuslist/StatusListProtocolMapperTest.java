@@ -162,13 +162,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         mapper.setClaimsForSubject(claims, userSession);
 
         assertThat("Claims should remain unmapped", claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
-        assertThat(logCaptor.getErrorLogs(), hasItems(
-                containsString("Failed to store index mapping"),
-                containsString("Failed to send status to server. Status claim not mapped")
-        ));
-        assertThat(logCaptor.getErrorLogs(), not(hasItem(
-                containsString("Error publishing or updating status list on server")
-        )));
+        assertLogExpectationsForFailedStatusMapping();
     }
 
     @Test
@@ -187,13 +181,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         mapper.setClaimsForSubject(claims, userSession);
 
         assertThat("Claims should remain unmapped", claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
-        assertThat(logCaptor.getErrorLogs(), hasItems(
-                containsString("Failed to store index mapping"),
-                containsString("Failed to send status to server. Status claim not mapped")
-        ));
-        assertThat(logCaptor.getErrorLogs(), not(hasItem(
-                containsString("Error publishing or updating status list on server")
-        )));
+        assertLogExpectationsForFailedStatusMapping();
     }
 
     private void mockDefaultRealmConfig() {
@@ -239,5 +227,19 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         return UriBuilder.fromUri(TEST_SERVER_URL)
                 .path(String.format(Constants.HTTP_ENDPOINT_RETRIEVE_PATH, listId))
                 .build();
+    }
+    
+    /**
+     * Helper method to consolidate log verification for failed status mapping scenarios.
+     * This reduces duplication and improves readability across test methods.
+     */
+    private void assertLogExpectationsForFailedStatusMapping() {
+        assertThat(logCaptor.getErrorLogs(), hasItems(
+                containsString("Failed to store index mapping"),
+                containsString("Failed to send status to server. Status claim not mapped")
+        ));
+        assertThat(logCaptor.getErrorLogs(), not(hasItem(
+                containsString("Error publishing or updating status list on server")
+        )));
     }
 }
