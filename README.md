@@ -30,7 +30,7 @@ The plugin can be configured at the realm level with the following properties:
 |-----------------------------------|----------------------------------------------|----------------------------------------|
 | `status-list-enabled`             | Enables or disables the status list service  | `true`                                 |
 | `status-list-server-url`          | URL of the status list server                | `https://statuslist.eudi-adorsys.com/` |
-| `status-list-token-issuer-prefix` | Prefix for building the Token Issuer ID      | `keycloak-status-list::`                |
+| `status-list-token-issuer-prefix` | Prefix for building the Token Issuer ID      | `Generated UUID`                       |
 
 ## Supported Events
 
