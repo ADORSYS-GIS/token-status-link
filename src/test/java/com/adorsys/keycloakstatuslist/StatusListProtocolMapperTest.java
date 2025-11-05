@@ -149,8 +149,13 @@ import static org.mockito.Mockito.when;
     @Test
     void shouldNotMap_IfCantStoreMapping() {
         mockGetNextIndex();
-        doThrow(new PersistenceException("Database connection failed"))
-                .when(entityManager).persist(any());
+        mockHttpClientExecute((req) -> {
+            if (req.getMethod().equals(HttpMethod.POST)) {
+                when(httpResponse.getCode()).thenReturn(HttpStatus.SC_INTERNAL_SERVER_ERROR);
+            } else {
+                when(httpResponse.getCode()).thenReturn(HttpStatus.SC_NOT_FOUND);
+            }
+        });
 
         mapper.setClaimsForSubject(claims, userSession);
 

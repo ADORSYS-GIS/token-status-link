@@ -199,38 +199,52 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         logger.debugf("Storing index mapping: status_list_id=%s, idx=%d, userId=%s, tokenId=%s",
                 statusListId, idx, userId, tokenId);
 
+        // Use AtomicReference to capture the result from the transaction
+        AtomicReference<Status> result = new AtomicReference<>();
+        
         try {
-            StatusListMappingEntity mapping = new StatusListMappingEntity();
-            mapping.setStatusListId(statusListId);
-            mapping.setIdx(idx);
-            mapping.setUserId(userId);
-            mapping.setTokenId(tokenId);
-            mapping.setRealmId(session.getContext().getRealm().getId());
-            saveInTransaction(session, mapping);
+            KeycloakModelUtils.runJobInTransaction(session.getKeycloakSessionFactory(), s -> {
+                try {
+                    // Create mapping entity but don't persist yet
+                    StatusListMappingEntity mapping = new StatusListMappingEntity();
+                    mapping.setStatusListId(statusListId);
+                    mapping.setIdx(idx);
+                    mapping.setUserId(userId);
+                    mapping.setTokenId(tokenId);
+                    mapping.setRealmId(s.getContext().getRealm().getId());
 
-            sendStatusToServer(idx, statusListId, realmConfig);
-            StatusListClaim statusList = new StatusListClaim(idx, uri);
-            return new Status(statusList);
+                    // Send to server first - if this fails, transaction rolls back automatically
+                    sendStatusToServer(idx, statusListId, realmConfig);
+
+                    // Only persist to database if HTTP call succeeds
+                    EntityManager em = s.getProvider(JpaConnectionProvider.class).getEntityManager();
+                    if (em == null) {
+                        logger.error("EntityManager is null for JpaConnectionProvider");
+                        s.getTransactionManager().setRollbackOnly();
+                        return;
+                    }
+                    em.persist(mapping);
+                    em.flush();
+
+                    StatusListClaim statusList = new StatusListClaim(idx, uri);
+                    result.set(new Status(statusList));
+
+                } catch (Exception e) {
+                    logger.error("Failed to store index mapping, transaction will rollback", e);
+                    s.getTransactionManager().setRollbackOnly();
+                    // Don't throw here, let the outer catch handle it
+                    result.set(null);
+                }
+            });
         } catch (Exception e) {
-            logger.error("Failed to store index mapping", e);
+            // Transaction failed, log and return null
+            logger.error("Failed to complete status list mapping", e);
             return null;
         }
+        
+        return result.get();
     }
 
-    private void saveInTransaction(KeycloakSession session, StatusListMappingEntity entity) {
-        AtomicReference<StatusListMappingEntity> result = new AtomicReference<>();
-        KeycloakModelUtils.runJobInTransaction(session.getKeycloakSessionFactory(), s -> {
-            EntityManager em = s.getProvider(JpaConnectionProvider.class).getEntityManager();
-            if (em == null) {
-                logger.error("EntityManager is null for JpaConnectionProvider");
-                s.getTransactionManager().setRollbackOnly();
-                return;
-            }
-            em.persist(entity);
-            em.flush();
-            result.set(entity);
-        });
-    }
 
     private Long getNextIndex(KeycloakSession session) {
         logger.debugf("Getting next index for realm: %s", session.getContext().getRealm().getId());

@@ -55,6 +55,21 @@ public class TokenStatusRecord {
         @JsonProperty("status_size")
         private int statusSize;
 
+        public String getLst() {
+            return lst;
+        }
+
+        public void setLst(String lst) {
+            this.lst = lst;
+        }
+
+        public int getStatusSize() {
+            return statusSize;
+        }
+
+        public void setStatusSize(int statusSize) {
+            this.statusSize = statusSize;
+        }
     }
 
     public String getCredentialId() {
@@ -152,6 +167,14 @@ public class TokenStatusRecord {
 
     public void setStatusReason(String statusReason) {
         this.statusReason = statusReason;
+    }
+
+    public StatusList getStatusList() {
+        return statusList;
+    }
+
+    public void setStatusList(StatusList statusList) {
+        this.statusList = statusList;
     }
 
     @Override
