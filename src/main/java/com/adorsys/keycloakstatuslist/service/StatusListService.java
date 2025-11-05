@@ -32,27 +32,58 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.UUID;
 
-public class StatusListService {
+public class StatusListService implements AutoCloseable {
     private static final Logger logger = Logger.getLogger(StatusListService.class);
+    
+    // Shared HTTP client pool to avoid creating multiple instances
+    private static CloseableHttpClient sharedHttpClient;
+    private static int sharedClientRefCount = 0;
+    private static final Object sharedClientLock = new Object();
+    
     private final String serverUrl;
     private final String authToken;
     private final CloseableHttpClient httpClient;
     private final ObjectMapper objectMapper;
+    private final boolean useSharedClient;
 
     public StatusListService(String serverUrl, String authToken, StatusListConfig realmConfig) {
-        this(serverUrl, authToken, createDefaultHttpClient(realmConfig));
+        this(serverUrl, authToken, getSharedHttpClient(realmConfig), true);
     }
 
     public StatusListService(String serverUrl, String authToken, CloseableHttpClient httpClient) {
+        this(serverUrl, authToken, httpClient, false);
+    }
+    
+    private StatusListService(String serverUrl, String authToken, CloseableHttpClient httpClient, boolean useSharedClient) {
         // Ensure serverUrl ends with a slash
         this.serverUrl = serverUrl.endsWith("/") ? serverUrl : serverUrl + "/";
         this.authToken = authToken;
         this.httpClient = httpClient;
+        this.useSharedClient = useSharedClient;
         this.objectMapper = new ObjectMapper()
                 .registerModule(new JavaTimeModule())
                 .setSerializationInclusion(JsonInclude.Include.NON_NULL);
         logger.info(
-                "Initialized StatusListService with serverUrl: " + this.serverUrl);
+                "Initialized StatusListService with serverUrl: " + this.serverUrl +
+                (useSharedClient ? " (using shared HTTP client)" : " (using dedicated HTTP client)"));
+    }
+
+    private static CloseableHttpClient getSharedHttpClient(StatusListConfig realmConfig) {
+        synchronized (sharedClientLock) {
+            if (sharedHttpClient == null) {
+                logger.info("Creating shared HTTP client for the first time");
+                RequestConfig requestConfig = getRequestConfig(realmConfig);
+                HttpRequestRetryStrategy retryStrategy = getHttpRequestRetryStrategy(realmConfig);
+
+                sharedHttpClient = HttpClients.custom()
+                        .setDefaultRequestConfig(requestConfig)
+                        .setRetryStrategy(retryStrategy)
+                        .build();
+            }
+            sharedClientRefCount++;
+            logger.debugf("Shared HTTP client reference count incremented to: %d", sharedClientRefCount);
+            return sharedHttpClient;
+        }
     }
 
     private static CloseableHttpClient createDefaultHttpClient(StatusListConfig realmConfig) {
@@ -81,8 +112,30 @@ public class StatusListService {
         return new HttpRequestRetryStrategy() {
             @Override
             public boolean retryRequest(HttpRequest httpRequest, IOException e, int execCount, HttpContext httpContext) {
-                logger.warnf("[Attempt %d/%d] Error sending status: %s", execCount, maxRetries, e.getMessage());
-                return execCount <= maxRetries;
+                // Only retry on transient failures, not all IOExceptions
+                if (execCount > maxRetries) {
+                    return false;
+                }
+                
+                // Check if it's a transient failure (network issues, timeouts, etc.)
+                String message = e.getMessage();
+                boolean isTransient = message != null && (
+                    message.contains("Connection reset") ||
+                    message.contains("Connection timeout") ||
+                    message.contains("Read timed out") ||
+                    message.contains("Connect timeout") ||
+                    message.contains("No route to host") ||
+                    message.contains("Connection refused") ||
+                    message.contains("Temporary failure")
+                );
+                
+                if (isTransient) {
+                    logger.warnf("[Attempt %d/%d] Transient error, will retry: %s", execCount, maxRetries, e.getMessage());
+                    return true;
+                } else {
+                    logger.warnf("[Attempt %d/%d] Non-transient error, will not retry: %s", execCount, maxRetries, e.getMessage());
+                    return false;
+                }
             }
 
             @Override
@@ -121,7 +174,7 @@ public class StatusListService {
 
             logger.debug("Request ID: " + requestId + ", Sending HTTP request to: " + request.getUri());
 
-            httpClient.execute(request, response -> {
+            StatusListServerException serverException = httpClient.execute(request, response -> {
                 int statusCode = response.getCode();
                 if (statusCode >= 200 && statusCode < 300 || statusCode == 409) {
                     logger.info("Request ID: " + requestId + ", Successfully published record for credentialId: "
@@ -132,16 +185,18 @@ public class StatusListService {
                     logger.error("Request ID: " + requestId + ", Failed to publish record for credentialId: "
                             + credentialId +
                             ". Status code: " + statusCode);
-                    throw new IOException(new StatusListServerException(
+                    // Return StatusListServerException to be thrown outside
+                    return new StatusListServerException(
                             "Failed to publish record for credentialId: " + credentialId + ". Status code: "
                                     + statusCode,
-                            statusCode));
+                            statusCode);
                 }
             });
-        } catch (IOException | URISyntaxException e) {
-            if (e.getCause() instanceof StatusListServerException) {
-                throw (StatusListServerException) e.getCause();
+            
+            if (serverException != null) {
+                throw serverException;
             }
+        } catch (IOException | URISyntaxException e) {
             logger.error(
                     "Request ID: " + requestId + ", Failed to publish record for credentialId: " +
                             credentialId + ": " + e.getMessage(),
@@ -175,7 +230,7 @@ public class StatusListService {
             logger.debug("Request ID: " + requestId + ", Sending HTTP request to: " + request.getUri() +
                     ", Headers: " + request.getHeaders());
 
-            httpClient.execute(request, response -> {
+            StatusListServerException serverException = httpClient.execute(request, response -> {
                 int statusCode = response.getCode();
 
                 if (statusCode >= 200 && statusCode < 300 || statusCode == 409) {
@@ -183,16 +238,18 @@ public class StatusListService {
                             (statusCode == 409 ? " (already registered)" : ""));
                     return null;
                 } else {
-                    throw new IOException(new StatusListServerException(
+                    // Return StatusListServerException to be thrown outside
+                    return new StatusListServerException(
                             "Failed to register issuer: " + issuerId +
                                     ", Status code: " + statusCode,
-                            statusCode));
+                            statusCode);
                 }
             });
-        } catch (IOException | URISyntaxException e) {
-            if (e.getCause() instanceof StatusListServerException) {
-                throw (StatusListServerException) e.getCause();
+            
+            if (serverException != null) {
+                throw serverException;
             }
+        } catch (IOException | URISyntaxException e) {
             logger.error("Request ID: " + requestId + ", Failed to register issuer: " + issuerId +
                     ": " + e.getMessage() + ", Server URL: " + serverUrl, e);
             throw new StatusListException("Failed to register issuer: " + issuerId +
@@ -317,5 +374,37 @@ public class StatusListService {
 
     protected void performSleep(long millis) throws InterruptedException {
         Thread.sleep(millis);
+    }
+
+    @Override
+    public void close() throws IOException {
+        if (httpClient != null && !useSharedClient) {
+            // Only close dedicated HTTP clients, not shared ones
+            try {
+                httpClient.close();
+                logger.debug("Closed dedicated HTTP client successfully");
+            } catch (IOException e) {
+                logger.warn("Failed to close dedicated HTTP client", e);
+                throw e;
+            }
+        } else if (useSharedClient) {
+            // Handle shared client reference counting
+            synchronized (sharedClientLock) {
+                sharedClientRefCount--;
+                logger.debugf("Shared HTTP client reference count decremented to: %d", sharedClientRefCount);
+                
+                if (sharedClientRefCount <= 0 && sharedHttpClient != null) {
+                    logger.info("Closing shared HTTP client (no more references)");
+                    try {
+                        sharedHttpClient.close();
+                        sharedHttpClient = null;
+                        sharedClientRefCount = 0;
+                    } catch (IOException e) {
+                        logger.warn("Failed to close shared HTTP client", e);
+                        throw e;
+                    }
+                }
+            }
+        }
     }
 }

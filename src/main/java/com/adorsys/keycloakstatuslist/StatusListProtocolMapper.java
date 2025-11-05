@@ -114,6 +114,24 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         }
         return statusListService;
     }
+    
+    /**
+     * Clean up resources, including the shared HTTP client if this is the last reference.
+     * This method should be called when the protocol mapper is no longer needed.
+     */
+    @Override
+    public void close() {
+        if (statusListService != null) {
+            try {
+                statusListService.close();
+                statusListService = null;
+                logger.debug("Closed StatusListService and released HTTP client resources");
+            } catch (IOException e) {
+                logger.warn("Failed to close StatusListService", e);
+                // Log the error but don't propagate it to avoid breaking the mapper lifecycle
+            }
+        }
+    }
 
     @Override
     public void setClaimsForCredential(VerifiableCredential verifiableCredential, UserSessionModel userSessionModel) {
