@@ -5,6 +5,7 @@ import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationResponse;
 import com.adorsys.keycloakstatuslist.model.TokenStatusRecord;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.jboss.logging.Logger;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
@@ -42,12 +43,11 @@ public class CredentialRevocationService {
             RealmModel realm = session.getContext().getRealm();
             StatusListConfig config = new StatusListConfig(realm);
             CryptoIdentityService cryptoIdentityService = new CryptoIdentityService(session);
+            CloseableHttpClient httpClient = CustomHttpClient.getHttpClient();
             this.statusListService = new StatusListService(
                     config.getServerUrl(),
                     cryptoIdentityService.getJwtToken(config),
-                    config.getConnectTimeout(),
-                    config.getReadTimeout(),
-                    config.getRetryCount()
+                    httpClient
             );
         }
         return statusListService;
