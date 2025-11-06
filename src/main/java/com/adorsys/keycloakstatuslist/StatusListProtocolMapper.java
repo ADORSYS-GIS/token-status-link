@@ -201,6 +201,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
 
         // Use AtomicReference to capture the result from the transaction
         AtomicReference<Status> result = new AtomicReference<>();
+        String realmId = session.getContext().getRealm().getId();
         
         try {
             KeycloakModelUtils.runJobInTransaction(session.getKeycloakSessionFactory(), s -> {
@@ -211,7 +212,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
                     mapping.setIdx(idx);
                     mapping.setUserId(userId);
                     mapping.setTokenId(tokenId);
-                    mapping.setRealmId(s.getContext().getRealm().getId());
+                    mapping.setRealmId(realmId);
 
                     // Send to server first - if this fails, transaction rolls back automatically
                     sendStatusToServer(idx, statusListId, realmConfig);
