@@ -46,7 +46,7 @@ class StatusListServiceTest {
     private void setupResponse(int statusCode) throws IOException {
         // Mock the execute method to call the ResponseHandler with a mock response
         doAnswer(invocation -> {
-            org.apache.hc.core5.http.io.HttpClientResponseHandler<Object> handler = invocation.getArgument(1);
+            HttpClientResponseHandler<Object> handler = invocation.getArgument(1);
 
             ClassicHttpResponse response = new BasicClassicHttpResponse(statusCode);
             response.setEntity(new StringEntity("{}")); // Set a dummy entity
@@ -58,14 +58,14 @@ class StatusListServiceTest {
     private void setupResponse(int statusCode, String responseBody) throws IOException {
         // Mock the execute method to call the ResponseHandler with a mock response
         doAnswer(invocation -> {
-            org.apache.hc.core5.http.io.HttpClientResponseHandler<Object> handler = invocation.getArgument(1);
+            HttpClientResponseHandler<Object> handler = invocation.getArgument(1);
 
             ClassicHttpResponse response = new BasicClassicHttpResponse(statusCode);
             response.setEntity(new StringEntity(responseBody)); // Set the specified entity
 
             // Execute the handler with the mock response
             return handler.handleResponse(response);
-        }).when(httpClient).execute(any(HttpPost.class), any(org.apache.hc.core5.http.io.HttpClientResponseHandler.class));
+        }).when(httpClient).execute(any(HttpPost.class), any(HttpClientResponseHandler.class));
     }
 
     private void setupSuccessfulResponse() throws IOException {
