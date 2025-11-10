@@ -82,8 +82,11 @@ public class CredentialRevocationResource extends TokenRevocationEndpoint {
         String credentialId = form.getFirst("token");
 
         if (credentialId == null || credentialId.trim().isEmpty()) {
-            logger.debug("No credential ID provided in form, falling back to standard revocation");
-            return super.revoke();
+            logger.warn("Valid Bearer provided but no credential ID in form; returning error for custom revocation");
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("{\"error\":\"invalid_request\",\"error_description\":\"Missing credential ID\"}")
+                    .type(MediaType.APPLICATION_JSON_TYPE)
+                    .build();
         }
 
         logger.infof("Attempting credential revocation via SD-JWT VP for credentialId: %s", credentialId);
@@ -95,7 +98,7 @@ public class CredentialRevocationResource extends TokenRevocationEndpoint {
             getRevocationService().revokeCredential(request, token);
             logger.infof("Successfully revoked credential '%s' via status list.", credentialId);
 
-            return super.revoke();
+            return Response.ok().build();
 
         } catch (StatusListException e) {
             logger.errorf(e, "SD-JWT VP based revocation failed for credentialId: %s due to status list error. Falling back to standard revocation.", credentialId);
@@ -104,10 +107,10 @@ public class CredentialRevocationResource extends TokenRevocationEndpoint {
             logger.errorf(e, "SD-JWT VP based revocation failed for credentialId: %s due to invalid input. Falling back to standard revocation.", credentialId);
             return super.revoke();
         } catch (Exception e) {
-            logger.errorf(e, "SD-JWT VP based revocation failed for credentialId: %s due to unexpected error. Falling back to standard revocation.", credentialId);
-            return Response.serverError()
-                    .entity("Internal error during credential revocation")
-                    .type(MediaType.APPLICATION_JSON)
+            logger.errorf(e, "SD-JWT VP based revocation failed for credentialId: %s due to unexpected error.", credentialId);
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity("{\"error\":\"server_error\",\"error_description\":\"Internal error during credential revocation\"}")
+                    .type(MediaType.APPLICATION_JSON_TYPE)
                     .build();
         }
     }
@@ -118,7 +121,7 @@ public class CredentialRevocationResource extends TokenRevocationEndpoint {
      */
     protected HttpHeaders getHeaders() {
         if (headers == null) {
-            throw new IllegalStateException("HttpHeaders not properly injected");
+            throw new IllegalStateException("HttpHeaders not properly injected via @Context for standard revocation endpoint");
         }
         return headers;
     }
