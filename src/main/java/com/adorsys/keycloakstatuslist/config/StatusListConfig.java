@@ -19,16 +19,11 @@ public class StatusListConfig {
     public static final String STATUS_LIST_ENABLED = "status-list-enabled";
     public static final String STATUS_LIST_SERVER_URL = "status-list-server-url";
     public static final String STATUS_LIST_TOKEN_ISSUER_PREFIX = "status-list-token-issuer-prefix";
-    public static final String STATUS_LIST_CONNECT_TIMEOUT = "status-list-connect-timeout";
-    public static final String STATUS_LIST_READ_TIMEOUT = "status-list-read-timeout";
-    public static final String STATUS_LIST_RETRY_COUNT = "status-list-retry-count";
+   
 
     // Default values
     private static final boolean DEFAULT_ENABLED = true;
     private static final String DEFAULT_SERVER_URL = "https://statuslist.eudi-adorsys.com/";
-    private static final int DEFAULT_CONNECT_TIMEOUT = 30000;
-    private static final int DEFAULT_READ_TIMEOUT = 60000;
-    private static final int DEFAULT_RETRY_COUNT = 0; // Retry disabled by default
 
     private final RealmModel realm;
 
@@ -80,55 +75,4 @@ public class StatusListConfig {
         return String.format("%s::%s", prefix, realm.getName());
     }
 
-    /**
-     * Gets the connection timeout for the status list server.
-     *
-     * @return connection timeout in milliseconds
-     */
-    public int getConnectTimeout() {
-        String value = realm.getAttribute(STATUS_LIST_CONNECT_TIMEOUT);
-        if (value != null) {
-            try {
-                return Integer.parseInt(value);
-            } catch (NumberFormatException e) {
-                return DEFAULT_CONNECT_TIMEOUT;
-            }
-        }
-        return DEFAULT_CONNECT_TIMEOUT;
-    }
-
-    /**
-     * Gets the read timeout for the status list server.
-     *
-     * @return read timeout in milliseconds
-     */
-    public int getReadTimeout() {
-        String value = realm.getAttribute(STATUS_LIST_READ_TIMEOUT);
-        if (value != null) {
-            try {
-                return Integer.parseInt(value);
-            } catch (NumberFormatException e) {
-                return DEFAULT_READ_TIMEOUT;
-            }
-        }
-        return DEFAULT_READ_TIMEOUT;
-    }
-
-    /**
-     * Gets the number of retry attempts when communicating with the status list
-     * server.
-     *
-     * @return number of retry attempts
-     */
-    public int getRetryCount() {
-        String value = realm.getAttribute(STATUS_LIST_RETRY_COUNT);
-        if (value != null) {
-            try {
-                return Integer.parseInt(value);
-            } catch (NumberFormatException e) {
-                return DEFAULT_RETRY_COUNT;
-            }
-        }
-        return DEFAULT_RETRY_COUNT;
-    }
 }

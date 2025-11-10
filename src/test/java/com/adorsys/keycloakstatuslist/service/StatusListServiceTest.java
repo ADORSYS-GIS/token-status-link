@@ -10,13 +10,13 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.client5.http.classic.methods.HttpPost;
+import org.apache.hc.core5.http.io.HttpClientResponseHandler;
+import org.apache.hc.core5.http.ClassicHttpResponse;
+import org.apache.hc.core5.http.io.entity.StringEntity;
+import org.apache.hc.core5.http.message.BasicClassicHttpResponse;
 import java.io.IOException;
-import java.net.ConnectException;
-import java.net.http.HttpClient;
-import java.net.http.HttpHeaders;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.net.http.HttpTimeoutException;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -32,62 +32,56 @@ class StatusListServiceTest {
     private static final String ISSUER_ID = "test-issuer";
     private static final String PUBLIC_KEY = "test-public-key";
     private static final String ALGORITHM = "RS256";
-    private static final int RETRY_COUNT = 3;
 
     @Mock
-    private HttpClient httpClient;
-
-    @Mock
-    private HttpResponse<String> httpResponse;
-
-    @Mock
-    private HttpHeaders httpHeaders;
+    private CloseableHttpClient httpClient;
 
     private StatusListService statusListService;
 
     @BeforeEach
     void setUp() {
-        statusListService = new StatusListService(SERVER_URL, null, httpClient, RETRY_COUNT) {
-            @Override
-            protected void performSleep(long millis) throws InterruptedException {
-            }
-        };
+        statusListService = new StatusListService(SERVER_URL, null, httpClient);
     }
 
-    private void setupResponse(int statusCode, String body) throws IOException, InterruptedException {
-        when(httpResponse.headers()).thenReturn(httpHeaders);
-        when(httpHeaders.toString()).thenReturn("{}");
-        when(httpResponse.statusCode()).thenReturn(statusCode);
-        when(httpResponse.body()).thenReturn(body);
-        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
-                .thenReturn(httpResponse);
+    private void setupResponse(int statusCode) throws IOException {
+        // Mock the execute method to call the ResponseHandler with a mock response
+        doAnswer(invocation -> {
+            HttpClientResponseHandler<Object> handler = invocation.getArgument(1);
+
+            ClassicHttpResponse response = new BasicClassicHttpResponse(statusCode);
+            response.setEntity(new StringEntity("{}")); // Set a dummy entity
+
+            // Execute the handler with the mock response
+            return handler.handleResponse(response);
+        }).when(httpClient).execute(any(HttpPost.class), any(HttpClientResponseHandler.class));
+    }
+    private void setupResponse(int statusCode, String responseBody) throws IOException {
+        // Mock the execute method to call the ResponseHandler with a mock response
+        doAnswer(invocation -> {
+            HttpClientResponseHandler<Object> handler = invocation.getArgument(1);
+
+            ClassicHttpResponse response = new BasicClassicHttpResponse(statusCode);
+            response.setEntity(new StringEntity(responseBody)); // Set the specified entity
+
+            // Execute the handler with the mock response
+            return handler.handleResponse(response);
+        }).when(httpClient).execute(any(HttpPost.class), any(HttpClientResponseHandler.class));
     }
 
-    private void setupSuccessfulResponse() throws IOException, InterruptedException {
-        setupResponse(200, "{}");
+    private void setupSuccessfulResponse() throws IOException {
+        setupResponse(200);
     }
 
-    private void setupResponseWithStatus(int statusCode) throws IOException, InterruptedException {
-        setupResponse(statusCode, "{}");
+    private void setupResponseWithStatus(int statusCode) throws IOException {
+        setupResponse(statusCode);
     }
 
-    private void setupRetryResponse(Exception exception) throws IOException, InterruptedException {
-        when(httpResponse.headers()).thenReturn(httpHeaders);
-        when(httpHeaders.toString()).thenReturn("{}");
-        when(httpResponse.statusCode()).thenReturn(200);
-        when(httpResponse.body()).thenReturn("{}");
-        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
-                .thenThrow(exception)
-                .thenReturn(httpResponse);
-    }
-
-
-    private void verifyHttpClientCall(int expectedCalls) throws IOException, InterruptedException {
-        verify(httpClient, times(expectedCalls)).send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class));
+    private void verifyHttpClientCall(int expectedCalls) throws IOException {
+        verify(httpClient, times(expectedCalls)).execute(any(HttpPost.class), any(HttpClientResponseHandler.class));
     }
 
     @Test
-    void successScenarios() throws IOException, InterruptedException {
+    void successScenarios() throws IOException {
         // Test register issuer success
         setupSuccessfulResponse();
         assertDoesNotThrow(() -> statusListService.registerIssuer(ISSUER_ID, PUBLIC_KEY, ALGORITHM));
@@ -102,42 +96,14 @@ class StatusListServiceTest {
 
         // Test publish record with auth token
         reset(httpClient);
-        statusListService = new StatusListService(SERVER_URL, "test-token", httpClient, RETRY_COUNT);
+        statusListService = new StatusListService(SERVER_URL, "test-token", httpClient);
         setupSuccessfulResponse();
         assertDoesNotThrow(() -> statusListService.publishRecord(record));
         verifyHttpClientCall(1);
     }
 
     @Test
-    void retryScenarios() throws IOException, InterruptedException {
-        final TokenStatusRecord record = createTestRecord();
-
-        // Test retry on connect exception for register
-        setupRetryResponse(new ConnectException("Connection refused"));
-        assertDoesNotThrow(() -> statusListService.registerIssuer(ISSUER_ID, PUBLIC_KEY, ALGORITHM));
-        verifyHttpClientCall(2);
-
-        // Test retry on timeout for register
-        reset(httpClient);
-        setupRetryResponse(new HttpTimeoutException("Request timed out"));
-        assertDoesNotThrow(() -> statusListService.registerIssuer(ISSUER_ID, PUBLIC_KEY, ALGORITHM));
-        verifyHttpClientCall(2);
-
-        // Test retry on connect exception for publish
-        reset(httpClient);
-        setupRetryResponse(new ConnectException("Connection refused"));
-        assertDoesNotThrow(() -> statusListService.publishRecord(record));
-        verifyHttpClientCall(2);
-
-        // Test retry on timeout for publish
-        reset(httpClient);
-        setupRetryResponse(new HttpTimeoutException("Request timed out"));
-        assertDoesNotThrow(() -> statusListService.publishRecord(record));
-        verifyHttpClientCall(2);
-    }
-
-    @Test
-    void responseBodyScenarios() throws IOException, InterruptedException {
+    void responseBodyScenarios() throws IOException {
         final TokenStatusRecord record = createTestRecord();
 
         // Test empty response body
@@ -159,7 +125,7 @@ class StatusListServiceTest {
     }
 
     @Test
-    void registerIssuer_AlreadyRegistered() throws IOException, InterruptedException {
+    void registerIssuer_AlreadyRegistered() throws IOException {
         // Arrange
         setupResponseWithStatus(409);
 
@@ -169,28 +135,7 @@ class StatusListServiceTest {
     }
 
     @Test
-    void registerIssuer_MaxRetriesExceeded() throws IOException, InterruptedException {
-        // Arrange
-        when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
-                .thenThrow(new ConnectException("Connection refused"))
-                .thenThrow(new ConnectException("Connection refused"))
-                .thenThrow(new ConnectException("Connection refused"))
-                .thenThrow(new ConnectException("Connection refused"));
-
-        // Act & Assert
-        StatusListException exception = assertThrows(StatusListException.class,
-                () -> statusListService.registerIssuer(ISSUER_ID, PUBLIC_KEY, ALGORITHM));
-        
-        // Verify the exception message contains the expected text
-        assertTrue(exception.getMessage().contains("Failed to register issuer: " + ISSUER_ID));
-        assertTrue(exception.getMessage().contains("Server URL: " + SERVER_URL));
-        
-        // Verify the number of retry attempts
-        verify(httpClient, times(RETRY_COUNT + 1)).send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class));
-    }
-
-    @Test
-    void registerIssuer_ServerError() throws IOException, InterruptedException {
+    void registerIssuer_ServerError() throws IOException {
         // Arrange
         setupResponseWithStatus(500);
 
@@ -233,7 +178,7 @@ class StatusListServiceTest {
     }
 
     @Test
-    void publishRecord_DefaultValues() throws IOException, InterruptedException {
+    void publishRecord_DefaultValues() throws IOException {
         // Test default status
         final TokenStatusRecord record1 = createTestRecord();
         record1.setStatus(TokenStatus.REVOKED);
@@ -253,7 +198,7 @@ class StatusListServiceTest {
     }
 
     @Test
-    void publishRecord_StatusCodeHandling() throws IOException, InterruptedException {
+    void publishRecord_StatusCodeHandling() throws IOException {
         TokenStatusRecord record = createTestRecord();
 
         // Test 200 OK
@@ -289,7 +234,7 @@ class StatusListServiceTest {
     }
 
     @Test
-    void publishRecord_RecordFieldHandling() throws IOException, InterruptedException {
+    void publishRecord_RecordFieldHandling() throws IOException {
         // Test issuer field is set from issuerId
         final TokenStatusRecord record1 = createTestRecord();
         record1.setIssuer(null);
