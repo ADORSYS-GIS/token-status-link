@@ -22,7 +22,6 @@ import java.net.URI;
 import java.util.HashMap;
 import java.util.Random;
 
-import static com.adorsys.keycloakstatuslist.StatusListProtocolMapper.Constants;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.equalTo;

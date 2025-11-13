@@ -18,6 +18,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.security.PublicKey;
 import java.time.Instant;
+import java.util.Base64;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -74,7 +75,7 @@ class RevocationRecordServiceTest {
         when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq("RS256"))).thenReturn(keyWrapper);
         when(keyWrapper.getPublicKey()).thenReturn(publicKey);
         when(keyWrapper.getAlgorithm()).thenReturn("RS256");
-        when(publicKey.toString()).thenReturn("test-public-key");
+        when(publicKey.getEncoded()).thenReturn("test-public-key".getBytes());
         
         // Act
         TokenStatusRecord result = service.createRevocationRecord(request, requestId);
@@ -84,7 +85,7 @@ class RevocationRecordServiceTest {
         assertEquals(credentialId, result.getCredentialId());
         assertEquals("test-realm", result.getIssuer());
         assertEquals("test-realm", result.getIssuerId());
-        assertEquals("test-public-key", result.getPublicKey());
+        assertEquals("-----BEGIN PUBLIC KEY-----\n" + Base64.getEncoder().encodeToString("test-public-key".getBytes()) + "\n-----END PUBLIC KEY-----", result.getPublicKey());
         assertEquals("RS256", result.getAlg());
         assertEquals(TokenStatus.REVOKED.getValue(), result.getStatus());
         assertEquals("oauth2", result.getCredentialType());
@@ -106,7 +107,7 @@ class RevocationRecordServiceTest {
         when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq("RS256"))).thenReturn(keyWrapper);
         when(keyWrapper.getPublicKey()).thenReturn(publicKey);
         when(keyWrapper.getAlgorithm()).thenReturn("RS256");
-        when(publicKey.toString()).thenReturn("test-public-key");
+        when(publicKey.getEncoded()).thenReturn("test-public-key".getBytes());
         
         // Act
         TokenStatusRecord result = service.createRevocationRecord(request, requestId);
@@ -130,7 +131,7 @@ class RevocationRecordServiceTest {
         when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq("RS256"))).thenReturn(keyWrapper);
         when(keyWrapper.getPublicKey()).thenReturn(publicKey);
         when(keyWrapper.getAlgorithm()).thenReturn("RS256");
-        when(publicKey.toString()).thenReturn("test-public-key");
+        when(publicKey.getEncoded()).thenReturn("test-public-key".getBytes());
         
         // Act
         TokenStatusRecord result = service.createRevocationRecord(request, requestId);
@@ -200,7 +201,7 @@ class RevocationRecordServiceTest {
         when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq("RS256"))).thenReturn(keyWrapper);
         when(keyWrapper.getPublicKey()).thenReturn(publicKey);
         when(keyWrapper.getAlgorithm()).thenReturn(null);
-        when(publicKey.toString()).thenReturn("test-public-key");
+        when(publicKey.getEncoded()).thenReturn("test-public-key".getBytes());
         
         // Act
         TokenStatusRecord result = service.createRevocationRecord(request, requestId);
@@ -225,7 +226,7 @@ class RevocationRecordServiceTest {
         when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq("RS256"))).thenReturn(keyWrapper);
         when(keyWrapper.getPublicKey()).thenReturn(publicKey);
         when(keyWrapper.getAlgorithm()).thenReturn("ES256");
-        when(publicKey.toString()).thenReturn("test-public-key");
+        when(publicKey.getEncoded()).thenReturn("test-public-key".getBytes());
         
         // Act
         TokenStatusRecord result = service.createRevocationRecord(request, requestId);
@@ -321,7 +322,7 @@ class RevocationRecordServiceTest {
         when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq("RS256"))).thenReturn(keyWrapper);
         when(keyWrapper.getPublicKey()).thenReturn(publicKey);
         when(keyWrapper.getAlgorithm()).thenReturn("RS256");
-        when(publicKey.toString()).thenReturn("test-public-key");
+        when(publicKey.getEncoded()).thenReturn("test-public-key".getBytes());
         
         // Act
         TokenStatusRecord result = service.createRevocationRecord(request, requestId);
@@ -351,7 +352,7 @@ class RevocationRecordServiceTest {
         when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq("RS256"))).thenReturn(keyWrapper);
         when(keyWrapper.getPublicKey()).thenReturn(publicKey);
         when(keyWrapper.getAlgorithm()).thenReturn("RS256");
-        when(publicKey.toString()).thenReturn("test-public-key");
+        when(publicKey.getEncoded()).thenReturn("test-public-key".getBytes());
         
         // Act
         TokenStatusRecord result = service.createRevocationRecord(request, requestId);
@@ -376,7 +377,7 @@ class RevocationRecordServiceTest {
         when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq("RS256"))).thenReturn(keyWrapper);
         when(keyWrapper.getPublicKey()).thenReturn(publicKey);
         when(keyWrapper.getAlgorithm()).thenReturn("RS256");
-        when(publicKey.toString()).thenReturn("test-public-key");
+        when(publicKey.getEncoded()).thenReturn("test-public-key".getBytes());
         
         // Act
         TokenStatusRecord result = service.createRevocationRecord(request, requestId);
@@ -400,7 +401,7 @@ class RevocationRecordServiceTest {
         when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq("RS256"))).thenReturn(keyWrapper);
         when(keyWrapper.getPublicKey()).thenReturn(publicKey);
         when(keyWrapper.getAlgorithm()).thenReturn("RS256");
-        when(publicKey.toString()).thenReturn("test-public-key");
+        when(publicKey.getEncoded()).thenReturn("test-public-key".getBytes());
         
         // Act
         TokenStatusRecord result = service.createRevocationRecord(request, requestId);
@@ -408,4 +409,10 @@ class RevocationRecordServiceTest {
         // Assert
         assertEquals(TokenStatus.REVOKED.getValue(), result.getStatus());
     }
-} 
+
+    // The toPem method in the service now returns the full PEM format, so the test should expect that.
+    // This helper method is no longer needed as the service itself formats the key.
+    // private String toPem(String base64Key) {
+    //     return "-----BEGIN PUBLIC KEY-----\n" + Base64.getEncoder().encodeToString(base64Key.getBytes()) + "\n-----END PUBLIC KEY-----";
+    // }
+}

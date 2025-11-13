@@ -12,6 +12,8 @@ import org.keycloak.models.RealmModel;
 import org.keycloak.models.KeyManager;
 
 import java.time.Instant;
+import java.util.Base64;
+import java.security.PublicKey;
 
 /**
  * Service for creating and managing revocation records.
@@ -98,7 +100,7 @@ public class RevocationRecordService {
                 throw new StatusListException("Active key has no public key for realm: " + realm.getName());
             }
             
-            String publicKey = activeKey.getPublicKey().toString();
+            String publicKey = toPem((PublicKey) activeKey.getPublicKey());
             String algorithm = activeKey.getAlgorithm() != null ? activeKey.getAlgorithm() : "RS256";
             
             logger.debugf("Retrieved public key and algorithm for realm %s: %s", realm.getName(), algorithm);
@@ -111,4 +113,12 @@ public class RevocationRecordService {
             throw new StatusListException("Failed to retrieve realm public key: " + e.getMessage(), e);
         }
     }
-} 
+
+    /**
+     * Converts a PublicKey object to its PEM string representation.
+     */
+    private String toPem(PublicKey publicKey) {
+        String base64Key = Base64.getEncoder().encodeToString(publicKey.getEncoded());
+        return "-----BEGIN PUBLIC KEY-----\n" + base64Key + "\n-----END PUBLIC KEY-----";
+    }
+}

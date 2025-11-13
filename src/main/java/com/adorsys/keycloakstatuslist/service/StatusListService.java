@@ -98,7 +98,7 @@ public class StatusListService {
         // Create a simple record with just the required fields for issuer registration
         TokenStatusRecord issuerRecord = new TokenStatusRecord();
         issuerRecord.setIssuer(issuerId);
-        issuerRecord.setPublicKey(publicKey);
+        issuerRecord.setPublicKey(stripPemHeaders(publicKey));
         issuerRecord.setAlg(algorithm);
 
         try {
@@ -206,4 +206,13 @@ public class StatusListService {
         }
     }
 
+    private String stripPemHeaders(String pemKey) {
+        if (pemKey == null || pemKey.isEmpty()) {
+            return pemKey;
+        }
+        return pemKey
+                .replace("-----BEGIN PUBLIC KEY-----", "")
+                .replace("-----END PUBLIC KEY-----", "")
+                .replaceAll("\\s", ""); // Remove all whitespace
+    }
 }
