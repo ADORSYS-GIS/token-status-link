@@ -409,10 +409,4 @@ class RevocationRecordServiceTest {
         // Assert
         assertEquals(TokenStatus.REVOKED.getValue(), result.getStatus());
     }
-
-    // The toPem method in the service now returns the full PEM format, so the test should expect that.
-    // This helper method is no longer needed as the service itself formats the key.
-    // private String toPem(String base64Key) {
-    //     return "-----BEGIN PUBLIC KEY-----\n" + Base64.getEncoder().encodeToString(base64Key.getBytes()) + "\n-----END PUBLIC KEY-----";
-    // }
 }

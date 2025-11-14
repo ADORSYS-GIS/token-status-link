@@ -1,11 +1,9 @@
 package com.adorsys.keycloakstatuslist.resource;
 
-import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationResponse;
 import com.adorsys.keycloakstatuslist.service.CredentialRevocationService;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -18,7 +16,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MultivaluedMap;
 import jakarta.ws.rs.core.Response;
-import java.util.HashMap;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -50,7 +47,6 @@ class CredentialRevocationResourceTest {
     private MultivaluedMap<String, String> headerMap;
 
     private CredentialRevocationResource resource;
-    private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() {
@@ -77,7 +73,6 @@ class CredentialRevocationResourceTest {
             fail("Failed to inject mocked service: " + e.getMessage());
         }
         
-        objectMapper = new ObjectMapper();
     }
 
     @Test

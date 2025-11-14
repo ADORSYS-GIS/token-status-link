@@ -21,7 +21,6 @@ import java.security.spec.ECPoint;
 import java.math.BigInteger;
 import java.util.Base64;
 import java.util.List;
-import java.util.ArrayList;
 
 /**
  * Service for validating SD-JWT VP tokens.
