@@ -102,10 +102,6 @@ public class StatusListProtocolMapper extends OID4VCMapper {
                 """;
     }
 
-    @Override
-    public boolean includeInMetadata() {
-        return false; // Exclude explicit mention in Credential Issuer Metadata
-    }
 
     @Override
     protected List<ProviderConfigProperty> getIndividualConfigProperties() {
@@ -170,8 +166,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
             tokenId = id;
         }
 
-        UserSessionModel userSession = session.getContext().getUserSession();
-        String userId = userSession != null ? userSession.getUser().getId() : null;
+        String userId = userSessionModel != null ? userSessionModel.getUser().getId() : null;
 
         Status status = storeIndexMapping(listId, idx, uri.toString(), userId, tokenId, session, config);
         if (status == null) {

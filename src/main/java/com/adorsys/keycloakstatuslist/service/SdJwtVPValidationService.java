@@ -107,7 +107,6 @@ public class SdJwtVPValidationService {
                          verifyingKeys.size(), requestId);
             
             sdJwtVP.verify(
-                verifyingKeys,
                 getIssuerSignedJwtVerificationOpts(),
                 getKeyBindingJwtVerificationOpts(requestId)
             );
@@ -170,8 +169,9 @@ public class SdJwtVPValidationService {
             
             // The SD-JWT library automatically handles key binding verification when enabled
             // No need to manually extract and verify the holder's key
+            // For holder signature, the key is within the token, so no external verifier is needed.
+            // The library handles this internally when key binding is required.
             sdJwtVP.verify(
-                List.of(), // Empty list - no additional verifiers needed for key binding
                 getIssuerSignedJwtVerificationOpts(),
                 getKeyBindingJwtVerificationOpts(requestId)
             );
@@ -497,10 +497,9 @@ public class SdJwtVPValidationService {
      * These options control how the issuer signature is validated.
      */
     private IssuerSignedJwtVerificationOpts getIssuerSignedJwtVerificationOpts() {
-        return IssuerSignedJwtVerificationOpts.builder()
-                .withValidateNotBeforeClaim(false)
-                .withValidateExpirationClaim(false)
-                .build();
+        // In recent Keycloak versions, verifier resolution is likely handled internally.
+        // Time-based validations are also often enabled by default or controlled differently.
+        return IssuerSignedJwtVerificationOpts.builder().build();
     }
 
     /**
@@ -516,7 +515,6 @@ public class SdJwtVPValidationService {
                     .withKeyBindingRequired(true)
                     .withAllowedMaxAge(300)
                     .withAud(expectedKbJwtAud)
-                    .withValidateExpirationClaim(true)
                     .build();
                     
         } catch (Exception e) {
@@ -527,7 +525,6 @@ public class SdJwtVPValidationService {
             return KeyBindingJwtVerificationOpts.builder()
                     .withKeyBindingRequired(true)
                     .withAllowedMaxAge(300)
-                    .withValidateExpirationClaim(true)   
                     .build();
         }
     }

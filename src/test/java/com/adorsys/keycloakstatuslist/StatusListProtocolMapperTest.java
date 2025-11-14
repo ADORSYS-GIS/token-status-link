@@ -15,6 +15,7 @@ import org.apache.hc.core5.http.io.HttpClientResponseHandler;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.keycloak.models.ProtocolMapperModel;
+import org.keycloak.models.UserModel;
 import org.mockito.Mock;
 
 import java.io.IOException;
@@ -46,6 +47,8 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
     @Mock
     ProtocolMapperModel mapperModel;
+    @Mock
+    UserModel user;
 
     StatusListProtocolMapper mapper;
     HashMap<String, Object> claims;
@@ -62,6 +65,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
         // Run mocks
         mockDefaultRealmConfig();
+        lenient().when(userSession.getUser()).thenReturn(user);
     }
 
     @Test
