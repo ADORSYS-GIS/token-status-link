@@ -92,8 +92,7 @@ class SdJwtVPValidationServiceTest {
             service.parseAndValidateSdJwtVP("invalid.token.format", "test-request-id");
         });
         
-        // The underlying library may throw different exceptions, so we just check that *some* exception is thrown.
-        assertNotNull(exception);
+        assertTrue(exception.getMessage().contains("Invalid SD-JWT VP token format"));
     }
 
     @Test
