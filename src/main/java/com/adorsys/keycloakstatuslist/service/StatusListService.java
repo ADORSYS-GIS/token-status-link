@@ -86,16 +86,6 @@ public class StatusListService implements AutoCloseable {
         }
     }
 
-    private static CloseableHttpClient createDefaultHttpClient(StatusListConfig realmConfig) {
-        RequestConfig requestConfig = getRequestConfig(realmConfig);
-        HttpRequestRetryStrategy retryStrategy = getHttpRequestRetryStrategy(realmConfig);
-
-        return HttpClients.custom()
-                .setDefaultRequestConfig(requestConfig)
-                .setRetryStrategy(retryStrategy)
-                .build();
-    }
-
     private static RequestConfig getRequestConfig(StatusListConfig realmConfig) {
         Timeout connectTimeout = Timeout.ofMilliseconds(realmConfig.getConnectTimeout());
         Timeout responseTimeout = Timeout.ofMilliseconds(realmConfig.getReadTimeout());
