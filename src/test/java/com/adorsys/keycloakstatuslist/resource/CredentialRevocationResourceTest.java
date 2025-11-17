@@ -62,11 +62,11 @@ class CredentialRevocationResourceTest {
     @BeforeEach
     void setUp() {
         // Setup basic mocks
-        when(session.getContext()).thenReturn(context);
-        when(session.getKeycloakSessionFactory()).thenReturn(sessionFactory);
-        when(context.getRealm()).thenReturn(realm);
-        when(context.getConnection()).thenReturn(mock(ClientConnection.class));
-        when(realm.getName()).thenReturn("test-realm");
+        lenient().when(session.getContext()).thenReturn(context);
+        lenient().when(session.getKeycloakSessionFactory()).thenReturn(sessionFactory);
+        lenient().when(context.getRealm()).thenReturn(realm);
+        lenient().when(context.getConnection()).thenReturn(mock(ClientConnection.class));
+        lenient().when(realm.getName()).thenReturn("test-realm");
 
         // Create a testable version of the resource with dependency injection
         resource = new TestableCredentialRevocationResource(session, headers, revocationService);
@@ -81,7 +81,7 @@ class CredentialRevocationResourceTest {
         private final KeycloakSession session;
 
         public TestableCredentialRevocationResource(KeycloakSession session, HttpHeaders headers, CredentialRevocationService revocationService) {
-            super(session, headers, revocationService);
+            super(session, null, headers, revocationService);
             this.session = session;
         }
 

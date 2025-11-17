@@ -27,11 +27,12 @@ public class CredentialRevocationResource extends TokenRevocationEndpoint {
      * Constructor with dependency injection for better testability.
      *
      * @param session Keycloak session
+     * @param event EventBuilder for logging
      * @param headers HTTP headers (can be injected via @Context)
      * @param revocationService Credential revocation service (can be injected for testing)
      */
-    public CredentialRevocationResource(KeycloakSession session, HttpHeaders headers, CredentialRevocationService revocationService) {
-        super(session, createEventBuilder(session));
+    public CredentialRevocationResource(KeycloakSession session, EventBuilder event, HttpHeaders headers, CredentialRevocationService revocationService) {
+        super(session, event);
         this.session = session;
         this.headers = headers;
         this.revocationService = revocationService;
@@ -41,8 +42,8 @@ public class CredentialRevocationResource extends TokenRevocationEndpoint {
      * Default constructor for Keycloak resource instantiation.
      * Uses field injection for HttpHeaders and creates default service.
      */
-    public CredentialRevocationResource(KeycloakSession session) {
-        super(session, createEventBuilder(session));
+    public CredentialRevocationResource(KeycloakSession session, EventBuilder event) {
+        super(session, event);
         this.session = session;
         this.headers = null; // Will be injected via @Context
         this.revocationService = new CredentialRevocationService(session);
@@ -51,14 +52,6 @@ public class CredentialRevocationResource extends TokenRevocationEndpoint {
     @Context
     public void setHeaders(HttpHeaders headers) {
         this.headers = headers;
-    }
-
-    /**
-     * Creates an EventBuilder for the parent class.
-     * Extracted to a helper method for clarity and reusability.
-     */
-    private static EventBuilder createEventBuilder(KeycloakSession session) {
-        return new EventBuilder(session.getContext().getRealm(), session, session.getContext().getConnection());
     }
 
     @POST

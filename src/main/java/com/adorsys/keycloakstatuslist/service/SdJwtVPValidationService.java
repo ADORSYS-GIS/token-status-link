@@ -498,8 +498,6 @@ public class SdJwtVPValidationService {
      */
     private IssuerSignedJwtVerificationOpts getIssuerSignedJwtVerificationOpts() {
         return IssuerSignedJwtVerificationOpts.builder()
-                .withValidateNotBeforeClaim(false)
-                .withValidateExpirationClaim(false)
                 .build();
     }
 
@@ -516,7 +514,6 @@ public class SdJwtVPValidationService {
                     .withKeyBindingRequired(true)
                     .withAllowedMaxAge(300)
                     .withAud(expectedKbJwtAud)
-                    .withValidateExpirationClaim(true)
                     .build();
                     
         } catch (Exception e) {
@@ -527,7 +524,6 @@ public class SdJwtVPValidationService {
             return KeyBindingJwtVerificationOpts.builder()
                     .withKeyBindingRequired(true)
                     .withAllowedMaxAge(300)
-                    .withValidateExpirationClaim(true)   
                     .build();
         }
     }
