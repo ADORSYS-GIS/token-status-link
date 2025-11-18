@@ -1,6 +1,5 @@
 package com.adorsys.keycloakstatuslist.service;
 
-import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.exception.StatusListServerException;
 import com.adorsys.keycloakstatuslist.model.TokenStatus;
@@ -8,14 +7,14 @@ import com.adorsys.keycloakstatuslist.model.TokenStatusRecord;
 import org.apache.hc.client5.http.classic.methods.HttpPost;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.core5.http.ClassicHttpResponse;
-import org.apache.hc.core5.http.HttpException;
 import org.apache.hc.core5.http.io.HttpClientResponseHandler;
+import org.apache.hc.core5.http.io.entity.StringEntity;
+import org.apache.hc.core5.http.message.BasicClassicHttpResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.keycloak.models.RealmModel;
 
 import java.io.IOException;
 import java.time.Instant;
@@ -37,14 +36,7 @@ class StatusListServiceTest {
     @Mock
     private CloseableHttpClient httpClient;
 
-    @Mock
-    private ClassicHttpResponse httpResponse;
-
-    @Mock
-    private RealmModel realmModel;
-
     private StatusListService statusListService;
-    private StatusListConfig statusListConfig;
 
     @BeforeEach
     void setUp() {
@@ -52,12 +44,28 @@ class StatusListServiceTest {
     }
 
     private void setupResponse(int statusCode) throws IOException {
-        when(httpResponse.getCode()).thenReturn(statusCode);
-        when(httpClient.execute(any(HttpPost.class), any(HttpClientResponseHandler.class)))
-                .thenAnswer(invocation -> {
-                    HttpClientResponseHandler<Object> handler = invocation.getArgument(1);
-                    return handler.handleResponse(httpResponse);
-                });
+        // Mock the execute method to call the ResponseHandler with a mock response
+        doAnswer(invocation -> {
+            HttpClientResponseHandler<Object> handler = invocation.getArgument(1);
+
+            ClassicHttpResponse response = new BasicClassicHttpResponse(statusCode);
+            response.setEntity(new StringEntity("{}")); // Set a dummy entity
+
+            // Execute the handler with the mock response
+            return handler.handleResponse(response);
+        }).when(httpClient).execute(any(HttpPost.class), any(HttpClientResponseHandler.class));
+    }
+    private void setupResponse(int statusCode, String responseBody) throws IOException {
+        // Mock the execute method to call the ResponseHandler with a mock response
+        doAnswer(invocation -> {
+            HttpClientResponseHandler<Object> handler = invocation.getArgument(1);
+
+            ClassicHttpResponse response = new BasicClassicHttpResponse(statusCode);
+            response.setEntity(new StringEntity(responseBody)); // Set the specified entity
+
+            // Execute the handler with the mock response
+            return handler.handleResponse(response);
+        }).when(httpClient).execute(any(HttpPost.class), any(HttpClientResponseHandler.class));
     }
 
     private void setupSuccessfulResponse() throws IOException {
@@ -68,12 +76,12 @@ class StatusListServiceTest {
         setupResponse(statusCode);
     }
 
-    private void verifyHttpClientCall(int expectedCalls) throws IOException, HttpException {
+    private void verifyHttpClientCall(int expectedCalls) throws IOException {
         verify(httpClient, times(expectedCalls)).execute(any(HttpPost.class), any(HttpClientResponseHandler.class));
     }
 
     @Test
-    void successScenarios() {
+    void successScenarios() throws IOException {
         // Test register issuer success
         assertDoesNotThrow(() -> {
             setupSuccessfulResponse();
@@ -91,18 +99,38 @@ class StatusListServiceTest {
         });
 
         // Test publish record with auth token
-        assertDoesNotThrow(() -> {
-            reset(httpClient);
-            statusListService = new StatusListService(SERVER_URL, "test-token", httpClient);
-            final TokenStatusRecord record = createTestRecord();
-            setupSuccessfulResponse();
-            statusListService.publishRecord(record);
-            verifyHttpClientCall(1);
-        });
+        final TokenStatusRecord record = createTestRecord();
+        reset(httpClient);
+        statusListService = new StatusListService(SERVER_URL, "test-token", httpClient);
+        setupSuccessfulResponse();
+        assertDoesNotThrow(() -> statusListService.publishRecord(record));
+        verifyHttpClientCall(1);
     }
 
     @Test
-    void registerIssuer_AlreadyRegistered() {
+    void responseBodyScenarios() throws IOException {
+        final TokenStatusRecord record = createTestRecord();
+
+        // Test empty response body
+        setupResponse(200, "");
+        assertDoesNotThrow(() -> statusListService.publishRecord(record));
+        verifyHttpClientCall(1);
+
+        // Test non-empty response body
+        reset(httpClient);
+        setupResponse(200, "{\"status\":\"success\"}");
+        assertDoesNotThrow(() -> statusListService.publishRecord(record));
+        verifyHttpClientCall(1);
+
+        // Test malformed JSON response
+        reset(httpClient);
+        setupResponse(200, "{invalid json}");
+        assertDoesNotThrow(() -> statusListService.publishRecord(record));
+        verifyHttpClientCall(1);
+    }
+
+    @Test
+    void registerIssuer_AlreadyRegistered() throws IOException {
         // Arrange
         assertDoesNotThrow(() -> {
             setupResponseWithStatus(409);
@@ -114,9 +142,9 @@ class StatusListServiceTest {
     }
 
     @Test
-    void registerIssuer_ServerError() {
+    void registerIssuer_ServerError() throws IOException {
         // Arrange
-        assertDoesNotThrow(() -> setupResponseWithStatus(500));
+        setupResponseWithStatus(500);
 
         // Act & Assert
         StatusListServerException exception = assertThrows(StatusListServerException.class,
@@ -157,7 +185,7 @@ class StatusListServiceTest {
     }
 
     @Test
-    void publishRecord_DefaultValues() {
+    void publishRecord_DefaultValues() throws IOException {
         // Test default status
         assertDoesNotThrow(() -> {
             final TokenStatusRecord record1 = createTestRecord();
@@ -181,7 +209,7 @@ class StatusListServiceTest {
     }
 
     @Test
-    void publishRecord_StatusCodeHandling() {
+    void publishRecord_StatusCodeHandling() throws IOException {
         TokenStatusRecord record = createTestRecord();
 
         // Test 200 OK
@@ -227,7 +255,7 @@ class StatusListServiceTest {
     }
 
     @Test
-    void publishRecord_RecordFieldHandling() {
+    void publishRecord_RecordFieldHandling() throws IOException {
         // Test issuer field is set from issuerId
         assertDoesNotThrow(() -> {
             final TokenStatusRecord record1 = createTestRecord();

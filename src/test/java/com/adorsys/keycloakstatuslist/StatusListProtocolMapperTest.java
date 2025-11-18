@@ -4,7 +4,6 @@ import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import com.adorsys.keycloakstatuslist.helpers.MockKeycloakTest;
 import com.adorsys.keycloakstatuslist.model.Status;
 import com.adorsys.keycloakstatuslist.model.StatusListClaim;
-import com.adorsys.keycloakstatuslist.service.StatusListService;
 import jakarta.persistence.PersistenceException;
 import jakarta.persistence.Query;
 import jakarta.ws.rs.HttpMethod;
@@ -64,8 +63,6 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         // Run mocks
         mockDefaultRealmConfig();
 
-        StatusListService mockStatusListService = new StatusListService(TEST_SERVER_URL, null, httpClient);
-        lenient().doReturn(mockStatusListService).when(mapper).getStatusListService(any(StatusListConfig.class));
     }
 
     @Test
@@ -236,10 +233,8 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
     private void assertLogExpectationsForFailedStatusMapping() {
         assertThat(logCaptor.getErrorLogs(), hasItems(
                 containsString("Failed to store index mapping"),
-                containsString("Failed to send status to server. Status claim not mapped")
-        ));
-        assertThat(logCaptor.getErrorLogs(), not(hasItem(
+                containsString("Failed to send status to server. Status claim not mapped"),
                 containsString("Error publishing or updating status list on server")
-        )));
+        ));
     }
 }

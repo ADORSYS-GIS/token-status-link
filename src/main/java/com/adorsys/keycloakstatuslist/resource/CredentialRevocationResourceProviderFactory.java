@@ -3,7 +3,11 @@ package com.adorsys.keycloakstatuslist.resource;
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.service.CryptoIdentityService;
+import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
+import org.apache.hc.client5.http.classic.methods.HttpGet;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.core5.http.io.entity.EntityUtils;
 import org.jboss.logging.Logger;
 import org.keycloak.Config;
 import org.keycloak.crypto.Algorithm;
@@ -17,12 +21,6 @@ import org.keycloak.services.resource.RealmResourceProvider;
 import org.keycloak.services.resource.RealmResourceProviderFactory;
 
 import java.io.IOException;
-import java.net.ConnectException;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -149,37 +147,30 @@ public class CredentialRevocationResourceProviderFactory implements RealmResourc
      * @return true if the server is healthy, false otherwise
      */
     private boolean checkServerHealth(String serverUrl) {
-        try {
-            String healthUrl = serverUrl.endsWith("/") ? serverUrl + "health" : serverUrl + "/health";
-            logger.debugf("Checking server health at: %s", healthUrl);
+        String healthUrl = serverUrl.endsWith("/") ? serverUrl + "health" : serverUrl + "/health";
+        logger.debugf("Checking server health at: %s", healthUrl);
 
-            HttpClient httpClient = HttpClient.newBuilder()
-                    .connectTimeout(Duration.ofSeconds(10))
-                    .build();
+        try (CloseableHttpClient httpClient = CustomHttpClient.getHttpClient()) {
+            HttpGet httpGet = new HttpGet(healthUrl);
 
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(healthUrl))
-                    .timeout(Duration.ofSeconds(10))
-                    .GET()
-                    .build();
+            return httpClient.execute(httpGet, response -> {
+                int statusCode = response.getCode();
+                EntityUtils.consume(response.getEntity()); // Ensure response body is consumed
 
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-
-            if (response.statusCode() == 200) {
-                logger.debug("Server health check passed");
-                return true;
-            } else {
-                logger.warnf("Server health check failed: status %d", response.statusCode());
-                return false;
-            }
-        } catch (ConnectException | java.net.http.HttpTimeoutException e) {
-            logger.warnf("Connection error while checking server health: %s", e.getMessage());
+                if (statusCode == 200) {
+                    logger.debug("Server health check passed");
+                    return true;
+                } else {
+                    logger.warnf("Server health check failed: status %d", statusCode);
+                    return false;
+                }
+            });
+        } catch (IOException e) {
+            // IOException covers connection errors, timeouts, etc.
+            logger.warnf("Error during server health check at %s: %s", healthUrl, e.getMessage());
             return false;
-        } catch (IOException | InterruptedException e) {
-            logger.error("Server health check error", e);
-            if (e instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
-            }
+        } catch (Exception e) {
+            logger.error("Unexpected error during server health check", e);
             return false;
         }
     }
@@ -210,7 +201,7 @@ public class CredentialRevocationResourceProviderFactory implements RealmResourc
             StatusListService statusListService = new StatusListService(
                     config.getServerUrl(),
                     cryptoIdentityService.getJwtToken(config),
-                    config
+                    CustomHttpClient.getHttpClient()
             );
 
             // Get realm's public key and algorithm
