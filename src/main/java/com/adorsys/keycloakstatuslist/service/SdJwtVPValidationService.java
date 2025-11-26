@@ -335,7 +335,7 @@ public class SdJwtVPValidationService {
 
     private String extractHeaderParam(SdJwtVP sdJwtVP, String paramName) {
         var jwt = sdJwtVP.getIssuerSignedJWT();
-        var header = jwt.getJwsHeader();
+        var header = jwt.getHeader();
         if ("kid".equals(paramName)) {
             return header != null ? header.getKeyId() : null;
         }
@@ -438,7 +438,7 @@ public class SdJwtVPValidationService {
         try {
             var issuerSignedJWT = sdJwtVP.getIssuerSignedJWT();
             if (issuerSignedJWT != null) {
-                var header = issuerSignedJWT.getJwsHeader();
+                var header = issuerSignedJWT.getHeader();
                 var payload = issuerSignedJWT.getPayload();
                 
                 logger.debugf("Token structure - Header: %s, Payload type: %s. RequestId: %s",
@@ -506,7 +506,11 @@ public class SdJwtVPValidationService {
      * These options control how the issuer signature is validated.
      */
     private IssuerSignedJwtVerificationOpts getIssuerSignedJwtVerificationOpts() {
-        return IssuerSignedJwtVerificationOpts.builder().build();
+
+        return IssuerSignedJwtVerificationOpts.builder()
+                // Removed .withRequireNbfClaim(false) and .withRequireExpirationClaim(false)
+                // as these methods are not available in the current IssuerSignedJwtVerificationOpts.Builder
+                .build();
     }
 
     /**
@@ -557,12 +561,16 @@ public class SdJwtVPValidationService {
 
             return KeyBindingJwtVerificationOpts.builder()
                     .withKeyBindingRequired(true)
+         .withAllowedMaxAge(300)
+                    .withAud(aud)
                     .build();
         } catch (IllegalArgumentException e) {
             throw e;
         } catch (Exception e) {
             logger.errorf("Failed to build Key Binding verification options. RequestId: %s, Error: %s", requestId, e.getMessage());
             throw new IllegalArgumentException("Failed to prepare Key Binding verification options: " + e.getMessage(), e);
+            // The IllegalArgumentException is thrown above, so this code is unreachable.
+            // Removing it to clean up the code.
         }
     }
 

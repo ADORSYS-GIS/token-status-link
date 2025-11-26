@@ -138,8 +138,8 @@ public class JwksService {
     private String getSigningKeyId(SdJwtVP sdJwtVP) {
         try {
             IssuerSignedJWT issuerSignedJWT = sdJwtVP.getIssuerSignedJWT();
-            if (issuerSignedJWT != null && issuerSignedJWT.getJwsHeader() != null) {
-                return issuerSignedJWT.getJwsHeader().getKeyId();
+            if (issuerSignedJWT != null && issuerSignedJWT.getHeader() != null) {
+                return issuerSignedJWT.getHeader().getKeyId();
             }
         } catch (Exception e) {
             logger.debug("Could not extract signing key ID from JWT header", e);
