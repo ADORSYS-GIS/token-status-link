@@ -8,9 +8,11 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.client5.http.classic.methods.HttpGet;
+import org.apache.hc.client5.http.classic.methods.HttpPatch;
 import org.apache.hc.client5.http.classic.methods.HttpPost;
-import org.apache.hc.core5.http.io.entity.StringEntity;
 import org.apache.hc.core5.http.io.entity.EntityUtils;
+import org.apache.hc.core5.http.io.entity.StringEntity;
 import org.jboss.logging.Logger;
 
 import java.io.IOException;
@@ -89,6 +91,51 @@ public class StatusListService {
         }
     }
 
+    public void updateRecord(TokenStatusRecord statusRecord) throws StatusListException {
+        validateStatusRecord(statusRecord);
+        String requestId = UUID.randomUUID().toString();
+        String credentialId = statusRecord.getCredentialId();
+
+        try {
+            String jsonPayload = objectMapper.writeValueAsString(statusRecord);
+            logger.debug("Request ID: " + requestId + ", Updating record for credentialId: " + credentialId);
+
+            HttpPatch httpPatch = new HttpPatch(serverUrl + "credentials");
+            httpPatch.setHeader("Content-Type", "application/json");
+            httpPatch.setHeader("X-Request-ID", requestId);
+            httpPatch.setEntity(new StringEntity(jsonPayload));
+
+            if (authToken != null && !authToken.isEmpty()) {
+                httpPatch.setHeader("Authorization", "Bearer " + authToken);
+            }
+
+            httpClient.execute(httpPatch, response -> {
+                int statusCode = response.getCode();
+                String responseBody = EntityUtils.toString(response.getEntity());
+                if (statusCode >= 200 && statusCode < 300) {
+                    logger.info("Request ID: " + requestId + ", Successfully updated record for credentialId: " + credentialId);
+                    return null;
+                } else {
+                    logger.error("Request ID: " + requestId + ", Failed to update record for credentialId: " + credentialId +
+                            ". Status code: " + statusCode + ", Response: " + responseBody);
+                    throw new IllegalStateException(new StatusListServerException(
+                            "Failed to update record for credentialId: " + credentialId + ". Status code: " + statusCode,
+                            statusCode));
+                }
+            });
+        } catch (IOException e) {
+            logger.error("Request ID: " + requestId + ", Failed to update record for credentialId: " + credentialId +
+                    ": " + e.getMessage(), e);
+            throw new StatusListException("Failed to update record for credentialId: " + credentialId, e);
+        } catch (Exception e) {
+            if (e.getCause() instanceof StatusListServerException serverException) {
+                throw serverException;
+            }
+            logger.error("Request ID: " + requestId + ", Unexpected error updating record for credentialId: " + credentialId +
+                    ": " + e.getMessage(), e);
+            throw new StatusListException("Unexpected error updating record for credentialId: " + credentialId, e);
+        }
+    }
 
     public void registerIssuer(String issuerId, String publicKey, String algorithm) throws StatusListException {
         String requestId = UUID.randomUUID().toString();
@@ -205,6 +252,43 @@ public class StatusListService {
 
         if (statusRecord.getExpiresAt() == null) {
             statusRecord.setExpiresAt(Instant.now().plusSeconds(3600));
+        }
+    }
+
+    public boolean checkStatusListExists(String statusListId) throws StatusListException {
+        String requestId = UUID.randomUUID().toString();
+        logger.debug("Request ID: " + requestId + ", Checking if status list exists: " + statusListId);
+
+        HttpGet httpGet = new HttpGet(serverUrl + "statuslists/" + statusListId);
+        httpGet.setHeader("X-Request-ID", requestId);
+
+        try {
+            return httpClient.execute(httpGet, response -> {
+                int statusCode = response.getCode();
+                if (statusCode == 200) {
+                    logger.info("Request ID: " + requestId + ", Status list " + statusListId + " exists.");
+                    return true;
+                } else if (statusCode == 404) {
+                    logger.info("Request ID: " + requestId + ", Status list " + statusListId + " does not exist.");
+                    return false;
+                } else {
+                    String responseBody = EntityUtils.toString(response.getEntity());
+                    logger.error("Request ID: " + requestId + ", Failed to check status list " + statusListId +
+                            ". Status code: " + statusCode + ", Response: " + responseBody);
+                    throw new IllegalStateException(new StatusListServerException(
+                            "Failed to check status list " + statusListId + ". Status code: " + statusCode,
+                            statusCode));
+                }
+            });
+        } catch (IOException e) {
+            logger.error("Request ID: " + requestId + ", Error checking status list " + statusListId + ": " + e.getMessage(), e);
+            throw new StatusListException("Error checking status list " + statusListId, e);
+        } catch (Exception e) {
+            if (e.getCause() instanceof StatusListServerException serverException) {
+                throw serverException;
+            }
+            logger.error("Request ID: " + requestId + ", Unexpected error checking status list " + statusListId + ": " + e.getMessage(), e);
+            throw new StatusListException("Unexpected error checking status list " + statusListId, e);
         }
     }
 }

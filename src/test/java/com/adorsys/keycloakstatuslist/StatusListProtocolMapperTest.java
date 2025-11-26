@@ -12,6 +12,7 @@ import nl.altindag.log.LogCaptor;
 import org.apache.hc.core5.http.ClassicHttpRequest;
 import org.apache.hc.core5.http.HttpStatus;
 import org.apache.hc.core5.http.io.HttpClientResponseHandler;
+import org.apache.hc.core5.http.io.entity.StringEntity;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.keycloak.models.ProtocolMapperModel;
@@ -59,10 +60,11 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         // Initialize claims (credential payload)
         claims = new HashMap<>();
         claims.put(Constants.ID_CLAIM_KEY, "did:example:123456789");
+        claims.put("iss", "https://example.com/realms/test-realm");
 
         // Run mocks
         mockDefaultRealmConfig();
-
+        lenient().when(httpResponse.getEntity()).thenReturn(new StringEntity(""));
     }
 
     @Test
