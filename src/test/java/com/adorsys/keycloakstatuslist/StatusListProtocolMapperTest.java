@@ -2,6 +2,7 @@ package com.adorsys.keycloakstatuslist;
 
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import com.adorsys.keycloakstatuslist.helpers.MockKeycloakTest;
+import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
 import com.adorsys.keycloakstatuslist.model.Status;
 import com.adorsys.keycloakstatuslist.model.StatusListClaim;
 import jakarta.persistence.PersistenceException;
@@ -36,6 +37,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.startsWith;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.when;
 
@@ -75,43 +77,51 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
     @Test
     void shouldSendStatusesThenMapSuccessfully_CreateListIfNotExists() {
-        long idx = mockGetNextIndex();
-        mockHttpClientExecute((req) -> {
-            switch (req.getMethod()) {
-                // Check if status list already exists
-                case HttpMethod.GET -> when(httpResponse.getCode()).thenReturn(HttpStatus.SC_NOT_FOUND);
-                // Create new status list
-                case HttpMethod.POST -> when(httpResponse.getCode()).thenReturn(HttpStatus.SC_CREATED);
-                default -> fail("Unexpected HTTP call: " + req.getMethod());
-            }
-        });
+        try (var mocked = mockStatic(CustomHttpClient.class)) {
+            mocked.when(CustomHttpClient::getHttpClient).thenReturn(httpClient);
 
-        mapper.setClaimsForSubject(claims, userSession);
-        assertThat(claims.keySet(), hasItem(Constants.STATUS_CLAIM_KEY));
-        assertInstanceOf(Status.class, claims.get(Constants.STATUS_CLAIM_KEY));
+            long idx = mockGetNextIndex();
+            mockHttpClientExecute((req) -> {
+                switch (req.getMethod()) {
+                    // Check if status list already exists
+                    case HttpMethod.GET -> when(httpResponse.getCode()).thenReturn(HttpStatus.SC_NOT_FOUND);
+                    // Create new status list
+                    case HttpMethod.POST -> when(httpResponse.getCode()).thenReturn(HttpStatus.SC_CREATED);
+                    default -> fail("Unexpected HTTP call: " + req.getMethod());
+                }
+            });
 
-        Status status = (Status) claims.get(Constants.STATUS_CLAIM_KEY);
-        assertThat(status.getStatusList(), equalTo(new StatusListClaim(idx, listUri(TEST_REALM_ID))));
+            mapper.setClaimsForSubject(claims, userSession);
+            assertThat(claims.keySet(), hasItem(Constants.STATUS_CLAIM_KEY));
+            assertInstanceOf(Status.class, claims.get(Constants.STATUS_CLAIM_KEY));
+
+            Status status = (Status) claims.get(Constants.STATUS_CLAIM_KEY);
+            assertThat(status.getStatusList(), equalTo(new StatusListClaim(idx, listUri(TEST_REALM_ID))));
+        }
     }
 
     @Test
     void shouldSendStatusesThenMapSuccessfully_UpdateListIfExists() {
-        long idx = mockGetNextIndex();
-        mockHttpClientExecute((req) -> {
-            switch (req.getMethod()) {
-                // Check if status list already exists
-                case HttpMethod.GET -> when(httpResponse.getCode()).thenReturn(HttpStatus.SC_OK);
-                // Create new status list
-                case HttpMethod.PATCH -> when(httpResponse.getCode()).thenReturn(HttpStatus.SC_OK);
-                default -> fail("Unexpected HTTP call: " + req.getMethod());
-            }
-        });
+        try (var mocked = mockStatic(CustomHttpClient.class)) {
+            mocked.when(CustomHttpClient::getHttpClient).thenReturn(httpClient);
 
-        mapper.setClaimsForSubject(claims, userSession);
-        assertThat(claims.keySet(), hasItem(Constants.STATUS_CLAIM_KEY));
+            long idx = mockGetNextIndex();
+            mockHttpClientExecute((req) -> {
+                switch (req.getMethod()) {
+                    // Check if status list already exists
+                    case HttpMethod.GET -> when(httpResponse.getCode()).thenReturn(HttpStatus.SC_OK);
+                    // Create new status list
+                    case HttpMethod.PATCH -> when(httpResponse.getCode()).thenReturn(HttpStatus.SC_OK);
+                    default -> fail("Unexpected HTTP call: " + req.getMethod());
+                }
+            });
 
-        Status status = (Status) claims.get(Constants.STATUS_CLAIM_KEY);
-        assertThat(status.getStatusList(), equalTo(new StatusListClaim(idx, listUri(TEST_REALM_ID))));
+            mapper.setClaimsForSubject(claims, userSession);
+            assertThat(claims.keySet(), hasItem(Constants.STATUS_CLAIM_KEY));
+
+            Status status = (Status) claims.get(Constants.STATUS_CLAIM_KEY);
+            assertThat(status.getStatusList(), equalTo(new StatusListClaim(idx, listUri(TEST_REALM_ID))));
+        }
     }
 
     @Test
@@ -148,39 +158,47 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
     @Test
     void shouldNotMap_IfCantCheckStatusListExists() {
-        mockGetNextIndex();
-        mockHttpClientExecute((req) -> {
-            // Check if status list already exists
-            if (req.getMethod().equals(HttpMethod.GET)) {
-                when(httpResponse.getCode()).thenReturn(HttpStatus.SC_INTERNAL_SERVER_ERROR);
-            } else {
-                fail("Unexpected HTTP call: " + req.getMethod());
-            }
-        });
+        try (var mocked = mockStatic(CustomHttpClient.class)) {
+            mocked.when(CustomHttpClient::getHttpClient).thenReturn(httpClient);
 
-        mapper.setClaimsForSubject(claims, userSession);
+            mockGetNextIndex();
+            mockHttpClientExecute((req) -> {
+                // Check if status list already exists
+                if (req.getMethod().equals(HttpMethod.GET)) {
+                    when(httpResponse.getCode()).thenReturn(HttpStatus.SC_INTERNAL_SERVER_ERROR);
+                } else {
+                    fail("Unexpected HTTP call: " + req.getMethod());
+                }
+            });
 
-        assertThat("Claims should remain unmapped", claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
-        assertLogExpectationsForFailedStatusMapping();
+            mapper.setClaimsForSubject(claims, userSession);
+
+            assertThat("Claims should remain unmapped", claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
+            assertLogExpectationsForFailedStatusMapping();
+        }
     }
 
     @Test
     void shouldNotMap_IfCantPublishStatus() {
-        mockGetNextIndex();
-        mockHttpClientExecute((req) -> {
-            switch (req.getMethod()) {
-                // Check if status list already exists
-                case HttpMethod.GET -> when(httpResponse.getCode()).thenReturn(HttpStatus.SC_NOT_FOUND);
-                // Create new status list
-                case HttpMethod.POST -> when(httpResponse.getCode()).thenReturn(HttpStatus.SC_INTERNAL_SERVER_ERROR);
-                default -> fail("Unexpected HTTP call: " + req.getMethod());
-            }
-        });
+        try (var mocked = mockStatic(CustomHttpClient.class)) {
+            mocked.when(CustomHttpClient::getHttpClient).thenReturn(httpClient);
 
-        mapper.setClaimsForSubject(claims, userSession);
+            mockGetNextIndex();
+            mockHttpClientExecute((req) -> {
+                switch (req.getMethod()) {
+                    // Check if status list already exists
+                    case HttpMethod.GET -> when(httpResponse.getCode()).thenReturn(HttpStatus.SC_NOT_FOUND);
+                    // Create new status list
+                    case HttpMethod.POST -> when(httpResponse.getCode()).thenReturn(HttpStatus.SC_INTERNAL_SERVER_ERROR);
+                    default -> fail("Unexpected HTTP call: " + req.getMethod());
+                }
+            });
 
-        assertThat("Claims should remain unmapped", claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
-        assertLogExpectationsForFailedStatusMapping();
+            mapper.setClaimsForSubject(claims, userSession);
+
+            assertThat("Claims should remain unmapped", claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
+            assertLogExpectationsForFailedStatusMapping();
+        }
     }
 
     private void mockDefaultRealmConfig() {
@@ -209,7 +227,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
     private void mockHttpClientExecute(HttpClientExecuteHandler executeHandler) {
         try {
-            when(httpClient.execute(any(ClassicHttpRequest.class), any(HttpClientResponseHandler.class)))
+            lenient().when(httpClient.execute(any(ClassicHttpRequest.class), any(HttpClientResponseHandler.class)))
                     .thenAnswer(invocation -> {
                         ClassicHttpRequest request = invocation.getArgument(0);
                         HttpClientResponseHandler<?> handler = invocation.getArgument(1);

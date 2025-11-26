@@ -1,176 +1,129 @@
 package com.adorsys.keycloakstatuslist.resource;
 
-import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest;
-import com.adorsys.keycloakstatuslist.model.CredentialRevocationResponse;
 import com.adorsys.keycloakstatuslist.service.CredentialRevocationService;
-import org.jboss.logging.Logger;
-import org.keycloak.models.KeycloakSession;
-import org.keycloak.models.RealmModel;
-
-import jakarta.ws.rs.*;
-import jakarta.ws.rs.core.MediaType;
-import jakarta.ws.rs.core.Response;
-import jakarta.ws.rs.core.HttpHeaders;
+import jakarta.ws.rs.POST;
 import jakarta.ws.rs.core.Context;
-import java.util.HashMap;
-import java.util.Map;
+import jakarta.ws.rs.core.HttpHeaders;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.MultivaluedMap;
+import jakarta.ws.rs.core.Response;
+import org.jboss.logging.Logger;
+import org.keycloak.events.EventBuilder;
+import org.keycloak.models.KeycloakSession;
+import org.keycloak.protocol.oidc.endpoints.TokenRevocationEndpoint;
 
-/**
- * REST resource for credential revocation.
- * Provides endpoints for revoking credentials using SD-JWT VP tokens.
- * Note: SD-JWT VP tokens should be passed as Bearer tokens in Authorization header.
- */
-@Path("/credential-revocation")
-@Produces(MediaType.APPLICATION_JSON)
-@Consumes(MediaType.APPLICATION_JSON)
-public class CredentialRevocationResource {
-    
+public class CredentialRevocationResource extends TokenRevocationEndpoint {
+
     private static final Logger logger = Logger.getLogger(CredentialRevocationResource.class);
-    
+    private static final String BEARER_PREFIX = "bearer";
+
     private final KeycloakSession session;
     private final CredentialRevocationService revocationService;
+    private HttpHeaders headers;
 
-    public CredentialRevocationResource(KeycloakSession session) {
+    /**
+     * Constructor with dependency injection for better testability.
+     *
+     * @param session Keycloak session
+     * @param event EventBuilder for logging
+     * @param headers HTTP headers (can be injected via @Context)
+     * @param revocationService Credential revocation service (can be injected for testing)
+     */
+    public CredentialRevocationResource(KeycloakSession session, EventBuilder event, HttpHeaders headers, CredentialRevocationService revocationService) {
+        super(session, event);
         this.session = session;
+        this.headers = headers;
+        this.revocationService = revocationService;
+    }
+
+    /**
+     * Default constructor for Keycloak resource instantiation.
+     * Uses field injection for HttpHeaders and creates default service.
+     */
+    public CredentialRevocationResource(KeycloakSession session, EventBuilder event) {
+        super(session, event);
+        this.session = session;
+        this.headers = null; // Will be injected via @Context
         this.revocationService = new CredentialRevocationService(session);
     }
 
-    /**
-     * POST endpoint for revoking a credential.
-     * 
-     * @param request the revocation request containing credential ID and revocation reason
-     * @param headers HTTP headers containing the Authorization header with SD-JWT VP token
-     * @return Response with revocation result
-     */
+    @Context
+    public void setHeaders(HttpHeaders headers) {
+        this.headers = headers;
+    }
+
     @POST
-    @Path("/revoke")
-    public Response revokeCredential(CredentialRevocationRequest request, @Context HttpHeaders headers) {
+    @Override
+    public Response revoke() {
+        MultivaluedMap<String, String> form = session.getContext().getHttpRequest().getDecodedFormParameters();
+        String authorizationHeader = getHeaders().getHeaderString(HttpHeaders.AUTHORIZATION);
+
+        if (authorizationHeader == null || authorizationHeader.trim().isEmpty()) {
+            logger.debug("No authorization header provided, falling back to standard revocation");
+            return super.revoke();
+        }
+
+        String[] authParts = authorizationHeader.trim().split("\\s+", 2);
+        if (authParts.length != 2 || !BEARER_PREFIX.equalsIgnoreCase(authParts[0])) {
+            logger.debugf("Invalid authorization header format: %s, falling back to standard revocation", authorizationHeader);
+            return super.revoke();
+        }
+
+        String token = authParts[1].trim();
+        String credentialId = form.getFirst("token");
+
+        if (credentialId == null || credentialId.trim().isEmpty()) {
+            logger.warn("Valid Bearer provided but no credential ID in form; returning error for custom revocation");
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("{\"error\":\"invalid_request\",\"error_description\":\"Missing credential ID\"}")
+                    .type(MediaType.APPLICATION_JSON_TYPE)
+                    .build();
+        }
+
+        logger.infof("Attempting credential revocation via SD-JWT VP for credentialId: %s", credentialId);
         try {
-            // Check if service is enabled
-            if (!isServiceEnabled()) {
-                return createErrorResponse(Response.Status.SERVICE_UNAVAILABLE, 
-                                        "Credential revocation service is disabled");
-            }
-            
-            // Check if service is properly configured
-            if (!isServiceConfigured()) {
-                return createErrorResponse(Response.Status.SERVICE_UNAVAILABLE, 
-                                        "Credential revocation service is not properly configured");
-            }
-            
-            // Extract SD-JWT VP token from Authorization header
-            String sdJwtVpToken = extractSdJwtVpToken(headers);
-            if (sdJwtVpToken == null || sdJwtVpToken.trim().isEmpty()) {
-                return createErrorResponse(Response.Status.UNAUTHORIZED, 
-                                        "SD-JWT VP token is required in Authorization header");
-            }
-            
-            // Process revocation with the token from header
-            CredentialRevocationResponse response = revocationService.revokeCredential(request, sdJwtVpToken);
-            
-            return Response.ok(response).build();
-            
+            CredentialRevocationRequest request = new CredentialRevocationRequest();
+            request.setCredentialId(credentialId);
+            request.setRevocationReason(form.getFirst("reason"));
+
+            getRevocationService().revokeCredential(request, token);
+            logger.infof("Successfully revoked credential '%s' via status list.", credentialId);
+
+            return Response.ok().build();
+
         } catch (StatusListException e) {
-            logger.error("Credential revocation failed", e);
-            return createErrorResponse(Response.Status.BAD_REQUEST, e.getMessage());
+            logger.errorf(e, "SD-JWT VP based revocation failed for credentialId: %s due to status list error. Falling back to standard revocation.", credentialId);
+            return super.revoke();
         } catch (IllegalArgumentException e) {
-            logger.error("Service configuration error", e);
-            return createErrorResponse(Response.Status.SERVICE_UNAVAILABLE, e.getMessage());
+            logger.errorf(e, "SD-JWT VP based revocation failed for credentialId: %s due to invalid input. Falling back to standard revocation.", credentialId);
+            return super.revoke();
         } catch (Exception e) {
-            logger.error("Unexpected error during credential revocation", e);
-            return createErrorResponse(Response.Status.INTERNAL_SERVER_ERROR, 
-                                    "Internal server error during credential revocation");
+            logger.errorf(e, "SD-JWT VP based revocation failed for credentialId: %s due to unexpected error.", credentialId);
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity("{\"error\":\"server_error\",\"error_description\":\"Internal error during credential revocation\"}")
+                    .type(MediaType.APPLICATION_JSON_TYPE)
+                    .build();
         }
     }
 
     /**
-     * GET endpoint for checking service status.
-     * 
-     * @return Response indicating if the service is enabled and configured
+     * Gets the HTTP headers, handling both injected and constructor-provided headers.
+     * Made protected for testability.
      */
-    @GET
-    @Path("/status")
-    public Response getServiceStatus() {
-        try {
-            boolean enabled = isServiceEnabled();
-            boolean configured = isServiceConfigured();
-            
-            Map<String, Object> status = new HashMap<>();
-            status.put("enabled", enabled);
-            status.put("configured", configured);
-            status.put("service", "credential-revocation");
-            
-            if (enabled && configured) {
-                status.put("message", "Credential revocation service is available");
-                return Response.ok(status).build();
-            } else if (!enabled) {
-                status.put("message", "Credential revocation service is disabled");
-                return Response.status(Response.Status.SERVICE_UNAVAILABLE).entity(status).build();
-            } else {
-                status.put("message", "Credential revocation service is not properly configured");
-                return Response.status(Response.Status.SERVICE_UNAVAILABLE).entity(status).build();
-            }
-            
-        } catch (Exception e) {
-            logger.error("Error checking service status", e);
-            return createErrorResponse(Response.Status.INTERNAL_SERVER_ERROR, 
-                                    "Error checking service status");
+    protected HttpHeaders getHeaders() {
+        if (headers == null) {
+            throw new IllegalStateException("HttpHeaders not properly injected via @Context for standard revocation endpoint");
         }
+        return headers;
     }
 
     /**
-     * Extracts the SD-JWT VP token from the Authorization header.
+     * Gets the revocation service, handling both injected and constructor-provided services.
+     * Made protected for testability.
      */
-    private String extractSdJwtVpToken(HttpHeaders headers) {
-        String authorizationHeader = headers.getHeaderString(HttpHeaders.AUTHORIZATION);
-        if (authorizationHeader != null && authorizationHeader.startsWith("Bearer ")) {
-            return authorizationHeader.substring(7);
-        }
-        return null;
+    protected CredentialRevocationService getRevocationService() {
+        return revocationService;
     }
-
-    /**
-     * Checks if the credential revocation service is enabled for the current realm.
-     */
-    private boolean isServiceEnabled() {
-        try {
-            RealmModel realm = session.getContext().getRealm();
-            String enabled = realm.getAttribute("status-list-enabled");
-            return "true".equalsIgnoreCase(enabled);
-        } catch (Exception e) {
-            logger.warn("Error checking service status, defaulting to disabled", e);
-            return false;
-        }
-    }
-
-    /**
-     * Checks if the credential revocation service is properly configured.
-     */
-    private boolean isServiceConfigured() {
-        try {
-            RealmModel realm = session.getContext().getRealm();
-            StatusListConfig config = new StatusListConfig(realm);
-            
-            // Check if the service is enabled and has a valid server URL
-            return config.isEnabled() && 
-                   config.getServerUrl() != null && 
-                   !config.getServerUrl().trim().isEmpty();
-            
-        } catch (Exception e) {
-            logger.warn("Error checking service configuration", e);
-            return false;
-        }
-    }
-
-    /**
-     * Creates a standardized error response using CredentialRevocationResponse.
-     */
-    private Response createErrorResponse(Response.Status status, String message) {
-        return Response.status(status)
-                .entity(CredentialRevocationResponse.error(message))
-                .type(MediaType.APPLICATION_JSON)
-                .build();
-    }
-} 
+}

@@ -10,49 +10,45 @@ import org.keycloak.Config;
 import org.keycloak.crypto.Algorithm;
 import org.keycloak.crypto.KeyUse;
 import org.keycloak.crypto.KeyWrapper;
+import org.keycloak.events.EventBuilder;
 import org.keycloak.models.KeyManager;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.models.RealmModel;
-import org.keycloak.services.resource.RealmResourceProvider;
-import org.keycloak.services.resource.RealmResourceProviderFactory;
-
+import org.keycloak.protocol.oid4vc.OID4VCLoginProtocolFactory;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.client5.http.classic.methods.HttpGet;
+import org.apache.hc.core5.http.io.entity.EntityUtils;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Factory for creating CredentialRevocationResourceProvider instances.
- * This registers the credential revocation REST endpoints with Keycloak.
+ * Overrides the OID4VC protocol factory to inject a custom revocation endpoint into the standard /protocol/openid-connect/revoke path.
+ * Handles realm issuer registration at startup for status list integration.
  */
-public class CredentialRevocationResourceProviderFactory implements RealmResourceProviderFactory {
+public class CredentialRevocationResourceProviderFactory extends OID4VCLoginProtocolFactory {
 
     private static final Logger logger = Logger.getLogger(CredentialRevocationResourceProviderFactory.class);
-    private static final String PROVIDER_ID = "credential-revocation";
     private final Set<String> registeredRealms = ConcurrentHashMap.newKeySet();
     private KeycloakSessionFactory sessionFactory;
     private volatile boolean initialized = false;
 
-    @Override
-    public String getId() {
-        return PROVIDER_ID;
+    public int getOrder() {
+        return 0;  // Ensure this factory takes precedence in SPI loading
     }
 
     @Override
-    public RealmResourceProvider create(KeycloakSession session) {
-        logger.debug("Creating CredentialRevocationResourceProvider");
-        return new CredentialRevocationResourceProvider(session);
-    }
-
-    @Override
-    public void init(Config.Scope config) {
-        logger.info("Initializing CredentialRevocationResourceProviderFactory");
+    public Object createProtocolEndpoint(KeycloakSession session, EventBuilder event) {
+        return new CustomOIDCLoginProtocolService(session, event);
     }
 
     @Override
     public void postInit(KeycloakSessionFactory factory) {
-        logger.info("Post-initializing CredentialRevocationResourceProviderFactory");
+        super.postInit(factory);
+        logger.info("Post-initializing CredentialRevocationResourceProviderFactory for standard revocation endpoint override");
         this.sessionFactory = factory;
 
         // Initialize realms directly since we're already in the postInit phase
@@ -153,10 +149,6 @@ public class CredentialRevocationResourceProviderFactory implements RealmResourc
         }
     }
 
-    protected void performSleep(long millis) throws InterruptedException {
-        Thread.sleep(millis);
-    }
-
     private boolean registerRealmAsIssuer(KeycloakSession session, RealmModel realm) {
         if (registeredRealms.contains(realm.getName())) {
             logger.debug("Realm already registered as issuer: " + realm.getName());
@@ -225,6 +217,7 @@ public class CredentialRevocationResourceProviderFactory implements RealmResourc
 
     @Override
     public void close() {
+        super.close();
         logger.info("Closing CredentialRevocationResourceProviderFactory");
         registeredRealms.clear();
         initialized = false;
