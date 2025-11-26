@@ -3,10 +3,12 @@ package com.adorsys.keycloakstatuslist.resource;
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.service.CryptoIdentityService;
-import com.adorsys.keycloakstatuslist.service.StatusListService;
 import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
+import com.adorsys.keycloakstatuslist.service.StatusListService;
+import org.apache.hc.client5.http.classic.methods.HttpGet;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.core5.http.io.entity.EntityUtils;
 import org.jboss.logging.Logger;
-import org.keycloak.Config;
 import org.keycloak.crypto.Algorithm;
 import org.keycloak.crypto.KeyUse;
 import org.keycloak.crypto.KeyWrapper;
@@ -15,10 +17,11 @@ import org.keycloak.models.KeyManager;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.models.RealmModel;
-import org.keycloak.protocol.oid4vc.OID4VCLoginProtocolFactory;
-import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
-import org.apache.hc.client5.http.classic.methods.HttpGet;
-import org.apache.hc.core5.http.io.entity.EntityUtils;
+import org.keycloak.models.utils.KeycloakModelUtils;
+import org.keycloak.models.utils.PostMigrationEvent;
+import org.keycloak.protocol.oidc.OIDCLoginProtocol;
+import org.keycloak.protocol.oidc.OIDCLoginProtocolFactory;
+
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
@@ -29,15 +32,24 @@ import java.util.concurrent.ConcurrentHashMap;
  * Overrides the OID4VC protocol factory to inject a custom revocation endpoint into the standard /protocol/openid-connect/revoke path.
  * Handles realm issuer registration at startup for status list integration.
  */
-public class CredentialRevocationResourceProviderFactory extends OID4VCLoginProtocolFactory {
+public class CredentialRevocationResourceProviderFactory extends OIDCLoginProtocolFactory {
 
     private static final Logger logger = Logger.getLogger(CredentialRevocationResourceProviderFactory.class);
     private final Set<String> registeredRealms = ConcurrentHashMap.newKeySet();
     private KeycloakSessionFactory sessionFactory;
     private volatile boolean initialized = false;
 
-    public int getOrder() {
-        return 0;  // Ensure this factory takes precedence in SPI loading
+    @Override
+    public String getId() {
+        return OIDCLoginProtocol.LOGIN_PROTOCOL + "CredentialRevocationResourceProviderFactory";
+    }
+
+    /**
+     * defines the option-order in the admin-ui
+     */
+    @Override
+    public int order() {
+        return OIDCLoginProtocolFactory.UI_ORDER - 300;
     }
 
     @Override
@@ -55,6 +67,13 @@ public class CredentialRevocationResourceProviderFactory extends OID4VCLoginProt
         // which means Keycloak's database is ready
         try {
             initializeRealms();
+            factory.register(event -> {
+                if (event instanceof PostMigrationEvent) {
+                    KeycloakModelUtils.runJobInTransaction(factory, session ->
+                            initializeRealms()
+                    );
+                }
+            });
         } catch (Exception e) {
             logger.error("Error during initialization", e);
         }
