@@ -335,7 +335,7 @@ public class SdJwtVPValidationService {
 
     private String extractHeaderParam(SdJwtVP sdJwtVP, String paramName) {
         var jwt = sdJwtVP.getIssuerSignedJWT();
-        var header = jwt.getHeader();
+        var header = jwt.getJwsHeader();
         if ("kid".equals(paramName)) {
             return header != null ? header.getKeyId() : null;
         }
@@ -438,17 +438,17 @@ public class SdJwtVPValidationService {
         try {
             var issuerSignedJWT = sdJwtVP.getIssuerSignedJWT();
             if (issuerSignedJWT != null) {
-                var header = issuerSignedJWT.getHeader();
+                var header = issuerSignedJWT.getJwsHeader();
                 var payload = issuerSignedJWT.getPayload();
                 
-                logger.debugf("Token structure - Header: %s, Payload type: %s. RequestId: %s", 
-                             header != null ? "present" : "null", 
-                             payload != null ? payload.getClass().getSimpleName() : "null", 
+                logger.debugf("Token structure - Header: %s, Payload type: %s. RequestId: %s",
+                             header != null ? "present" : "null",
+                             payload != null ? payload.getClass().getSimpleName() : "null",
                              requestId);
                 
                 if (header != null) {
-                    String alg = extractAlgorithmFromToken(sdJwtVP);
-                    String kid = extractKeyIdFromToken(sdJwtVP);
+                    String alg = header.getAlgorithm() != null ? header.getAlgorithm().name() : "null";
+                    String kid = header.getKeyId() != null ? header.getKeyId() : "null";
                     logger.debugf("Token header - Algorithm: %s, Key ID: %s. RequestId: %s", alg, kid, requestId);
                 }
             }
@@ -506,10 +506,7 @@ public class SdJwtVPValidationService {
      * These options control how the issuer signature is validated.
      */
     private IssuerSignedJwtVerificationOpts getIssuerSignedJwtVerificationOpts() {
-        return IssuerSignedJwtVerificationOpts.builder()
-                .withValidateNotBeforeClaim(false)
-                .withValidateExpirationClaim(false)
-                .build();
+        return IssuerSignedJwtVerificationOpts.builder().build();
     }
 
     /**
@@ -560,11 +557,6 @@ public class SdJwtVPValidationService {
 
             return KeyBindingJwtVerificationOpts.builder()
                     .withKeyBindingRequired(true)
-                    .withAllowedMaxAge(300)
-                    .withNonce(nonce)
-                    .withAud(aud)
-                    .withValidateExpirationClaim(false)
-                    .withValidateNotBeforeClaim(false)
                     .build();
         } catch (IllegalArgumentException e) {
             throw e;
