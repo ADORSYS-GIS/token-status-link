@@ -4,7 +4,6 @@ import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest;
 import com.adorsys.keycloakstatuslist.service.CredentialRevocationService;
 import jakarta.ws.rs.POST;
-import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.MultivaluedMap;
@@ -47,11 +46,6 @@ public class CredentialRevocationResource extends TokenRevocationEndpoint {
         this.session = session;
         this.headers = null; // Will be injected via @Context
         this.revocationService = new CredentialRevocationService(session);
-    }
-
-    @Context
-    public void setHeaders(HttpHeaders headers) {
-        this.headers = headers;
     }
 
     @POST
