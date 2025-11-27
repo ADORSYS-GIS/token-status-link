@@ -1,7 +1,6 @@
 package com.adorsys.keycloakstatuslist;
 
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
-// FIXED: Removed StatusListCounterEntity import
 import com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
 import com.adorsys.keycloakstatuslist.model.Status;
 import com.adorsys.keycloakstatuslist.model.StatusListClaim;
@@ -214,8 +213,6 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         });
     }
 
-    // FIXED: Removed the getNextIndex method entirely.
-
     private Status storeIndexMapping(String statusListId, String uri, String userId, String tokenId,
             KeycloakSession session, StatusListConfig realmConfig) {
         logger.debugf("Storing index mapping: status_list_id=%s, userId=%s, tokenId=%s",
@@ -231,7 +228,6 @@ public class StatusListProtocolMapper extends OID4VCMapper {
                 mapping.setRealmId(session.getContext().getRealm().getId());
 
                 em.persist(mapping);
-                // FIXED: Flush to ensure the database sequence runs and populates 'idx'
                 em.flush();
 
                 Long generatedIdx = mapping.getIdx();
