@@ -1,17 +1,30 @@
 package com.adorsys.keycloakstatuslist.jpa.entity;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.GenericGenerator;
 import java.util.Objects;
 
 @Entity
-@Table(name = "status_list_mapping")
+@Table(name = "status_list_mapping", indexes = {
+    @Index(name = "idx_status_list_token", columnList = "token_id")
+})
 public class StatusListMappingEntity {
 
+    // CHANGED: Added a UUID Primary Key.
+    // We use String ID with UUID generation for broad Keycloak compatibility.
     @Id
-    @Column(name = "idx", nullable = false)
-    private long idx;
+    @GeneratedValue(generator = "uuid2")
+    @GenericGenerator(name = "uuid2", strategy = "uuid2")
+    @Column(name = "id", length = 36)
+    private String id;
 
-    // You can't have two primary keys on the same resource
+    // CHANGED: 'idx' is no longer @Id. It is a generated sequence value.
+    // We define the sequence generator here instead of in a separate file.
+    @Column(name = "idx", nullable = false)
+    @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "status_list_seq_gen")
+    @SequenceGenerator(name = "status_list_seq_gen", sequenceName = "status_list_counter_seq", allocationSize = 1)
+    private Long idx;
+
     @Column(name = "status_list_id", nullable = false)
     private String statusListId;
 
@@ -24,20 +37,29 @@ public class StatusListMappingEntity {
     @Column(name = "realm_id")
     private String realmId;
 
+    // Getters and Setters
+    public String getId() {
+        return id;
+    }
+
+    public void setId(String id) {
+        this.id = id;
+    }
+
+    public Long getIdx() {
+        return idx;
+    }
+
+    public void setIdx(Long idx) {
+        this.idx = idx;
+    }
+
     public String getStatusListId() {
         return statusListId;
     }
 
     public void setStatusListId(String statusListId) {
         this.statusListId = statusListId;
-    }
-
-    public long getIdx() {
-        return idx;
-    }
-
-    public void setIdx(long idx) {
-        this.idx = idx;
     }
 
     public String getUserId() {
@@ -66,16 +88,14 @@ public class StatusListMappingEntity {
 
     @Override
     public boolean equals(Object o) {
-        if (this == o)
-            return true;
-        if (!(o instanceof StatusListMappingEntity))
-            return false;
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
         StatusListMappingEntity that = (StatusListMappingEntity) o;
-        return idx == that.idx && Objects.equals(statusListId, that.statusListId);
+        return Objects.equals(id, that.id);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(statusListId, idx);
+        return Objects.hash(id);
     }
 }
