@@ -17,9 +17,7 @@ import org.keycloak.models.KeyManager;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.models.RealmModel;
-import org.keycloak.models.utils.KeycloakModelUtils;
 import org.keycloak.models.utils.PostMigrationEvent;
-import org.keycloak.protocol.oidc.OIDCLoginProtocol;
 import org.keycloak.protocol.oidc.OIDCLoginProtocolFactory;
 
 import java.io.IOException;
@@ -36,20 +34,14 @@ public class CredentialRevocationResourceProviderFactory extends OIDCLoginProtoc
 
     private static final Logger logger = Logger.getLogger(CredentialRevocationResourceProviderFactory.class);
     private final Set<String> registeredRealms = ConcurrentHashMap.newKeySet();
-    private KeycloakSessionFactory sessionFactory;
     private volatile boolean initialized = false;
-
-    @Override
-    public String getId() {
-        return OIDCLoginProtocol.LOGIN_PROTOCOL + "CredentialRevocationResourceProviderFactory";
-    }
 
     /**
      * defines the option-order in the admin-ui
      */
     @Override
     public int order() {
-        return OIDCLoginProtocolFactory.UI_ORDER - 300;
+        return OIDCLoginProtocolFactory.UI_ORDER + 300;
     }
 
     @Override
@@ -61,17 +53,13 @@ public class CredentialRevocationResourceProviderFactory extends OIDCLoginProtoc
     public void postInit(KeycloakSessionFactory factory) {
         super.postInit(factory);
         logger.info("Post-initializing CredentialRevocationResourceProviderFactory for standard revocation endpoint override");
-        this.sessionFactory = factory;
 
         // Initialize realms directly since we're already in the postInit phase
         // which means Keycloak's database is ready
         try {
-            initializeRealms();
             factory.register(event -> {
                 if (event instanceof PostMigrationEvent) {
-                    KeycloakModelUtils.runJobInTransaction(factory, session ->
-                            initializeRealms()
-                    );
+                    initializeRealms(factory);
                 }
             });
         } catch (Exception e) {
@@ -79,14 +67,14 @@ public class CredentialRevocationResourceProviderFactory extends OIDCLoginProtoc
         }
     }
 
-    private void initializeRealms() {
+    private void initializeRealms(KeycloakSessionFactory factory) {
         if (initialized) {
             return;
         }
 
         logger.info("Starting realm initialization");
 
-        try (KeycloakSession session = sessionFactory.create()) {
+        try (KeycloakSession session = factory.create()) {
             session.getTransactionManager().begin();
 
             // Get all realms
