@@ -13,6 +13,7 @@ import org.keycloak.crypto.Algorithm;
 import org.keycloak.crypto.KeyUse;
 import org.keycloak.crypto.KeyWrapper;
 import org.keycloak.events.EventBuilder;
+import org.keycloak.jose.jwk.JWKBuilder;
 import org.keycloak.models.KeyManager;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
@@ -207,17 +208,13 @@ public class CredentialRevocationResourceProviderFactory extends OIDCLoginProtoc
                 return false;
             }
 
-            // Convert public key to PEM format
-            String publicKey = null;
+            // Convert public key to JWK format
+            Object publicKey = null;
             if (activeKey.getPublicKey() != null) {
                 try {
-                    byte[] encoded = activeKey.getPublicKey().getEncoded();
-                    String base64 = java.util.Base64.getEncoder().encodeToString(encoded);
-                    publicKey = "-----BEGIN PUBLIC KEY-----\n" +
-                            base64.replaceAll("(.{64})", "$1\n") +
-                            "\n-----END PUBLIC KEY-----";
+                    publicKey = JWKBuilder.create().kid(activeKey.getKid()).algorithm(activeKey.getAlgorithmOrDefault()).rsa(activeKey.getPublicKey());
                 } catch (Exception e) {
-                    logger.error("Failed to convert public key to PEM format for realm: " + realm.getName(), e);
+                    logger.error("Failed to convert public key to JWK format for realm: " + realm.getName(), e);
                     return false;
                 }
             }

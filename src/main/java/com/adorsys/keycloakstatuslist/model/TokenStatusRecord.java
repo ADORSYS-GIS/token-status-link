@@ -16,7 +16,7 @@ public class TokenStatusRecord {
     private String issuer;
 
     @JsonProperty("public_key")
-    private String publicKey;
+    private Object publicKey;
 
     @JsonProperty("alg")
     private String alg;
@@ -82,11 +82,11 @@ public class TokenStatusRecord {
         this.issuer = issuer;
     }
 
-    public String getPublicKey() {
+    public Object getPublicKey() {
         return publicKey;
     }
 
-    public void setPublicKey(String publicKey) {
+    public void setPublicKey(Object publicKey) {
         this.publicKey = publicKey;
     }
 
@@ -160,7 +160,7 @@ public class TokenStatusRecord {
                 "credentialId='" + credentialId + '\'' +
                 ", issuerId='" + issuerId + '\'' +
                 ", issuer='" + issuer + '\'' +
-                ", publicKey='" + publicKey + '\'' +
+                ", publicKey=" + publicKey +
                 ", alg='" + alg + '\'' +
                 ", status=" + status +
                 ", issuedAt=" + issuedAt +

@@ -91,7 +91,7 @@ public class StatusListService {
     }
 
 
-    public void registerIssuer(String issuerId, String publicKey, String algorithm) throws StatusListException {
+    public void registerIssuer(String issuerId, Object publicKey, String algorithm) throws StatusListException {
         String requestId = UUID.randomUUID().toString();
         logger.info("Request ID: " + requestId + ", Registering issuer: " + issuerId + " with server: " + serverUrl);
 
@@ -162,7 +162,7 @@ public class StatusListService {
 
         // Require public_key to be set by the caller (e.g.,
         // TokenStatusEventListenerProvider)
-        if (statusRecord.getPublicKey() == null || statusRecord.getPublicKey().isEmpty()) {
+        if (statusRecord.getPublicKey() == null) {
             throw new StatusListException(
                     "Public key is required and must be retrieved from Keycloak's KeyManager for credentialId: "
                             + credentialId);
