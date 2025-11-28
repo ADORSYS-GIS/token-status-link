@@ -4,76 +4,106 @@ import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationResponse;
+import com.adorsys.keycloakstatuslist.model.NonceChallenge;
 import com.adorsys.keycloakstatuslist.service.CredentialRevocationService;
+import com.adorsys.keycloakstatuslist.service.NonceService;
+import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.MultivaluedMap;
 import jakarta.ws.rs.core.Response;
 import org.jboss.logging.Logger;
-import org.keycloak.events.EventBuilder;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
-import org.keycloak.protocol.oidc.endpoints.TokenRevocationEndpoint;
+import org.keycloak.services.Urls;
+import org.keycloak.services.resource.RealmResourceProvider;
 
-public class CredentialRevocationResource extends TokenRevocationEndpoint {
+public class CredentialRevocationResource implements RealmResourceProvider {
 
     private static final Logger logger = Logger.getLogger(CredentialRevocationResource.class);
     private static final String BEARER_PREFIX = "bearer";
 
     private final KeycloakSession session;
-    private final CredentialRevocationService revocationService;
+    protected CredentialRevocationService revocationService;
+    protected NonceService nonceService;
     @Context protected HttpHeaders headers;
 
     /**
-     * Constructor with dependency injection for better testability.
-     *
-     * @param session Keycloak session
-     * @param event EventBuilder for logging
-     * @param revocationService Credential revocation service (can be injected for testing)
+     * Constructor for Keycloak resource instantiation.
+     * Keycloak will inject the session.
      */
-    public CredentialRevocationResource(KeycloakSession session, EventBuilder event, CredentialRevocationService revocationService) {
-        super(session, event);
+    public CredentialRevocationResource(KeycloakSession session, NonceService nonceService) {
         this.session = session;
-        this.revocationService = revocationService;
+        this.nonceService = nonceService;
+        this.revocationService = new CredentialRevocationService(session, nonceService);
     }
 
-    /**
-     * Default constructor for Keycloak resource instantiation.
-     * Uses field injection for HttpHeaders and creates default service.
-     */
-    public CredentialRevocationResource(KeycloakSession session, EventBuilder event) {
-        super(session, event);
-        this.session = session;
-        this.revocationService = new CredentialRevocationService(session);
+    @Override
+    public Object getResource() {
+        return this;
+    }
+
+    @Override
+    public void close() {
+        // No specific resources to close for this provider
+    }
+
+    @GET
+    @Path("challenge")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getChallenge() {
+        if (!isServiceEnabled()) {
+            logger.debug("Credential revocation service is disabled.");
+            return createErrorResponse(Response.Status.SERVICE_UNAVAILABLE, "Credential revocation service is disabled");
+        }
+
+        if (!isServiceConfigured()) {
+            logger.warn("Credential revocation service is not configured.");
+            return createErrorResponse(Response.Status.INTERNAL_SERVER_ERROR, "Credential revocation service is not configured");
+        }
+
+        String requestId = session.getContext().getHttpRequest().getHttpHeaders().getHeaderString("X-Request-ID");
+        if (requestId == null || requestId.trim().isEmpty()) {
+            requestId = session.getContext().getConnection().getRemoteAddr() + System.currentTimeMillis(); // Fallback
+        }
+
+        RealmModel realm = session.getContext().getRealm();
+        String revocationEndpoint = Urls.realmIssuer(session.getContext().getUri().getBaseUri(), realm.getName()) + "/protocol/openid-connect/revoke";
+
+        NonceChallenge challenge = nonceService.generateAndStoreNonce(requestId, revocationEndpoint);
+        return Response.ok(challenge).build();
     }
 
     @POST
-    @Override
     public Response revoke() {
         MultivaluedMap<String, String> form = session.getContext().getHttpRequest().getDecodedFormParameters();
         String authorizationHeader = getHeaders().getHeaderString(HttpHeaders.AUTHORIZATION);
 
         if (!isServiceEnabled()) {
             logger.debug("Credential revocation service is disabled, falling back to standard revocation");
-            return super.revoke();
+            // In a RealmResourceProvider, we don't have a super.revoke().
+            // We should return an error or handle it differently.
+            return createErrorResponse(Response.Status.SERVICE_UNAVAILABLE, "Credential revocation service is disabled");
         }
 
         if (!isServiceConfigured()) {
             logger.warn("Credential revocation service is not configured, falling back to standard revocation");
-            return super.revoke();
+            return createErrorResponse(Response.Status.INTERNAL_SERVER_ERROR, "Credential revocation service is not configured");
         }
 
         if (authorizationHeader == null || authorizationHeader.trim().isEmpty()) {
-            logger.debug("No authorization header provided, falling back to standard revocation");
-            return super.revoke();
+            logger.debug("No authorization header provided, returning error for custom revocation");
+            return createErrorResponse(Response.Status.UNAUTHORIZED, "Missing Authorization header");
         }
 
         String[] authParts = authorizationHeader.trim().split("\\s+", 2);
         if (authParts.length != 2 || !BEARER_PREFIX.equalsIgnoreCase(authParts[0])) {
-            logger.debugf("Invalid authorization header format: %s, falling back to standard revocation", authorizationHeader);
-            return super.revoke();
+            logger.debugf("Invalid authorization header format: %s, returning error for custom revocation", authorizationHeader);
+            return createErrorResponse(Response.Status.BAD_REQUEST, "Invalid Authorization header format");
         }
 
         String token = authParts[1].trim();
@@ -96,11 +126,11 @@ public class CredentialRevocationResource extends TokenRevocationEndpoint {
             return Response.ok().build();
 
         } catch (StatusListException e) {
-            logger.errorf(e, "SD-JWT VP based revocation failed for credentialId: %s due to status list error. Falling back to standard revocation.", credentialId);
-            return super.revoke();
+            logger.errorf(e, "SD-JWT VP based revocation failed for credentialId: %s due to status list error.", credentialId);
+            return createErrorResponse(Response.Status.fromStatusCode(e.getHttpStatus()), e.getMessage());
         } catch (IllegalArgumentException e) {
-            logger.errorf(e, "SD-JWT VP based revocation failed for credentialId: %s due to invalid input. Falling back to standard revocation.", credentialId);
-            return super.revoke();
+            logger.errorf(e, "SD-JWT VP based revocation failed for credentialId: %s due to invalid input.", credentialId);
+            return createErrorResponse(Response.Status.BAD_REQUEST, "Malformed VP: " + e.getMessage());
         } catch (Exception e) {
             logger.errorf(e, "SD-JWT VP based revocation failed for credentialId: %s due to unexpected error.", credentialId);
             return createErrorResponse(Response.Status.INTERNAL_SERVER_ERROR, "Internal error during credential revocation");
@@ -167,3 +197,4 @@ public class CredentialRevocationResource extends TokenRevocationEndpoint {
                 .build();
     }
 }
+

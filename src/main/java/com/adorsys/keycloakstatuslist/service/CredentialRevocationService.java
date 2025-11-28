@@ -27,10 +27,9 @@ public class CredentialRevocationService {
     private final SdJwtVPValidationService sdJwtVPValidationService;
     private final RevocationRecordService revocationRecordService;
     private final RequestValidationService requestValidationService;
-
-    public CredentialRevocationService(KeycloakSession session) {
+    public CredentialRevocationService(KeycloakSession session, NonceService nonceService) {
         this.session = session;
-        this.sdJwtVPValidationService = new SdJwtVPValidationService(session);
+        this.sdJwtVPValidationService = new SdJwtVPValidationService(session, nonceService);
         this.revocationRecordService = new RevocationRecordService(session);
         this.requestValidationService = new RequestValidationService();
     }

@@ -62,6 +62,9 @@ class CredentialRevocationServiceTest {
     
     @Mock
     private RequestValidationService requestValidationService;
+
+    @Mock
+    private NonceService nonceService; // Add mock for NonceService
     
     @Mock
     private TokenStatusRecord mockRevocationRecord;
@@ -86,7 +89,7 @@ class CredentialRevocationServiceTest {
         lenient().when(keyWrapper.getAlgorithm()).thenReturn("RS256");
         
         // Create service with mocked dependencies
-        service = new CredentialRevocationService(session);
+        service = new CredentialRevocationService(session, nonceService); // Pass nonceService to constructor
         
         // Inject mocked dependencies using reflection
         injectMockedDependencies();
@@ -113,6 +116,7 @@ class CredentialRevocationServiceTest {
             java.lang.reflect.Field statusListField = CredentialRevocationService.class.getDeclaredField("statusListService");
             statusListField.setAccessible(true);
             statusListField.set(service, statusListService);
+
             
         } catch (Exception e) {
             fail("Failed to inject mocked dependencies: " + e.getMessage());
@@ -271,7 +275,7 @@ class CredentialRevocationServiceTest {
     @Test
     void testRevokeCredential_ServiceInitialization() {
         // Act & Assert
-        CredentialRevocationService newService = new CredentialRevocationService(session);
+        CredentialRevocationService newService = new CredentialRevocationService(session, nonceService);
         assertNotNull(newService);
     }
 

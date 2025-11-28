@@ -1,33 +1,30 @@
 services:
   postgres:
-    image: postgres:13
+    image: postgres:17.7-alpine3.22
     environment:
-      - POSTGRES_DB=keycloak_token_status_plugin
       - POSTGRES_USER=admin
       - POSTGRES_PASSWORD=admin
+      - POSTGRES_DB=keycloak_token_status_plugin
     ports:
       - "5432:5432"
-    networks:
-      - keycloak-net
+    volumes:
+      - db_data:/var/lib/postgresql/data
 
   keycloak-token-status-plugin:
-    image: quay.io/keycloak/keycloak:26.2.4
+    image: quay.io/keycloak/keycloak:26.4.5
     command: >
-      start-dev --features=oid4vc-vci --log-level=debug
+      start-dev --features=oid4vc-vci --log-level=INFO,com.adorsys.keycloakstatuslist:DEBUG
       --db=postgres --db-username=admin --db-password=admin
       --db-url=jdbc:postgresql://postgres:5432/keycloak_token_status_plugin
     environment:
-      - KEYCLOAK_ADMIN=admin
-      - KEYCLOAK_ADMIN_PASSWORD=admin
+      - KC_BOOTSTRAP_ADMIN_USERNAME=admin
+      - KC_BOOTSTRAP_ADMIN_PASSWORD=admin
     ports:
       - "8080:8080"
     volumes:
       - ./target/keycloak-token-status-plugin-1.0.0-SNAPSHOT.jar:/opt/keycloak/providers/keycloak-token-status-plugin-1.0.0-SNAPSHOT.jar
     depends_on:
       - postgres
-    networks:
-      - keycloak-net
 
-networks:
-  keycloak-net:
-    driver: bridge
+volumes:
+  db_data:
