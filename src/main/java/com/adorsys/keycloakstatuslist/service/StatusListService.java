@@ -160,8 +160,7 @@ public class StatusListService {
             statusRecord.setIssuer(statusRecord.getIssuerId());
         }
 
-        // Require public_key to be set by the caller (e.g.,
-        // TokenStatusEventListenerProvider)
+        // Require public_key to be set by the caller
         if (statusRecord.getPublicKey() == null) {
             throw new StatusListException(
                     "Public key is required and must be retrieved from Keycloak's KeyManager for credentialId: "
