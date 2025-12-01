@@ -2,10 +2,10 @@ package com.adorsys.keycloakstatuslist;
 
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import com.adorsys.keycloakstatuslist.helpers.MockKeycloakTest;
+import com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
 import com.adorsys.keycloakstatuslist.model.Status;
 import com.adorsys.keycloakstatuslist.model.StatusListClaim;
 import jakarta.persistence.PersistenceException;
-import jakarta.persistence.Query;
 import jakarta.ws.rs.HttpMethod;
 import jakarta.ws.rs.core.UriBuilder;
 import nl.altindag.log.LogCaptor;
@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.net.URI;
 import java.util.HashMap;
 import java.util.Random;
+import java.util.UUID;
 
 import static com.adorsys.keycloakstatuslist.StatusListProtocolMapper.Constants;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -32,9 +33,9 @@ import static org.hamcrest.Matchers.not;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.startsWith;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.when;
 
@@ -52,7 +53,6 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
     @BeforeEach
     void setup() {
-        // Initialize mapper and its model
         mapper = spy(new StatusListProtocolMapper(session));
         setPrivateField(mapper, "mapperModel", mapperModel);
 
@@ -66,24 +66,24 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
     @Test
     void testDefaultConstructor() {
-        // An empty mapper constructor is required by Keycloak
         new StatusListProtocolMapper();
     }
 
     @Test
     void shouldSendStatusesThenMapSuccessfully_CreateListIfNotExists() {
-        long idx = mockGetNextIndex();
+        long idx = mockEntityPersist();
+
         mockHttpClientExecute((req) -> {
             switch (req.getMethod()) {
-                // Check if status list already exists
                 case HttpMethod.GET -> when(httpResponse.getCode()).thenReturn(HttpStatus.SC_NOT_FOUND);
-                // Create new status list
                 case HttpMethod.POST -> when(httpResponse.getCode()).thenReturn(HttpStatus.SC_CREATED);
                 default -> fail("Unexpected HTTP call: " + req.getMethod());
             }
         });
 
         mapper.setClaimsForSubject(claims, userSession);
+
+        // Assertions
         assertThat(claims.keySet(), hasItem(Constants.STATUS_CLAIM_KEY));
         assertInstanceOf(Status.class, claims.get(Constants.STATUS_CLAIM_KEY));
 
@@ -93,18 +93,19 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
     @Test
     void shouldSendStatusesThenMapSuccessfully_UpdateListIfExists() {
-        long idx = mockGetNextIndex();
+        long idx = mockEntityPersist();
+
         mockHttpClientExecute((req) -> {
             switch (req.getMethod()) {
-                // Check if status list already exists
                 case HttpMethod.GET -> when(httpResponse.getCode()).thenReturn(HttpStatus.SC_OK);
-                // Create new status list
                 case HttpMethod.PATCH -> when(httpResponse.getCode()).thenReturn(HttpStatus.SC_OK);
                 default -> fail("Unexpected HTTP call: " + req.getMethod());
             }
         });
 
         mapper.setClaimsForSubject(claims, userSession);
+
+        // Assertions
         assertThat(claims.keySet(), hasItem(Constants.STATUS_CLAIM_KEY));
 
         Status status = (Status) claims.get(Constants.STATUS_CLAIM_KEY);
@@ -134,20 +135,20 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
     }
 
     @Test
-    void shouldNotMap_IfCantGetNextIndex() {
-        mockFailingGetNextIndex();
+    void shouldNotMap_IfDbPersistenceFails() {
+        doThrow(new PersistenceException("DB Error")).when(entityManager).persist(any());
 
         mapper.setClaimsForSubject(claims, userSession);
 
         assertThat("Claims should remain unmapped", claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
-        assertThat(logCaptor.getErrorLogs(), hasItem(containsString("Failed to get next index")));
+        assertThat(logCaptor.getErrorLogs(), hasItem(containsString("Failed to store index mapping")));
     }
 
     @Test
     void shouldNotMap_IfCantCheckStatusListExists() {
-        mockGetNextIndex();
+        mockEntityPersist();
+
         mockHttpClientExecute((req) -> {
-            // Check if status list already exists
             if (req.getMethod().equals(HttpMethod.GET)) {
                 when(httpResponse.getCode()).thenReturn(HttpStatus.SC_INTERNAL_SERVER_ERROR);
             } else {
@@ -161,18 +162,18 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         assertThat(logCaptor.getErrorLogs(), hasItems(
                 containsString("Failed to verify existence of status list"),
                 containsString("Error publishing or updating status list on server"),
-                containsString("Failed to store index mapping")
-        ));
+                containsString("Failed to store index mapping")));
     }
 
     @Test
     void shouldNotMap_IfCantPublishStatus() {
-        mockGetNextIndex();
+        mockEntityPersist();
+
         mockHttpClientExecute((req) -> {
             switch (req.getMethod()) {
                 // Check if status list already exists
                 case HttpMethod.GET -> when(httpResponse.getCode()).thenReturn(HttpStatus.SC_NOT_FOUND);
-                // Create new status list
+                // Create new status list (Fail here)
                 case HttpMethod.POST -> when(httpResponse.getCode()).thenReturn(HttpStatus.SC_INTERNAL_SERVER_ERROR);
                 default -> fail("Unexpected HTTP call: " + req.getMethod());
             }
@@ -184,8 +185,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         assertThat(logCaptor.getErrorLogs(), hasItems(
                 containsString("Failed to publish status list %s".formatted(TEST_REALM_ID)),
                 containsString("Error publishing or updating status list on server"),
-                containsString("Failed to store index mapping")
-        ));
+                containsString("Failed to store index mapping")));
     }
 
     private void mockDefaultRealmConfig() {
@@ -193,18 +193,23 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         lenient().when(realm.getAttribute(StatusListConfig.STATUS_LIST_SERVER_URL)).thenReturn(TEST_SERVER_URL);
     }
 
-    private long mockGetNextIndex() {
-        long nextIndex = new Random().nextLong();
-        Query query = mock(Query.class);
-        when(entityManager.createNativeQuery(startsWith("SELECT nextval"))).thenReturn(query);
-        when(query.getSingleResult()).thenAnswer(invocation -> nextIndex);
-        return nextIndex;
-    }
+    /**
+     * Mocks the EntityManager.persist() method.
+     * Generates a random index and UUID to simulate database behavior.
+     *
+     * @return the simulated index that will be assigned to the entity
+     */
+    private long mockEntityPersist() {
+        long simulatedIndex = new Random().nextInt(100000);
 
-    private void mockFailingGetNextIndex() {
-        Query query = mock(Query.class);
-        when(entityManager.createNativeQuery(startsWith("SELECT nextval"))).thenReturn(query);
-        when(query.getSingleResult()).thenThrow(new PersistenceException());
+        doAnswer(invocation -> {
+            StatusListMappingEntity entity = invocation.getArgument(0);
+            entity.setIdx(simulatedIndex); // Simulate sequence generation
+            entity.setId(UUID.randomUUID().toString()); // Simulate UUID generation
+            return null;
+        }).when(entityManager).persist(any(StatusListMappingEntity.class));
+
+        return simulatedIndex;
     }
 
     @FunctionalInterface
@@ -233,3 +238,4 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
                 .build();
     }
 }
+
