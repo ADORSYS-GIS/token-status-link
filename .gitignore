@@ -17,4 +17,7 @@ target/
 **/*.db 
 # Quarkus generated files
 **/*.jar
-**/*.dat 
+**/*.dat
+
+# Docker Compose local override file
+docker-compose.local.yml
