@@ -1,6 +1,7 @@
 package com.adorsys.keycloakstatuslist.jpa.entity;
 
 import jakarta.persistence.*;
+
 import java.util.Objects;
 
 @Entity
@@ -83,17 +84,20 @@ public class StatusListMappingEntity {
     }
 
     @Override
-    public boolean equals(Object o) {
-        if (this == o)
-            return true;
-        if (o == null || getClass() != o.getClass())
-            return false;
-        StatusListMappingEntity that = (StatusListMappingEntity) o;
-        return Objects.equals(id, that.id);
+    public final boolean equals(Object o) {
+        if (!(o instanceof StatusListMappingEntity that)) return false;
+
+        return Objects.equals(getId(), that.getId()) && Objects.equals(getIdx(), that.getIdx()) && Objects.equals(getStatusListId(), that.getStatusListId()) && Objects.equals(getUserId(), that.getUserId()) && Objects.equals(getTokenId(), that.getTokenId()) && Objects.equals(getRealmId(), that.getRealmId());
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(id);
+        int result = Objects.hashCode(getId());
+        result = 31 * result + Objects.hashCode(getIdx());
+        result = 31 * result + Objects.hashCode(getStatusListId());
+        result = 31 * result + Objects.hashCode(getUserId());
+        result = 31 * result + Objects.hashCode(getTokenId());
+        result = 31 * result + Objects.hashCode(getRealmId());
+        return result;
     }
 }
