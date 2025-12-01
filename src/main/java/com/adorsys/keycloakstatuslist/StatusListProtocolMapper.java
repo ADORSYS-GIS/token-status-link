@@ -167,7 +167,6 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         UserSessionModel userSession = session.getContext().getUserSession();
         String userId = userSession != null ? userSession.getUser().getId() : null;
 
-        // Call the store method (which now generates the index internally)
         Status status = storeIndexMapping(listId, uri.toString(), userId, tokenId, session, config);
 
         if (status == null) {
