@@ -20,6 +20,7 @@ import org.mockito.Mock;
 import java.io.IOException;
 import java.net.URI;
 import java.util.HashMap;
+import java.util.UUID;
 
 import static com.adorsys.keycloakstatuslist.StatusListProtocolMapper.Constants;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -171,9 +172,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
         mockHttpClientExecute((req) -> {
             switch (req.getMethod()) {
-                // Check if status list already exists
                 case HttpMethod.GET -> when(httpResponse.getCode()).thenReturn(HttpStatus.SC_NOT_FOUND);
-                // Create new status list (Fail here)
                 case HttpMethod.POST -> when(httpResponse.getCode()).thenReturn(HttpStatus.SC_INTERNAL_SERVER_ERROR);
                 default -> fail("Unexpected HTTP call: " + req.getMethod());
             }
@@ -201,8 +200,8 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
     private void mockEntityPersist(long simulatedIndex) {
         doAnswer(invocation -> {
             StatusListMappingEntity entity = invocation.getArgument(0);
-            entity.setIdx(simulatedIndex); // Simulate sequence generation
-            entity.setId("test-uuid-" + simulatedIndex); // Simulate UUID generation
+            entity.setIdx(simulatedIndex);
+            entity.setId(UUID.randomUUID().toString());
             return null;
         }).when(entityManager).persist(any(StatusListMappingEntity.class));
     }

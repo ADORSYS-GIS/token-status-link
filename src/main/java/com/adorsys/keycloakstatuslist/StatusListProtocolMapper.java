@@ -157,8 +157,6 @@ public class StatusListProtocolMapper extends OID4VCMapper {
                 .build();
         logger.debugf("Configuration: listId=%s, uri=%s", listId, uri);
 
-        // FIXED: Removed manual getNextIndex call here.
-        // We now rely on storeIndexMapping to generate the index automatically via JPA.
 
         // Get credential ID
         String tokenId = null;
