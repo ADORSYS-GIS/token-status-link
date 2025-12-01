@@ -197,7 +197,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
      * Use this instead of the old 'mockGetNextIndex'.
      * This ensures the entity gets an ID and IDX assigned when the code saves it.
      */
-    private void mockEntityPersist(long simulatedIndex) {
+    private long mockEntityPersist() {
         doAnswer(invocation -> {
             StatusListMappingEntity entity = invocation.getArgument(0);
             entity.setIdx(simulatedIndex);
