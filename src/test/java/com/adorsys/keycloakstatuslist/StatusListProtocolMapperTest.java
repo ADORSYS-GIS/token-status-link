@@ -1,23 +1,21 @@
 package com.adorsys.keycloakstatuslist;
 
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
+import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.helpers.MockKeycloakTest;
 import com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
 import com.adorsys.keycloakstatuslist.model.Status;
 import com.adorsys.keycloakstatuslist.model.StatusListClaim;
+import com.adorsys.keycloakstatuslist.service.StatusListService;
 import jakarta.persistence.PersistenceException;
-import jakarta.ws.rs.HttpMethod;
 import jakarta.ws.rs.core.UriBuilder;
 import nl.altindag.log.LogCaptor;
-import org.apache.hc.core5.http.ClassicHttpRequest;
-import org.apache.hc.core5.http.HttpStatus;
-import org.apache.hc.core5.http.io.HttpClientResponseHandler;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.keycloak.models.ProtocolMapperModel;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 
-import java.io.IOException;
 import java.net.URI;
 import java.util.HashMap;
 import java.util.Random;
@@ -25,19 +23,10 @@ import java.util.UUID;
 
 import static com.adorsys.keycloakstatuslist.StatusListProtocolMapper.Constants;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.containsString;
-import static org.hamcrest.Matchers.equalTo;
-import static org.hamcrest.Matchers.hasItem;
-import static org.hamcrest.Matchers.hasItems;
-import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.*;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
-import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.lenient;
-import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 class StatusListProtocolMapperTest extends MockKeycloakTest {
 
@@ -48,6 +37,9 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
     @Mock
     ProtocolMapperModel mapperModel;
 
+    @Mock
+    StatusListService statusListService;
+
     StatusListProtocolMapper mapper;
     HashMap<String, Object> claims;
 
@@ -55,6 +47,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
     void setup() {
         mapper = spy(new StatusListProtocolMapper(session));
         setPrivateField(mapper, "mapperModel", mapperModel);
+        setPrivateField(mapper, "statusListService", statusListService);
 
         // Initialize claims (credential payload)
         claims = new HashMap<>();
@@ -70,46 +63,26 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
     }
 
     @Test
-    void shouldSendStatusesThenMapSuccessfully_CreateListIfNotExists() {
+    void shouldMapSuccessfully_WhenStatusIsSent() throws Exception {
         long idx = mockEntityPersist();
 
-        mockHttpClientExecute((req) -> {
-            switch (req.getMethod()) {
-                case HttpMethod.GET -> when(httpResponse.getCode()).thenReturn(HttpStatus.SC_NOT_FOUND);
-                case HttpMethod.POST -> when(httpResponse.getCode()).thenReturn(HttpStatus.SC_CREATED);
-                default -> fail("Unexpected HTTP call: " + req.getMethod());
-            }
-        });
-
+        // Act
         mapper.setClaimsForSubject(claims, userSession);
 
         // Assertions
         assertThat(claims.keySet(), hasItem(Constants.STATUS_CLAIM_KEY));
         assertInstanceOf(Status.class, claims.get(Constants.STATUS_CLAIM_KEY));
-
         Status status = (Status) claims.get(Constants.STATUS_CLAIM_KEY);
         assertThat(status.getStatusList(), equalTo(new StatusListClaim(idx, listUri(TEST_REALM_ID))));
-    }
 
-    @Test
-    void shouldSendStatusesThenMapSuccessfully_UpdateListIfExists() {
-        long idx = mockEntityPersist();
-
-        mockHttpClientExecute((req) -> {
-            switch (req.getMethod()) {
-                case HttpMethod.GET -> when(httpResponse.getCode()).thenReturn(HttpStatus.SC_OK);
-                case HttpMethod.PATCH -> when(httpResponse.getCode()).thenReturn(HttpStatus.SC_OK);
-                default -> fail("Unexpected HTTP call: " + req.getMethod());
-            }
-        });
-
-        mapper.setClaimsForSubject(claims, userSession);
-
-        // Assertions
-        assertThat(claims.keySet(), hasItem(Constants.STATUS_CLAIM_KEY));
-
-        Status status = (Status) claims.get(Constants.STATUS_CLAIM_KEY);
-        assertThat(status.getStatusList(), equalTo(new StatusListClaim(idx, listUri(TEST_REALM_ID))));
+        // 2. Verify service was called with correct payload
+        ArgumentCaptor<StatusListService.StatusListPayload> payloadCaptor = ArgumentCaptor.forClass(StatusListService.StatusListPayload.class);
+        verify(statusListService).publishOrUpdate(payloadCaptor.capture());
+        StatusListService.StatusListPayload capturedPayload = payloadCaptor.getValue();
+        assertThat(capturedPayload.listId(), equalTo(TEST_REALM_ID));
+        assertThat(capturedPayload.status().size(), equalTo(1));
+        assertThat(capturedPayload.status().get(0).index(), equalTo((int) idx));
+        assertThat(capturedPayload.status().get(0).status(), equalTo(Constants.TOKEN_STATUS_VALID));
     }
 
     @Test
@@ -145,47 +118,19 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
     }
 
     @Test
-    void shouldNotMap_IfCantCheckStatusListExists() {
+    void shouldNotMap_WhenSendingStatusFails() throws Exception {
         mockEntityPersist();
+        doThrow(new StatusListException("Server not reachable"))
+                .when(statusListService).publishOrUpdate(any(StatusListService.StatusListPayload.class));
 
-        mockHttpClientExecute((req) -> {
-            if (req.getMethod().equals(HttpMethod.GET)) {
-                when(httpResponse.getCode()).thenReturn(HttpStatus.SC_INTERNAL_SERVER_ERROR);
-            } else {
-                fail("Unexpected HTTP call: " + req.getMethod());
-            }
-        });
-
+        // Act
         mapper.setClaimsForSubject(claims, userSession);
 
+        // Assert
         assertThat("Claims should remain unmapped", claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
         assertThat(logCaptor.getErrorLogs(), hasItems(
-                containsString("Failed to verify existence of status list"),
-                containsString("Error publishing or updating status list on server"),
-                containsString("Failed to store index mapping")));
-    }
-
-    @Test
-    void shouldNotMap_IfCantPublishStatus() {
-        mockEntityPersist();
-
-        mockHttpClientExecute((req) -> {
-            switch (req.getMethod()) {
-                // Check if status list already exists
-                case HttpMethod.GET -> when(httpResponse.getCode()).thenReturn(HttpStatus.SC_NOT_FOUND);
-                // Create new status list (Fail here)
-                case HttpMethod.POST -> when(httpResponse.getCode()).thenReturn(HttpStatus.SC_INTERNAL_SERVER_ERROR);
-                default -> fail("Unexpected HTTP call: " + req.getMethod());
-            }
-        });
-
-        mapper.setClaimsForSubject(claims, userSession);
-
-        assertThat("Claims should remain unmapped", claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
-        assertThat(logCaptor.getErrorLogs(), hasItems(
-                containsString("Failed to publish status list %s".formatted(TEST_REALM_ID)),
-                containsString("Error publishing or updating status list on server"),
-                containsString("Failed to store index mapping")));
+                containsString("Failed to store index mapping")
+        ));
     }
 
     private void mockDefaultRealmConfig() {
@@ -212,25 +157,6 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         return simulatedIndex;
     }
 
-    @FunctionalInterface
-    private interface HttpClientExecuteHandler {
-        void run(ClassicHttpRequest request) throws Exception;
-    }
-
-    private void mockHttpClientExecute(HttpClientExecuteHandler executeHandler) {
-        try {
-            when(httpClient.execute(any(ClassicHttpRequest.class), any(HttpClientResponseHandler.class)))
-                    .thenAnswer(invocation -> {
-                        ClassicHttpRequest request = invocation.getArgument(0);
-                        HttpClientResponseHandler<?> handler = invocation.getArgument(1);
-                        executeHandler.run(request);
-                        return handler.handleResponse(httpResponse);
-                    });
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-    }
-
     @SuppressWarnings("SameParameterValue")
     private URI listUri(String listId) {
         return UriBuilder.fromUri(TEST_SERVER_URL)
@@ -238,4 +164,3 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
                 .build();
     }
 }
-
