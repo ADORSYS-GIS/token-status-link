@@ -1,6 +1,5 @@
 package com.adorsys.keycloakstatuslist.jpa;
 
-import com.adorsys.keycloakstatuslist.jpa.entity.StatusListCounterEntity;
 import com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
 import org.keycloak.connections.jpa.entityprovider.JpaEntityProvider;
 import org.jboss.logging.Logger;
@@ -13,10 +12,8 @@ public class StatusListJpaEntityProvider implements JpaEntityProvider {
 
     @Override
     public List<Class<?>> getEntities() {
-        logger.debug("Registering entities: StatusListCounterEntity, StatusListMappingEntity");
-        return List.of(
-                StatusListCounterEntity.class,
-                StatusListMappingEntity.class);
+        logger.debug("Registering entities: StatusListMappingEntity");
+        return List.of(StatusListMappingEntity.class);
     }
 
     @Override
