@@ -5,17 +5,13 @@ import com.adorsys.keycloakstatuslist.jpa.entity.StatusListCounterEntity;
 import com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
 import com.adorsys.keycloakstatuslist.model.Status;
 import com.adorsys.keycloakstatuslist.model.StatusListClaim;
-import com.adorsys.keycloakstatuslist.model.TokenStatusRecord;
 import com.adorsys.keycloakstatuslist.service.CryptoIdentityService;
 import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
-import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.EntityManager;
 import jakarta.ws.rs.core.UriBuilder;
-import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.jboss.logging.Logger;
 import org.keycloak.connections.jpa.JpaConnectionProvider;
-import org.keycloak.crypto.KeyWrapper;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserSessionModel;
@@ -29,7 +25,6 @@ import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
-import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -48,6 +43,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
 
     private final KeycloakSession session;
     private final CryptoIdentityService cryptoIdentityService;
+    private final StatusListService statusListService;
 
     protected interface Constants {
         String MAPPER_ID = "oid4vc-status-list-claim-mapper";
@@ -67,11 +63,18 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         // An empty mapper constructor is required by Keycloak
         this.session = null;
         this.cryptoIdentityService = null;
+        this.statusListService = null;
     }
 
     public StatusListProtocolMapper(KeycloakSession session) {
         this.session = session;
         this.cryptoIdentityService = new CryptoIdentityService(session);
+        StatusListConfig config = new StatusListConfig(session.getContext().getRealm());
+        this.statusListService = new StatusListService(
+                config.getServerUrl(),
+                cryptoIdentityService.getJwtToken(config),
+                CustomHttpClient.getHttpClient()
+        );
     }
 
     @Override
@@ -215,7 +218,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         });
     }
 
-    private Long getNextIndex(KeycloakSession session) {
+    protected Long getNextIndex(KeycloakSession session) {
         logger.debugf("Getting next index for realm: %s", session.getContext().getRealm().getId());
         try {
             EntityManager em = getEntityManager(session);
@@ -260,53 +263,17 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         Objects.requireNonNull(cryptoIdentityService);
 
         // Prepare payload
-        StatusListPayload payload = new StatusListPayload(
+        StatusListService.StatusListPayload payload = new StatusListService.StatusListPayload(
                 statusListId,
-                List.of(new StatusListPayload.StatusEntry((int) idx, Constants.TOKEN_STATUS_VALID))
+                List.of(new StatusListService.StatusListPayload.StatusEntry((int) idx, Constants.TOKEN_STATUS_VALID))
         );
 
         // Publish or update status list on server
-        publishOrUpdateNewList(payload, realmConfig);
-    }
-
-    private void publishOrUpdateNewList(
-            StatusListPayload payload,
-            StatusListConfig realmConfig
-    ) throws IOException {
-        String serverUrl = realmConfig.getServerUrl();
-        String bearerToken = cryptoIdentityService.getJwtToken(realmConfig);
-
-        try (CloseableHttpClient httpClient = CustomHttpClient.getHttpClient()) {
-            StatusListService statusListService = new StatusListService(serverUrl, bearerToken, httpClient);
-            boolean statusListExists = statusListService.checkStatusListExists(payload.listId);
-
-            // The payload needs to be converted to a TokenStatusRecord
-            // This is a placeholder for the actual conversion
-            TokenStatusRecord record = new TokenStatusRecord();
-            record.setCredentialId(payload.listId());
-            record.setIssuerId(realmConfig.getRealm().getName());
-
-            // Retrieve the active key and algorithm
-            KeyWrapper activeKey = cryptoIdentityService.getActiveKey(realmConfig.getRealm());
-            record.setPublicKey(Base64.getEncoder().encodeToString(activeKey.getPublicKey().getEncoded()));
-            record.setAlg(activeKey.getAlgorithmOrDefault());
-
-            if (statusListExists) {
-                statusListService.updateRecord(record);
-            } else {
-                statusListService.publishRecord(record);
-            }
+        try {
+            statusListService.publishOrUpdate(payload);
         } catch (Exception e) {
-            logger.errorf("Error publishing or updating status list on server: %s", e.getMessage());
             throw new IOException(e);
         }
     }
 
-    public record StatusListPayload(
-            @JsonProperty("list_id") String listId,
-            List<StatusEntry> status
-    ) {
-        public record StatusEntry(int index, String status) {
-        }
-    }
 }

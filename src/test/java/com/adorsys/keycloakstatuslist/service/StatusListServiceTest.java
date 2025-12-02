@@ -4,6 +4,8 @@ import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.exception.StatusListServerException;
 import com.adorsys.keycloakstatuslist.model.TokenStatus;
 import com.adorsys.keycloakstatuslist.model.TokenStatusRecord;
+import org.apache.hc.client5.http.classic.methods.HttpGet;
+import org.apache.hc.client5.http.classic.methods.HttpPatch;
 import org.apache.hc.client5.http.classic.methods.HttpPost;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.core5.http.ClassicHttpResponse;
@@ -18,6 +20,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.io.IOException;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -301,5 +304,75 @@ class StatusListServiceTest {
         record.setIssuedAt(Instant.now());
         record.setExpiresAt(Instant.now().plusSeconds(3600));
         return record;
+    }
+
+    @Test
+    void publishOrUpdate_shouldPublish_whenListDoesNotExist() throws IOException {
+        doAnswer(invocation -> {
+            HttpClientResponseHandler<Object> handler = invocation.getArgument(1);
+            ClassicHttpResponse response = new BasicClassicHttpResponse(404);
+            return handler.handleResponse(response);
+        }).when(httpClient).execute(any(HttpGet.class), any(HttpClientResponseHandler.class));
+
+        doAnswer(invocation -> {
+            HttpClientResponseHandler<Object> handler = invocation.getArgument(1);
+            ClassicHttpResponse response = new BasicClassicHttpResponse(201);
+            return handler.handleResponse(response);
+        }).when(httpClient).execute(any(HttpPost.class), any(HttpClientResponseHandler.class));
+
+        StatusListService.StatusListPayload payload = createTestPayload();
+
+        assertDoesNotThrow(() -> statusListService.publishOrUpdate(payload));
+
+        verify(httpClient, times(1)).execute(any(HttpGet.class), any(HttpClientResponseHandler.class));
+        verify(httpClient, times(1)).execute(any(HttpPost.class), any(HttpClientResponseHandler.class));
+        verify(httpClient, never()).execute(any(HttpPatch.class), any(HttpClientResponseHandler.class));
+    }
+
+    @Test
+    void publishOrUpdate_shouldUpdate_whenListExists() throws IOException {
+        doAnswer(invocation -> {
+            HttpClientResponseHandler<Object> handler = invocation.getArgument(1);
+            ClassicHttpResponse response = new BasicClassicHttpResponse(200);
+            return handler.handleResponse(response);
+        }).when(httpClient).execute(any(HttpGet.class), any(HttpClientResponseHandler.class));
+
+        doAnswer(invocation -> {
+            HttpClientResponseHandler<Object> handler = invocation.getArgument(1);
+            ClassicHttpResponse response = new BasicClassicHttpResponse(200);
+            return handler.handleResponse(response);
+        }).when(httpClient).execute(any(HttpPatch.class), any(HttpClientResponseHandler.class));
+
+        StatusListService.StatusListPayload payload = createTestPayload();
+
+        assertDoesNotThrow(() -> statusListService.publishOrUpdate(payload));
+
+        verify(httpClient, times(1)).execute(any(HttpGet.class), any(HttpClientResponseHandler.class));
+        verify(httpClient, never()).execute(any(HttpPost.class), any(HttpClientResponseHandler.class));
+        verify(httpClient, times(1)).execute(any(HttpPatch.class), any(HttpClientResponseHandler.class));
+    }
+
+    @Test
+    void publishOrUpdate_shouldThrowException_whenCheckFails() throws IOException {
+        doThrow(new IOException("Server connection failed"))
+                .when(httpClient).execute(any(HttpGet.class), any(HttpClientResponseHandler.class));
+
+        StatusListService.StatusListPayload payload = createTestPayload();
+
+        StatusListException exception = assertThrows(StatusListException.class,
+                () -> statusListService.publishOrUpdate(payload));
+
+        assertTrue(exception.getMessage().contains("Error checking status list"));
+
+        verify(httpClient, times(1)).execute(any(HttpGet.class), any(HttpClientResponseHandler.class));
+        verify(httpClient, never()).execute(any(HttpPost.class), any(HttpClientResponseHandler.class));
+        verify(httpClient, never()).execute(any(HttpPatch.class), any(HttpClientResponseHandler.class));
+    }
+
+    private StatusListService.StatusListPayload createTestPayload() {
+        return new StatusListService.StatusListPayload(
+                "test-list-id",
+                List.of(new StatusListService.StatusListPayload.StatusEntry(1, "VALID"))
+        );
     }
 }

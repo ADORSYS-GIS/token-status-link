@@ -68,13 +68,12 @@ public class MockKeycloakTest {
     @Mock
     protected ClientConnection clientConnection;
 
+    private MockedStatic<CustomHttpClient> mocked;
 
     @Mock
     protected CloseableHttpClient httpClient;
     @Mock
     protected CloseableHttpResponse httpResponse;
-
-    private MockedStatic<CustomHttpClient> mocked;
 
     @BeforeEach
     protected void rootSetup() {
@@ -99,6 +98,17 @@ public class MockKeycloakTest {
         lenient().when(client.getClientId()).thenReturn(TEST_CLIENT_ID);
     }
 
+    @BeforeEach
+    void httpSetUp() {
+        mocked = mockStatic(CustomHttpClient.class);
+        mocked.when(CustomHttpClient::getHttpClient)
+                .thenReturn(httpClient);
+    }
+
+    @AfterEach
+    void httpTearDown() {
+        mocked.close();
+    }
 
     static KeyWrapper getActiveRsaKey() {
         try {
