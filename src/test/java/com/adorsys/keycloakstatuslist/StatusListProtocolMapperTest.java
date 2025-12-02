@@ -1,6 +1,7 @@
 package com.adorsys.keycloakstatuslist;
 
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
+import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.helpers.MockKeycloakTest;
 import com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
 import com.adorsys.keycloakstatuslist.model.Status;
@@ -119,7 +120,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
     @Test
     void shouldNotMap_WhenSendingStatusFails() throws Exception {
         mockEntityPersist();
-        doThrow(new com.adorsys.keycloakstatuslist.exception.StatusListException("Server not reachable"))
+        doThrow(new StatusListException("Server not reachable"))
                 .when(statusListService).publishOrUpdate(any(StatusListService.StatusListPayload.class));
 
         // Act
