@@ -21,7 +21,6 @@ import org.keycloak.models.RealmModel;
 import org.keycloak.models.utils.PostMigrationEvent;
 import org.keycloak.protocol.oidc.OIDCLoginProtocolFactory;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -140,41 +139,6 @@ public class CredentialRevocationResourceProviderFactory extends OIDCLoginProtoc
         }
     }
 
-    /**
-     * Checks the health status of the status list server before proceeding with operations.
-     *
-     * @param serverUrl the server URL to check
-     * @return true if the server is healthy, false otherwise
-     */
-    private boolean checkServerHealth(String serverUrl) {
-        String healthUrl = serverUrl.endsWith("/") ? serverUrl + "health" : serverUrl + "/health";
-        logger.debugf("Checking server health at: %s", healthUrl);
-
-        try (CloseableHttpClient httpClient = CustomHttpClient.getHttpClient()) {
-            HttpGet httpGet = new HttpGet(healthUrl);
-
-            return httpClient.execute(httpGet, response -> {
-                int statusCode = response.getCode();
-                EntityUtils.consume(response.getEntity()); // Ensure response body is consumed
-
-                if (statusCode == 200) {
-                    logger.debug("Server health check passed");
-                    return true;
-                } else {
-                    logger.warnf("Server health check failed: status %d", statusCode);
-                    return false;
-                }
-            });
-        } catch (IOException e) {
-            // IOException covers connection errors, timeouts, etc.
-            logger.warnf("Error during server health check at %s: %s", healthUrl, e.getMessage());
-            return false;
-        } catch (Exception e) {
-            logger.error("Unexpected error during server health check", e);
-            return false;
-        }
-    }
-
     private boolean registerRealmAsIssuer(KeycloakSession session, RealmModel realm) {
         if (registeredRealms.contains(realm.getName())) {
             logger.debug("Realm already registered as issuer: " + realm.getName());
@@ -188,17 +152,17 @@ public class CredentialRevocationResourceProviderFactory extends OIDCLoginProtoc
                 return true; // Disabled, no need to register
             }
 
-            if (!checkServerHealth(config.getServerUrl())) {
-                logger.warnf("Health check failed for server: %s", config.getServerUrl());
-                return false;
-            }
-
             CryptoIdentityService cryptoIdentityService = new CryptoIdentityService(session);
             StatusListService statusListService = new StatusListService(
                     config.getServerUrl(),
                     cryptoIdentityService.getJwtToken(config),
                     CustomHttpClient.getHttpClient()
             );
+
+            if (!statusListService.checkServerHealth()) {
+                logger.warnf("Health check failed for server: %s", config.getServerUrl());
+                return false;
+            }
 
             // Get realm's public key and algorithm
             KeyManager keyManager = session.keys();

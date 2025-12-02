@@ -65,6 +65,7 @@ class CredentialRevocationServiceTest {
 
     @Mock
     private NonceService nonceService; // Add mock for NonceService
+
     
     @Mock
     private TokenStatusRecord mockRevocationRecord;
@@ -102,15 +103,6 @@ class CredentialRevocationServiceTest {
             sdJwtVPValidationField.setAccessible(true);
             sdJwtVPValidationField.set(service, sdJwtVPValidationService);
             
-            // Inject mocked RevocationRecordService
-            java.lang.reflect.Field revocationRecordField = CredentialRevocationService.class.getDeclaredField("revocationRecordService");
-            revocationRecordField.setAccessible(true);
-            revocationRecordField.set(service, revocationRecordService);
-            
-            // Inject mocked RequestValidationService
-            java.lang.reflect.Field requestValidationField = CredentialRevocationService.class.getDeclaredField("requestValidationService");
-            requestValidationField.setAccessible(true);
-            requestValidationField.set(service, requestValidationService);
             
             // Inject mocked StatusListService
             java.lang.reflect.Field statusListField = CredentialRevocationService.class.getDeclaredField("statusListService");
@@ -129,10 +121,8 @@ class CredentialRevocationServiceTest {
         CredentialRevocationRequest request = createValidRequest();
         
         // Mock all dependencies to return success
-        doNothing().when(requestValidationService).validateRevocationRequest(any());
         when(sdJwtVPValidationService.parseAndValidateSdJwtVP(anyString(), anyString())).thenReturn(sdJwtVP);
         doNothing().when(sdJwtVPValidationService).verifyCredentialOwnership(any(SdJwtVP.class), anyString(), anyString());
-        when(revocationRecordService.createRevocationRecord(any(), anyString())).thenReturn(mockRevocationRecord);
         doNothing().when(statusListService).publishRecord(any(TokenStatusRecord.class));
         
         // Act
@@ -145,10 +135,8 @@ class CredentialRevocationServiceTest {
         assertEquals(request.getRevocationReason(), response.getRevocationReason());
         
         // Verify the orchestration flow - services called in correct order
-        verify(requestValidationService).validateRevocationRequest(any());
         verify(sdJwtVPValidationService).parseAndValidateSdJwtVP(anyString(), anyString());
         verify(sdJwtVPValidationService).verifyCredentialOwnership(any(SdJwtVP.class), anyString(), anyString());
-        verify(revocationRecordService).createRevocationRecord(any(), anyString());
         verify(statusListService).publishRecord(any(TokenStatusRecord.class));
     }
 
@@ -158,8 +146,8 @@ class CredentialRevocationServiceTest {
         CredentialRevocationRequest request = createValidRequest();
         
         // Mock validation to fail
-        doThrow(new StatusListException("Validation failed"))
-            .when(requestValidationService).validateRevocationRequest(any());
+        when(sdJwtVPValidationService.parseAndValidateSdJwtVP(anyString(), anyString()))
+            .thenThrow(new StatusListException("Validation failed"));
         
         // Act & Assert
         StatusListException exception = assertThrows(StatusListException.class, () -> {
@@ -170,8 +158,8 @@ class CredentialRevocationServiceTest {
         assertTrue(exception.getMessage().contains("Validation failed"));
         
         // Verify no other services were called
-        verify(sdJwtVPValidationService, never()).parseAndValidateSdJwtVP(anyString(), anyString());
-        verify(revocationRecordService, never()).createRevocationRecord(any(), anyString());
+        verify(sdJwtVPValidationService).parseAndValidateSdJwtVP(anyString(), anyString());
+        verify(statusListService, never()).publishRecord(any());
         verify(statusListService, never()).publishRecord(any());
     }
 
@@ -181,7 +169,6 @@ class CredentialRevocationServiceTest {
         CredentialRevocationRequest request = createValidRequest();
         
         // Mock request validation to succeed, but SD-JWT validation to fail
-        doNothing().when(requestValidationService).validateRevocationRequest(any());
         when(sdJwtVPValidationService.parseAndValidateSdJwtVP(anyString(), anyString()))
             .thenThrow(new StatusListException("SD-JWT validation failed"));
         
@@ -194,9 +181,7 @@ class CredentialRevocationServiceTest {
         assertTrue(exception.getMessage().contains("SD-JWT validation failed"));
         
         // Verify the flow stopped at SD-JWT validation
-        verify(requestValidationService).validateRevocationRequest(any());
         verify(sdJwtVPValidationService).parseAndValidateSdJwtVP(anyString(), anyString());
-        verify(revocationRecordService, never()).createRevocationRecord(any(), anyString());
         verify(statusListService, never()).publishRecord(any());
     }
 
@@ -206,10 +191,8 @@ class CredentialRevocationServiceTest {
         CredentialRevocationRequest request = createValidRequest();
         
         // Mock all dependencies to succeed until status list publication
-        doNothing().when(requestValidationService).validateRevocationRequest(any());
         when(sdJwtVPValidationService.parseAndValidateSdJwtVP(anyString(), anyString())).thenReturn(sdJwtVP);
         doNothing().when(sdJwtVPValidationService).verifyCredentialOwnership(any(SdJwtVP.class), anyString(), anyString());
-        when(revocationRecordService.createRevocationRecord(any(), anyString())).thenReturn(mockRevocationRecord);
         doThrow(new StatusListException("Status list publication failed"))
             .when(statusListService).publishRecord(any(TokenStatusRecord.class));
         
@@ -222,10 +205,8 @@ class CredentialRevocationServiceTest {
         assertTrue(exception.getMessage().contains("Status list publication failed"));
         
         // Verify the complete flow was executed
-        verify(requestValidationService).validateRevocationRequest(any());
         verify(sdJwtVPValidationService).parseAndValidateSdJwtVP(anyString(), anyString());
         verify(sdJwtVPValidationService).verifyCredentialOwnership(any(SdJwtVP.class), anyString(), anyString());
-        verify(revocationRecordService).createRevocationRecord(any(), anyString());
         verify(statusListService).publishRecord(any(TokenStatusRecord.class));
     }
 
@@ -236,10 +217,8 @@ class CredentialRevocationServiceTest {
         CredentialRevocationRequest request2 = createValidRequest();
         
         // Mock all dependencies to succeed
-        doNothing().when(requestValidationService).validateRevocationRequest(any());
         when(sdJwtVPValidationService.parseAndValidateSdJwtVP(anyString(), anyString())).thenReturn(sdJwtVP);
         doNothing().when(sdJwtVPValidationService).verifyCredentialOwnership(any(SdJwtVP.class), anyString(), anyString());
-        when(revocationRecordService.createRevocationRecord(any(), anyString())).thenReturn(mockRevocationRecord);
         doNothing().when(statusListService).publishRecord(any(TokenStatusRecord.class));
         
         // Act
@@ -248,7 +227,7 @@ class CredentialRevocationServiceTest {
         
         // Assert - Verify that different request IDs were generated
         verify(sdJwtVPValidationService, times(2)).parseAndValidateSdJwtVP(anyString(), anyString());
-        verify(revocationRecordService, times(2)).createRevocationRecord(any(), anyString());
+        verify(sdJwtVPValidationService, times(2)).parseAndValidateSdJwtVP(anyString(), anyString());
         verify(statusListService, times(2)).publishRecord(any());
     }
 
@@ -258,7 +237,6 @@ class CredentialRevocationServiceTest {
         CredentialRevocationRequest request = createValidRequest();
         
         // Mock an unexpected exception
-        doNothing().when(requestValidationService).validateRevocationRequest(any());
         when(sdJwtVPValidationService.parseAndValidateSdJwtVP(anyString(), anyString()))
             .thenThrow(new RuntimeException("Unexpected error"));
         
