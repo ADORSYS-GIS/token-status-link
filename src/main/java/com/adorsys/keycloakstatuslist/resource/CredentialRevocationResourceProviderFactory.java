@@ -135,23 +135,6 @@ public class CredentialRevocationResourceProviderFactory extends OIDCLoginProtoc
         }
     }
 
-    /**
-     * Checks the health status of the status list server before proceeding with operations.
-     *
-     * @param serverUrl the server URL to check
-     * @return true if the server is healthy, false otherwise
-     */
-    private boolean checkServerHealth(String serverUrl) {
-        try {
-            StatusListService statusListService = new StatusListService(serverUrl, null, CustomHttpClient.getHttpClient());
-            // This is a placeholder for a real health check method in StatusListService
-            return true;
-        } catch (Exception e) {
-            logger.error("Unexpected error during server health check", e);
-            return false;
-        }
-    }
-
     private boolean registerRealmAsIssuer(KeycloakSession session, RealmModel realm) {
         if (registeredRealms.contains(realm.getName())) {
             logger.debug("Realm already registered as issuer: " + realm.getName());
@@ -165,17 +148,17 @@ public class CredentialRevocationResourceProviderFactory extends OIDCLoginProtoc
                 return true; // Disabled, no need to register
             }
 
-            if (!checkServerHealth(config.getServerUrl())) {
-                logger.warnf("Health check failed for server: %s", config.getServerUrl());
-                return false;
-            }
-
             CryptoIdentityService cryptoIdentityService = new CryptoIdentityService(session);
             StatusListService statusListService = new StatusListService(
                     config.getServerUrl(),
                     cryptoIdentityService.getJwtToken(config),
                     CustomHttpClient.getHttpClient()
             );
+
+            if (!statusListService.checkServerHealth()) {
+                logger.warnf("Health check failed for server: %s", config.getServerUrl());
+                return false;
+            }
 
             // Get realm's public key and algorithm
             KeyManager keyManager = session.keys();

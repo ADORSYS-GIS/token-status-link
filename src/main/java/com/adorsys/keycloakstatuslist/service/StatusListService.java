@@ -291,4 +291,33 @@ public class StatusListService {
             throw new StatusListException("Unexpected error checking status list " + statusListId, e);
         }
     }
+
+    /**
+     * Checks the health status of the status list server.
+     *
+     * @return true if the server is healthy, false otherwise
+     */
+    public boolean checkServerHealth() {
+        String requestId = UUID.randomUUID().toString();
+        logger.debugf("Request ID: %s, Checking server health at: %s", requestId, serverUrl);
+
+        HttpGet httpGet = new HttpGet(this.serverUrl + "health");
+        httpGet.setHeader("X-Request-ID", requestId);
+
+        try {
+            return httpClient.execute(httpGet, response -> {
+                int statusCode = response.getCode();
+                if (statusCode >= 200 && statusCode < 300) {
+                    logger.infof("Request ID: %s, Server health check successful.", requestId);
+                    return true;
+                }
+
+                logger.warnf("Request ID: %s, Server health check failed. Status code: %d", requestId, statusCode);
+                return false;
+            });
+        } catch (IOException e) {
+            logger.errorf(e, "Request ID: %s, Error during server health check", requestId);
+            return false;
+        }
+    }
 }
