@@ -2,24 +2,28 @@
 <databaseChangeLog
         xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-        xsi:schemaLocation="
-      http://www.liquibase.org/xml/ns/dbchangelog
-      http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-3.8.xsd">
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-3.8.xsd">
 
     <changeSet id="create-status-list-mapping" author="adorsys">
         <createTable tableName="status_list_mapping">
+            <column name="id" type="varchar(36)">
+                <constraints nullable="false" primaryKey="true"
+                             primaryKeyName="pk_status_list_mapping" />
+            </column>
+
             <column name="idx" type="bigint">
-                <constraints nullable="false"/>
+                <constraints nullable="false" unique="true" />
             </column>
+
             <column name="status_list_id" type="varchar(255)">
-                <constraints nullable="false"/>
+                <constraints nullable="false" />
             </column>
-            <column name="user_id" type="varchar(255)"/>
-            <column name="token_id" type="varchar(255)"/>
-            <column name="realm_id" type="varchar(255)"/>
-            <constraints primaryKey="true" primaryKeyName="pk_status_list_mapping" columns="status_list_id,idx"/>
+            <column name="user_id" type="varchar(255)" />
+            <column name="token_id" type="varchar(255)" />
+            <column name="realm_id" type="varchar(255)" />
         </createTable>
 
+        <!-- Keep the sequence generator as it is used by the Java code -->
         <createSequence
                 sequenceName="status_list_counter_seq"
                 startValue="1"
@@ -28,13 +32,16 @@
     </changeSet>
 
     <changeSet id="add-indices-to-status-list-mapping" author="adorsys">
-        <createIndex indexName="idx_status_list_mapping_realm_user_token" tableName="status_list_mapping">
-            <column name="realm_id"/>
-            <column name="user_id"/>
-            <column name="token_id"/>
+
+        <createIndex indexName="idx_status_list_mapping_realm_user"
+                     tableName="status_list_mapping">
+            <column name="realm_id" />
+            <column name="user_id" />
         </createIndex>
+
+        <!-- This index handles lookups by token_id specifically -->
         <createIndex indexName="idx_status_list_mapping_token_id" tableName="status_list_mapping">
-            <column name="token_id"/>
+            <column name="token_id" />
         </createIndex>
     </changeSet>
 
