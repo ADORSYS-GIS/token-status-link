@@ -2,10 +2,21 @@ package com.adorsys.keycloakstatuslist.model;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import org.keycloak.jose.jwk.JWK;
+
 import java.time.Instant;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class TokenStatusRecord {
+    
+    // Static mapper for toString() to avoid creating it every time
+    private static final ObjectMapper MAPPER = new ObjectMapper()
+            .registerModule(new JavaTimeModule())
+            .setSerializationInclusion(JsonInclude.Include.NON_NULL);
+
     @JsonProperty("sub")
     private String credentialId;
 
@@ -16,7 +27,7 @@ public class TokenStatusRecord {
     private String issuer;
 
     @JsonProperty("public_key")
-    private String publicKey;
+    private JWK publicKey;
 
     @JsonProperty("alg")
     private String alg;
@@ -82,11 +93,11 @@ public class TokenStatusRecord {
         this.issuer = issuer;
     }
 
-    public String getPublicKey() {
+    public JWK getPublicKey() {
         return publicKey;
     }
 
-    public void setPublicKey(String publicKey) {
+    public void setPublicKey(JWK publicKey) {
         this.publicKey = publicKey;
     }
 
@@ -156,21 +167,11 @@ public class TokenStatusRecord {
 
     @Override
     public String toString() {
-        return "TokenStatusRecord{" +
-                "credentialId='" + credentialId + '\'' +
-                ", issuerId='" + issuerId + '\'' +
-                ", issuer='" + issuer + '\'' +
-                ", publicKey='" + publicKey + '\'' +
-                ", alg='" + alg + '\'' +
-                ", status=" + status +
-                ", issuedAt=" + issuedAt +
-                ", expiresAt=" + expiresAt +
-                ", index=" + index +
-                ", credentialType='" + credentialType + '\'' +
-                ", revokedAt=" + revokedAt +
-                ", statusReason='" + statusReason + '\'' +
-                ", listId='" + listId + '\'' +
-                ", statusList=" + statusList +
-                '}';
+        try {
+            return MAPPER.writeValueAsString(this);
+        } catch (JsonProcessingException e) {
+            // Fallback in unlikely event of serialization failure
+            return "TokenStatusRecord{credentialId='" + credentialId + "', status=" + status + "}";
+        }
     }
 }
