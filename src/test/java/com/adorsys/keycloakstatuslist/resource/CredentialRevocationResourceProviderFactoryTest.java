@@ -1,5 +1,6 @@
 package com.adorsys.keycloakstatuslist.resource;
 
+import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.service.CryptoIdentityService;
 import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
 import com.adorsys.keycloakstatuslist.service.RevocationRecordService;
@@ -125,7 +126,7 @@ class CredentialRevocationResourceProviderFactoryTest {
         
         try {
             verify(mockService).registerIssuer(argThat(arg -> arg.endsWith("::test-realm")), eq(mockJwk), eq("RS256"));
-        } catch (com.adorsys.keycloakstatuslist.exception.StatusListException e) {
+        } catch (StatusListException e) {
             fail("Should not throw exception");
         }
     }
