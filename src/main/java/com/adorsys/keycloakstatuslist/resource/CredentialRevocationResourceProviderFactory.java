@@ -7,9 +7,6 @@ import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
 import com.adorsys.keycloakstatuslist.service.RevocationRecordService; // Import the service
 import com.adorsys.keycloakstatuslist.service.RevocationRecordService.KeyData;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
-import org.apache.hc.client5.http.classic.methods.HttpGet;
-import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
-import org.apache.hc.core5.http.io.entity.EntityUtils;
 import org.jboss.logging.Logger;
 import org.keycloak.events.EventBuilder;
 import org.keycloak.models.KeycloakSession;
@@ -18,7 +15,6 @@ import org.keycloak.models.RealmModel;
 import org.keycloak.models.utils.PostMigrationEvent;
 import org.keycloak.protocol.oidc.OIDCLoginProtocolFactory;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -137,41 +133,6 @@ public class CredentialRevocationResourceProviderFactory extends OIDCLoginProtoc
         }
     }
 
-    /**
-     * Checks the health status of the status list server before proceeding with operations.
-     *
-     * @param serverUrl the server URL to check
-     * @return true if the server is healthy, false otherwise
-     */
-    private boolean checkServerHealth(String serverUrl) {
-        String healthUrl = serverUrl.endsWith("/") ? serverUrl + "health" : serverUrl + "/health";
-        logger.debugf("Checking server health at: %s", healthUrl);
-
-        try (CloseableHttpClient httpClient = CustomHttpClient.getHttpClient()) {
-            HttpGet httpGet = new HttpGet(healthUrl);
-
-            return httpClient.execute(httpGet, response -> {
-                int statusCode = response.getCode();
-                EntityUtils.consume(response.getEntity()); // Ensure response body is consumed
-
-                if (statusCode == 200) {
-                    logger.debug("Server health check passed");
-                    return true;
-                } else {
-                    logger.warnf("Server health check failed: status %d", statusCode);
-                    return false;
-                }
-            });
-        } catch (IOException e) {
-            // IOException covers connection errors, timeouts, etc.
-            logger.warnf("Error during server health check at %s: %s", healthUrl, e.getMessage());
-            return false;
-        } catch (Exception e) {
-            logger.error("Unexpected error during server health check", e);
-            return false;
-        }
-    }
-
     private boolean registerRealmAsIssuer(KeycloakSession session, RealmModel realm) {
         if (registeredRealms.contains(realm.getName())) {
             logger.debug("Realm already registered as issuer: " + realm.getName());
@@ -183,11 +144,6 @@ public class CredentialRevocationResourceProviderFactory extends OIDCLoginProtoc
             if (!config.isEnabled()) {
                 logger.debug("Status list service is disabled for realm: " + realm.getName());
                 return true; // Disabled, no need to register
-            }
-
-            if (!checkServerHealth(config.getServerUrl())) {
-                logger.warnf("Health check failed for server: %s", config.getServerUrl());
-                return false;
             }
 
             KeyData keyData;
@@ -204,6 +160,12 @@ public class CredentialRevocationResourceProviderFactory extends OIDCLoginProtoc
                     cryptoIdentityService.getJwtToken(config),
                     CustomHttpClient.getHttpClient()
             );
+
+            // Check if the status list server is reachable
+            if (!statusListService.checkServerHealth()) {
+                logger.warn("Status list server is not reachable for realm: " + realm.getName());
+                return false;
+            }
 
             // Register the realm as an issuer using the retrieved JWK
             statusListService.registerIssuer(config.getTokenIssuerId(), keyData.jwk(), keyData.algorithm());

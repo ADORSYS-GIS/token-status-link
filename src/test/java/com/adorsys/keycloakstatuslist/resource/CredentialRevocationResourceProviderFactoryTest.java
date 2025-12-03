@@ -1,4 +1,4 @@
-package com.adorsys.keycloakstatuslist.resource;
+ package com.adorsys.keycloakstatuslist.resource;
 
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.service.CryptoIdentityService;
@@ -70,7 +70,8 @@ class CredentialRevocationResourceProviderFactoryTest {
         mockedRevocationService = mockStatic(RevocationRecordService.class);
         mockedHttpClient = mockStatic(CustomHttpClient.class);
 
-        mockedStatusListServiceConstruction = mockConstruction(StatusListService.class);
+        mockedStatusListServiceConstruction = mockConstruction(StatusListService.class,
+                (mock, context) -> when(mock.checkServerHealth()).thenReturn(true));
         mockedCryptoServiceConstruction = mockConstruction(CryptoIdentityService.class,
                 (mock, context) -> when(mock.getJwtToken(any())).thenReturn("mock-token"));
     }
@@ -143,20 +144,22 @@ class CredentialRevocationResourceProviderFactoryTest {
 
     @Test
     void testInitializeRealms_SkippedWhenHealthCheckFails() throws IOException {
-        CloseableHttpClient httpClient = mock(CloseableHttpClient.class);
-        CloseableHttpResponse httpResponse = mock(CloseableHttpResponse.class);
-        mockedHttpClient.when(CustomHttpClient::getHttpClient).thenReturn(httpClient);
-        
-        when(httpClient.execute(any(HttpGet.class), any(HttpClientResponseHandler.class))).thenAnswer(invocation -> {
-            HttpClientResponseHandler<?> handler = invocation.getArgument(1);
-            when(httpResponse.getCode()).thenReturn(500); 
-            when(httpResponse.getEntity()).thenReturn(new StringEntity("Error"));
-            return handler.handleResponse(httpResponse);
-        });
+        // We need to override the default mock behavior for this test
+        mockedStatusListServiceConstruction.close();
+        mockedStatusListServiceConstruction = mockConstruction(StatusListService.class,
+                (mock, context) -> when(mock.checkServerHealth()).thenReturn(false));
 
         triggerInitialization();
 
-        assertEquals(0, mockedStatusListServiceConstruction.constructed().size());
+        // Service is constructed but registration is skipped
+        assertEquals(1, mockedStatusListServiceConstruction.constructed().size());
+        StatusListService mockService = mockedStatusListServiceConstruction.constructed().get(0);
+        
+        try {
+            verify(mockService, never()).registerIssuer(any(), any(), any());
+        } catch (StatusListException e) {
+            fail("Should not throw exception");
+        }
     }
 
     @Test

@@ -4,22 +4,27 @@ import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.exception.StatusListServerException;
 import com.adorsys.keycloakstatuslist.model.TokenStatus;
 import com.adorsys.keycloakstatuslist.model.TokenStatusRecord;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.client5.http.classic.methods.HttpGet;
+import org.apache.hc.client5.http.classic.methods.HttpPatch;
+import org.apache.hc.client5.http.classic.methods.HttpPost;
+import org.apache.hc.core5.http.io.entity.EntityUtils;
+import org.apache.hc.core5.http.io.entity.StringEntity;
 import org.jboss.logging.Logger;
 import org.keycloak.jose.jwk.JWK; // Import added
 
 import java.io.IOException;
-import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
-import org.apache.hc.client5.http.classic.methods.HttpPost;
-import org.apache.hc.core5.http.io.entity.StringEntity;
-import org.apache.hc.core5.http.io.entity.EntityUtils;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 public class StatusListService {
     private static final Logger logger = Logger.getLogger(StatusListService.class);
+
     private final String serverUrl;
     private final String authToken;
     private final CloseableHttpClient httpClient;
@@ -35,7 +40,6 @@ public class StatusListService {
                 .setSerializationInclusion(JsonInclude.Include.NON_NULL);
         logger.info("Initialized StatusListService with serverUrl: " + this.serverUrl);
     }
-
 
     public void publishRecord(TokenStatusRecord statusRecord) throws StatusListException {
         validateStatusRecord(statusRecord);
@@ -60,7 +64,6 @@ public class StatusListService {
             httpClient.execute(httpPost, response -> {
                 int statusCode = response.getCode();
                 String responseBody = EntityUtils.toString(response.getEntity());
-
                 if (statusCode >= 200 && statusCode < 300 || statusCode == 409) {
                     logger.info("Request ID: " + requestId + ", Successfully published record for credentialId: "
                             + credentialId +
@@ -88,6 +91,52 @@ public class StatusListService {
             logger.error("Request ID: " + requestId + ", Unexpected error publishing record for credentialId: " + credentialId +
                     ": " + e.getMessage(), e);
             throw new StatusListException("Unexpected error publishing record for credentialId: " + credentialId, e);
+        }
+    }
+
+    public void updateRecord(TokenStatusRecord statusRecord) throws StatusListException {
+        validateStatusRecord(statusRecord);
+        String requestId = UUID.randomUUID().toString();
+        String credentialId = statusRecord.getCredentialId();
+
+        try {
+            String jsonPayload = objectMapper.writeValueAsString(statusRecord);
+            logger.debug("Request ID: " + requestId + ", Updating record for credentialId: " + credentialId);
+
+            HttpPatch httpPatch = new HttpPatch(serverUrl + "credentials");
+            httpPatch.setHeader("Content-Type", "application/json");
+            httpPatch.setHeader("X-Request-ID", requestId);
+            httpPatch.setEntity(new StringEntity(jsonPayload));
+
+            if (authToken != null && !authToken.isEmpty()) {
+                httpPatch.setHeader("Authorization", "Bearer " + authToken);
+            }
+
+            httpClient.execute(httpPatch, response -> {
+                int statusCode = response.getCode();
+                String responseBody = EntityUtils.toString(response.getEntity());
+                if (statusCode >= 200 && statusCode < 300) {
+                    logger.info("Request ID: " + requestId + ", Successfully updated record for credentialId: " + credentialId);
+                    return null;
+                } else {
+                    logger.error("Request ID: " + requestId + ", Failed to update record for credentialId: " + credentialId +
+                            ". Status code: " + statusCode + ", Response: " + responseBody);
+                    throw new IllegalStateException(new StatusListServerException(
+                            "Failed to update record for credentialId: " + credentialId + ". Status code: " + statusCode,
+                            statusCode));
+                }
+            });
+        } catch (IOException e) {
+            logger.error("Request ID: " + requestId + ", Failed to update record for credentialId: " + credentialId +
+                    ": " + e.getMessage(), e);
+            throw new StatusListException("Failed to update record for credentialId: " + credentialId, e);
+        } catch (Exception e) {
+            if (e.getCause() instanceof StatusListServerException serverException) {
+                throw serverException;
+            }
+            logger.error("Request ID: " + requestId + ", Unexpected error updating record for credentialId: " + credentialId +
+                    ": " + e.getMessage(), e);
+            throw new StatusListException("Unexpected error updating record for credentialId: " + credentialId, e);
         }
     }
 
@@ -139,6 +188,9 @@ public class StatusListService {
             if (e.getCause() instanceof StatusListServerException serverException) {
                 throw serverException;
             }
+            logger.error("Request ID: " + requestId + ", Unexpected error registering issuer: " + issuerId +
+                    ": " + e.getMessage(), e);
+            throw new StatusListException("Unexpected error registering issuer: " + issuerId, e);
         }
     }
 
@@ -205,4 +257,177 @@ public class StatusListService {
         }
     }
 
+    public boolean checkStatusListExists(String statusListId) throws StatusListException {
+        String requestId = UUID.randomUUID().toString();
+        logger.debug("Request ID: " + requestId + ", Checking if status list exists: " + statusListId);
+
+        HttpGet httpGet = new HttpGet(serverUrl + "statuslists/" + statusListId);
+        httpGet.setHeader("X-Request-ID", requestId);
+
+        try {
+            return httpClient.execute(httpGet, response -> {
+                int statusCode = response.getCode();
+                if (statusCode == 200) {
+                    logger.info("Request ID: " + requestId + ", Status list " + statusListId + " exists.");
+                    return true;
+                } else if (statusCode == 404) {
+                    logger.info("Request ID: " + requestId + ", Status list " + statusListId + " does not exist.");
+                    return false;
+                } else {
+                    String responseBody = EntityUtils.toString(response.getEntity());
+                    logger.error("Request ID: " + requestId + ", Failed to check status list " + statusListId +
+                            ". Status code: " + statusCode + ", Response: " + responseBody);
+                    throw new IllegalStateException(new StatusListServerException(
+                            "Failed to check status list " + statusListId + ". Status code: " + statusCode,
+                            statusCode));
+                }
+            });
+        } catch (IOException e) {
+            logger.error("Request ID: " + requestId + ", Error checking status list " + statusListId + ": " + e.getMessage(), e);
+            throw new StatusListException("Error checking status list " + statusListId, e);
+        } catch (Exception e) {
+            if (e.getCause() instanceof StatusListServerException serverException) {
+                throw serverException;
+            }
+            logger.error("Request ID: " + requestId + ", Unexpected error checking status list " + statusListId + ": " + e.getMessage(), e);
+            throw new StatusListException("Unexpected error checking status list " + statusListId, e);
+        }
+    }
+
+    public record StatusListPayload(
+            @JsonProperty("list_id") String listId,
+            List<StatusEntry> status
+    ) {
+        public record StatusEntry(int index, String status) {
+        }
+    }
+
+    public void publishOrUpdate(StatusListPayload payload) throws StatusListException {
+        String requestId = UUID.randomUUID().toString();
+        String listId = payload.listId();
+
+        try {
+            boolean exists = checkStatusListExists(listId);
+            if (exists) {
+                updateStatusList(payload, requestId);
+            } else {
+                publishStatusList(payload, requestId);
+            }
+        } catch (StatusListException e) {
+            logger.error("Request ID: " + requestId + ", Failed to publish or update status list " + listId +
+                    ": " + e.getMessage(), e);
+            throw e;
+        }
+    }
+
+    private void publishStatusList(StatusListPayload payload, String requestId) throws StatusListException {
+        String listId = payload.listId();
+        logger.debug("Request ID: " + requestId + ", Publishing new status list: " + listId);
+
+        try {
+            String jsonPayload = objectMapper.writeValueAsString(payload);
+            HttpPost httpPost = new HttpPost(serverUrl + "statuslists");
+            httpPost.setHeader("Content-Type", "application/json");
+            httpPost.setHeader("X-Request-ID", requestId);
+            httpPost.setEntity(new StringEntity(jsonPayload));
+
+            if (authToken != null && !authToken.isEmpty()) {
+                httpPost.setHeader("Authorization", "Bearer " + authToken);
+            }
+
+            httpClient.execute(httpPost, response -> {
+                int statusCode = response.getCode();
+                if (statusCode >= 200 && statusCode < 300) {
+                    logger.info("Request ID: " + requestId + ", Successfully published status list: " + listId);
+                    return null;
+                } else {
+                    String responseBody = EntityUtils.toString(response.getEntity());
+                    logger.error("Request ID: " + requestId + ", Failed to publish status list " + listId +
+                            ". Status code: " + statusCode + ", Response: " + responseBody);
+                    throw new IllegalStateException(new StatusListServerException(
+                            "Failed to publish status list " + listId + ". Status code: " + statusCode,
+                            statusCode));
+                }
+            });
+        } catch (IOException e) {
+            logger.error("Request ID: " + requestId + ", Error publishing status list " + listId + ": " + e.getMessage(), e);
+            throw new StatusListException("Error publishing status list " + listId, e);
+        } catch (Exception e) {
+            if (e.getCause() instanceof StatusListServerException serverException) {
+                throw serverException;
+            }
+            logger.error("Request ID: " + requestId + ", Unexpected error publishing status list " + listId + ": " + e.getMessage(), e);
+            throw new StatusListException("Unexpected error publishing status list " + listId, e);
+        }
+    }
+
+    private void updateStatusList(StatusListPayload payload, String requestId) throws StatusListException {
+        String listId = payload.listId();
+        logger.debug("Request ID: " + requestId + ", Updating existing status list: " + listId);
+
+        try {
+            String jsonPayload = objectMapper.writeValueAsString(payload);
+            HttpPatch httpPatch = new HttpPatch(serverUrl + "statuslists/" + listId);
+            httpPatch.setHeader("Content-Type", "application/json");
+            httpPatch.setHeader("X-Request-ID", requestId);
+            httpPatch.setEntity(new StringEntity(jsonPayload));
+
+            if (authToken != null && !authToken.isEmpty()) {
+                httpPatch.setHeader("Authorization", "Bearer " + authToken);
+            }
+
+            httpClient.execute(httpPatch, response -> {
+                int statusCode = response.getCode();
+                if (statusCode >= 200 && statusCode < 300) {
+                    logger.info("Request ID: " + requestId + ", Successfully updated status list: " + listId);
+                    return null;
+                } else {
+                    String responseBody = EntityUtils.toString(response.getEntity());
+                    logger.error("Request ID: " + requestId + ", Failed to update status list " + listId +
+                            ". Status code: " + statusCode + ", Response: " + responseBody);
+                    throw new IllegalStateException(new StatusListServerException(
+                            "Failed to update status list " + listId + ". Status code: " + statusCode,
+                            statusCode));
+                }
+            });
+        } catch (IOException e) {
+            logger.error("Request ID: " + requestId + ", Error updating status list " + listId + ": " + e.getMessage(), e);
+            throw new StatusListException("Error updating status list " + listId, e);
+        } catch (Exception e) {
+            if (e.getCause() instanceof StatusListServerException serverException) {
+                throw serverException;
+            }
+            logger.error("Request ID: " + requestId + ", Unexpected error updating status list " + listId + ": " + e.getMessage(), e);
+            throw new StatusListException("Unexpected error updating status list " + listId, e);
+        }
+    }
+
+    /**
+     * Checks the health status of the status list server.
+     *
+     * @return true if the server is healthy, false otherwise
+     */
+    public boolean checkServerHealth() {
+        String requestId = UUID.randomUUID().toString();
+        logger.debugf("Request ID: %s, Checking server health at: %s", requestId, serverUrl);
+
+        HttpGet httpGet = new HttpGet(this.serverUrl + "health");
+        httpGet.setHeader("X-Request-ID", requestId);
+
+        try {
+            return httpClient.execute(httpGet, response -> {
+                int statusCode = response.getCode();
+                if (statusCode >= 200 && statusCode < 300) {
+                    logger.infof("Request ID: %s, Server health check successful.", requestId);
+                    return true;
+                }
+
+                logger.warnf("Request ID: %s, Server health check failed. Status code: %d", requestId, statusCode);
+                return false;
+            });
+        } catch (IOException e) {
+            logger.errorf(e, "Request ID: %s, Error during server health check", requestId);
+            return false;
+        }
+    }
 }
