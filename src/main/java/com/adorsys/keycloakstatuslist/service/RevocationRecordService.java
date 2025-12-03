@@ -29,11 +29,9 @@ public class RevocationRecordService {
         this.session = session;
     }
     
-    // 1. Define a public static record to hold the result
     public record KeyData(JWK jwk, String algorithm) {}
 
     /**
-     * 2. SHARED STATIC LOGIC:
      * Gets the realm's active signing key and converts it to JWK.
      * Supports RSA and EC.
      * accessible by CredentialRevocationResourceProviderFactory.
@@ -42,16 +40,13 @@ public class RevocationRecordService {
         try {
             KeyManager keyManager = session.keys();
             
-            // Determine algorithm
             String algorithm = realm.getDefaultSignatureAlgorithm();
             if (algorithm == null) {
                 algorithm = Algorithm.RS256;
             }
 
-            // Fetch Active Key
             KeyWrapper activeKey = keyManager.getActiveKey(realm, KeyUse.SIG, algorithm);
             
-            // Fallback to RS256 if default didn't return a key
             if (activeKey == null || activeKey.getPublicKey() == null) {
                 activeKey = keyManager.getActiveKey(realm, KeyUse.SIG, Algorithm.RS256);
                 algorithm = Algorithm.RS256;
@@ -65,7 +60,6 @@ public class RevocationRecordService {
                 throw new StatusListException("Active key has no public key for realm: " + realm.getName());
             }
             
-            // Convert to JWK based on type
             PublicKey pubKey = (PublicKey) activeKey.getPublicKey();
             JWKBuilder builder = JWKBuilder.create()
                     .kid(activeKey.getKid())
@@ -103,7 +97,6 @@ public class RevocationRecordService {
             RealmModel realm = session.getContext().getRealm();
             validateRevocationReason(request.getRevocationReason());
             
-            // 3. Reuse the static logic here
             KeyData keyData = getRealmKeyData(session, realm);
             
             TokenStatusRecord record = new TokenStatusRecord();
@@ -111,7 +104,6 @@ public class RevocationRecordService {
             record.setIssuer(realm.getName());
             record.setIssuerId(realm.getName());
             
-            // Set typed JWK
             record.setPublicKey(keyData.jwk());
             record.setAlg(keyData.algorithm());
             

@@ -190,7 +190,6 @@ public class CredentialRevocationResourceProviderFactory extends OIDCLoginProtoc
                 return false;
             }
 
-            // CALLING SHARED LOGIC FROM SERVICE
             KeyData keyData;
             try {
                 keyData = RevocationRecordService.getRealmKeyData(session, realm);

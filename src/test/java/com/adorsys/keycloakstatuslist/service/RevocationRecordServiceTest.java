@@ -3,7 +3,6 @@ package com.adorsys.keycloakstatuslist.service;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest;
 import com.adorsys.keycloakstatuslist.model.TokenStatusRecord;
-import com.adorsys.keycloakstatuslist.model.TokenStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -124,7 +123,6 @@ class RevocationRecordServiceTest {
         String requestId = "test-request-id";
         CredentialRevocationRequest request = new CredentialRevocationRequest(credentialId, "reason");
         
-        // FIX: Removed duplicate/redundant stubbing here
         when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq("RS256"))).thenReturn(null);
         
         StatusListException exception = assertThrows(StatusListException.class, () -> {

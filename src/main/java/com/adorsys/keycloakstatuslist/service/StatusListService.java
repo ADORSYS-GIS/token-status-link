@@ -91,7 +91,6 @@ public class StatusListService {
         }
     }
 
-    // CHANGED: Accepted type is now JWK, not Object
     public void registerIssuer(String issuerId, JWK publicKey, String algorithm) throws StatusListException {
         String requestId = UUID.randomUUID().toString();
         logger.info("Request ID: " + requestId + ", Registering issuer: " + issuerId + " with server: " + serverUrl);

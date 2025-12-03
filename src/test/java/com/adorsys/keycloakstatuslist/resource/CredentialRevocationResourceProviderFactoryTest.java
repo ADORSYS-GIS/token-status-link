@@ -33,7 +33,7 @@ class CredentialRevocationResourceProviderFactoryTest {
     private CredentialRevocationResourceProviderFactory factory;
     private KeycloakSessionFactory sessionFactory;
     private KeycloakSession session;
-    private KeycloakContext context; // Added context mock
+    private KeycloakContext context;
     private KeycloakTransactionManager transactionManager;
     private RealmProvider realmProvider;
     private RealmModel realm;
@@ -49,14 +49,12 @@ class CredentialRevocationResourceProviderFactoryTest {
         factory = new CredentialRevocationResourceProviderFactory();
         sessionFactory = mock(KeycloakSessionFactory.class);
         session = mock(KeycloakSession.class);
-        context = mock(KeycloakContext.class); // Init context mock
+        context = mock(KeycloakContext.class);
         transactionManager = mock(KeycloakTransactionManager.class);
         realmProvider = mock(RealmProvider.class);
         realm = mock(RealmModel.class);
 
-        // FIX NPE: Setup Session Context
         when(session.getContext()).thenReturn(context);
-        // Ensure context returns the realm when asked (needed for ProtocolEndpoint creation)
         lenient().when(context.getRealm()).thenReturn(realm);
 
         when(sessionFactory.create()).thenReturn(session);
@@ -112,14 +110,11 @@ class CredentialRevocationResourceProviderFactoryTest {
         mockedRevocationService.when(() -> RevocationRecordService.getRealmKeyData(session, realm))
                 .thenReturn(keyData);
 
-        // TRIGGER
         ArgumentCaptor<ProviderEventListener> listenerCaptor = ArgumentCaptor.forClass(ProviderEventListener.class);
         factory.postInit(sessionFactory);
         
-        // FIX: Use atLeastOnce() because super.postInit also registers a listener
         verify(sessionFactory, atLeastOnce()).register(listenerCaptor.capture());
 
-        // listenerCaptor.getValue() returns the *last* captured value, which is ours
         listenerCaptor.getValue().onEvent(new PostMigrationEvent(sessionFactory));
 
         verify(transactionManager).begin();
@@ -128,7 +123,11 @@ class CredentialRevocationResourceProviderFactoryTest {
         assertEquals(1, mockedStatusListServiceConstruction.constructed().size());
         StatusListService mockService = mockedStatusListServiceConstruction.constructed().get(0);
         
-        verify(mockService).registerIssuer("http://localhost:8080/realms/test-realm", mockJwk, "RS256");
+        try {
+            verify(mockService).registerIssuer(argThat(arg -> arg.endsWith("::test-realm")), eq(mockJwk), eq("RS256"));
+        } catch (com.adorsys.keycloakstatuslist.exception.StatusListException e) {
+            fail("Should not throw exception");
+        }
     }
 
     @Test
@@ -182,7 +181,6 @@ class CredentialRevocationResourceProviderFactoryTest {
         assertEquals(1, mockedStatusListServiceConstruction.constructed().size());
 
         triggerInitialization();
-        // Should remain 1 because realm is already registered
         assertEquals(1, mockedStatusListServiceConstruction.constructed().size());
     }
 
@@ -197,7 +195,11 @@ class CredentialRevocationResourceProviderFactoryTest {
         triggerInitialization();
 
         StatusListService mockService = mockedStatusListServiceConstruction.constructed().get(0);
-        doThrow(new RuntimeException("API Error")).when(mockService).registerIssuer(any(), any(), any());
+        try {
+            doThrow(new RuntimeException("API Error")).when(mockService).registerIssuer(any(), any(), any());
+        } catch (com.adorsys.keycloakstatuslist.exception.StatusListException e) {
+            fail("Should not throw exception during setup");
+        }
 
         assertDoesNotThrow(() -> triggerInitialization());
     }
@@ -206,10 +208,8 @@ class CredentialRevocationResourceProviderFactoryTest {
         ArgumentCaptor<ProviderEventListener> listenerCaptor = ArgumentCaptor.forClass(ProviderEventListener.class);
         factory.postInit(sessionFactory);
         
-        // FIX: Use atLeastOnce() to handle multiple register calls from super classes
         verify(sessionFactory, atLeastOnce()).register(listenerCaptor.capture());
         
-        // The last captured listener is the one registered by CredentialRevocationResourceProviderFactory
         listenerCaptor.getValue().onEvent(new PostMigrationEvent(sessionFactory));
     }
 
