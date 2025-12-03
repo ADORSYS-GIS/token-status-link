@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.jboss.logging.Logger;
+import org.keycloak.jose.jwk.JWK; // Import added
 
 import java.io.IOException;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
@@ -90,15 +91,15 @@ public class StatusListService {
         }
     }
 
-
-    public void registerIssuer(String issuerId, Object publicKey, String algorithm) throws StatusListException {
+    // CHANGED: Accepted type is now JWK, not Object
+    public void registerIssuer(String issuerId, JWK publicKey, String algorithm) throws StatusListException {
         String requestId = UUID.randomUUID().toString();
         logger.info("Request ID: " + requestId + ", Registering issuer: " + issuerId + " with server: " + serverUrl);
 
         // Create a simple record with just the required fields for issuer registration
         TokenStatusRecord issuerRecord = new TokenStatusRecord();
         issuerRecord.setIssuer(issuerId);
-        issuerRecord.setPublicKey(publicKey);
+        issuerRecord.setPublicKey(publicKey); // Now matches the TokenStatusRecord signature
         issuerRecord.setAlg(algorithm);
 
         try {

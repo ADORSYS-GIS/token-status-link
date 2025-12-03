@@ -4,17 +4,14 @@ import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.service.CryptoIdentityService;
 import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
+import com.adorsys.keycloakstatuslist.service.RevocationRecordService; // Import the service
+import com.adorsys.keycloakstatuslist.service.RevocationRecordService.KeyData;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
 import org.apache.hc.client5.http.classic.methods.HttpGet;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.core5.http.io.entity.EntityUtils;
 import org.jboss.logging.Logger;
-import org.keycloak.crypto.Algorithm;
-import org.keycloak.crypto.KeyUse;
-import org.keycloak.crypto.KeyWrapper;
 import org.keycloak.events.EventBuilder;
-import org.keycloak.jose.jwk.JWKBuilder;
-import org.keycloak.models.KeyManager;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.models.RealmModel;
@@ -193,6 +190,15 @@ public class CredentialRevocationResourceProviderFactory extends OIDCLoginProtoc
                 return false;
             }
 
+            // CALLING SHARED LOGIC FROM SERVICE
+            KeyData keyData;
+            try {
+                keyData = RevocationRecordService.getRealmKeyData(session, realm);
+            } catch (StatusListException e) {
+                logger.warn("Could not retrieve valid signing key for realm: " + realm.getName() + ". " + e.getMessage());
+                return false;
+            }
+
             CryptoIdentityService cryptoIdentityService = new CryptoIdentityService(session);
             StatusListService statusListService = new StatusListService(
                     config.getServerUrl(),
@@ -200,34 +206,8 @@ public class CredentialRevocationResourceProviderFactory extends OIDCLoginProtoc
                     CustomHttpClient.getHttpClient()
             );
 
-            // Get realm's public key and algorithm
-            KeyManager keyManager = session.keys();
-            KeyWrapper activeKey = keyManager.getActiveKey(realm, KeyUse.SIG, Algorithm.RS256);
-            if (activeKey == null) {
-                logger.warn("No active key found for realm: " + realm.getName());
-                return false;
-            }
-
-            // Convert public key to JWK format
-            Object publicKey = null;
-            if (activeKey.getPublicKey() != null) {
-                try {
-                    publicKey = JWKBuilder.create().kid(activeKey.getKid()).algorithm(activeKey.getAlgorithmOrDefault()).rsa(activeKey.getPublicKey());
-                } catch (Exception e) {
-                    logger.error("Failed to convert public key to JWK format for realm: " + realm.getName(), e);
-                    return false;
-                }
-            }
-
-            String algorithm = activeKey.getAlgorithm() != null ? activeKey.getAlgorithm() : "RS256";
-
-            if (publicKey == null) {
-                logger.warn("No public key available for realm: " + realm.getName());
-                return false;
-            }
-
-            // Register the realm as an issuer
-            statusListService.registerIssuer(config.getTokenIssuerId(), publicKey, algorithm);
+            // Register the realm as an issuer using the retrieved JWK
+            statusListService.registerIssuer(config.getTokenIssuerId(), keyData.jwk(), keyData.algorithm());
             registeredRealms.add(realm.getName());
             logger.info("Successfully registered realm as issuer: " + realm.getName());
             return true;

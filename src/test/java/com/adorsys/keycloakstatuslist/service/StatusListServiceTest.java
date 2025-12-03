@@ -7,6 +7,7 @@ import com.adorsys.keycloakstatuslist.model.TokenStatusRecord;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.keycloak.jose.jwk.JWK; // Import added
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -30,11 +31,13 @@ class StatusListServiceTest {
 
     private static final String SERVER_URL = "https://status-list-server.adorsys.com";
     private static final String ISSUER_ID = "test-issuer";
-    private static final String PUBLIC_KEY = "test-public-key";
     private static final String ALGORITHM = "RS256";
 
     @Mock
     private CloseableHttpClient httpClient;
+    
+    @Mock
+    private JWK mockJwk;
 
     private StatusListService statusListService;
 
@@ -44,26 +47,16 @@ class StatusListServiceTest {
     }
 
     private void setupResponse(int statusCode) throws IOException {
-        // Mock the execute method to call the ResponseHandler with a mock response
-        doAnswer(invocation -> {
-            HttpClientResponseHandler<Object> handler = invocation.getArgument(1);
-
-            ClassicHttpResponse response = new BasicClassicHttpResponse(statusCode);
-            response.setEntity(new StringEntity("{}")); // Set a dummy entity
-
-            // Execute the handler with the mock response
-            return handler.handleResponse(response);
-        }).when(httpClient).execute(any(HttpPost.class), any(HttpClientResponseHandler.class));
+        setupResponse(statusCode, "{}");
     }
+    
     private void setupResponse(int statusCode, String responseBody) throws IOException {
-        // Mock the execute method to call the ResponseHandler with a mock response
         doAnswer(invocation -> {
             HttpClientResponseHandler<Object> handler = invocation.getArgument(1);
 
             ClassicHttpResponse response = new BasicClassicHttpResponse(statusCode);
-            response.setEntity(new StringEntity(responseBody)); // Set the specified entity
+            response.setEntity(new StringEntity(responseBody));
 
-            // Execute the handler with the mock response
             return handler.handleResponse(response);
         }).when(httpClient).execute(any(HttpPost.class), any(HttpClientResponseHandler.class));
     }
@@ -84,7 +77,8 @@ class StatusListServiceTest {
     void successScenarios() throws IOException {
         // Test register issuer success
         setupSuccessfulResponse();
-        assertDoesNotThrow(() -> statusListService.registerIssuer(ISSUER_ID, PUBLIC_KEY, ALGORITHM));
+        // Updated to pass JWK object
+        assertDoesNotThrow(() -> statusListService.registerIssuer(ISSUER_ID, mockJwk, ALGORITHM));
         verifyHttpClientCall(1);
 
         // Test publish record success
@@ -130,7 +124,7 @@ class StatusListServiceTest {
         setupResponseWithStatus(409);
 
         // Act & Assert
-        assertDoesNotThrow(() -> statusListService.registerIssuer(ISSUER_ID, PUBLIC_KEY, ALGORITHM));
+        assertDoesNotThrow(() -> statusListService.registerIssuer(ISSUER_ID, mockJwk, ALGORITHM));
         verifyHttpClientCall(1);
     }
 
@@ -141,7 +135,7 @@ class StatusListServiceTest {
 
         // Act & Assert
         StatusListServerException exception = assertThrows(StatusListServerException.class,
-                () -> statusListService.registerIssuer(ISSUER_ID, PUBLIC_KEY, ALGORITHM));
+                () -> statusListService.registerIssuer(ISSUER_ID, mockJwk, ALGORITHM));
         assertEquals(500, exception.getStatusCode());
         verifyHttpClientCall(1);
     }
@@ -268,7 +262,7 @@ class StatusListServiceTest {
         record.setCredentialId(UUID.randomUUID().toString());
         record.setIssuer(ISSUER_ID);
         record.setIssuerId(ISSUER_ID);
-        record.setPublicKey(PUBLIC_KEY);
+        record.setPublicKey(mockJwk); // Set mock JWK object
         record.setAlg(ALGORITHM);
         record.setStatus(TokenStatus.VALID);
         record.setIssuedAt(Instant.now());
