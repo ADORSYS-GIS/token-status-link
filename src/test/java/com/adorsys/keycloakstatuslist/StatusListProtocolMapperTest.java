@@ -150,7 +150,6 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         doAnswer(invocation -> {
             StatusListMappingEntity entity = invocation.getArgument(0);
             entity.setIdx(simulatedIndex); // Simulate sequence generation
-            entity.setId(UUID.randomUUID().toString()); // Simulate UUID generation
             return null;
         }).when(entityManager).persist(any(StatusListMappingEntity.class));
 
