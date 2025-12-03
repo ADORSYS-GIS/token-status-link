@@ -6,13 +6,9 @@
 
     <changeSet id="create-status-list-mapping" author="adorsys">
         <createTable tableName="status_list_mapping">
-            <column name="id" type="varchar(36)">
+            <column name="idx" type="bigint">
                 <constraints nullable="false" primaryKey="true"
                              primaryKeyName="pk_status_list_mapping" />
-            </column>
-
-            <column name="idx" type="bigint">
-                <constraints nullable="false" unique="true" />
             </column>
 
             <column name="status_list_id" type="varchar(255)">
