@@ -11,7 +11,6 @@ import org.keycloak.sdjwt.vp.SdJwtVP;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import org.keycloak.jose.jws.JWSHeader; // Correct import for Keycloak's JWSHeader
 import org.keycloak.sdjwt.IssuerSignedJWT;
 import org.keycloak.sdjwt.vp.KeyBindingJWT;
 
@@ -172,12 +171,10 @@ class SdJwtVPValidationServiceTest {
 
         IssuerSignedJWT issuerSignedJwtMock = mock(IssuerSignedJWT.class);
         JsonNode issuerSignedPayloadMock = mock(JsonNode.class);
-        JWSHeader issuerSignedHeaderMock = mock(JWSHeader.class);
         JsonNode issNodeMock = mock(JsonNode.class);
 
         when(sdJwtVP.getIssuerSignedJWT()).thenReturn(issuerSignedJwtMock);
         when(issuerSignedJwtMock.getPayload()).thenReturn(issuerSignedPayloadMock);
-        when(issuerSignedJwtMock.getHeader()).thenReturn(issuerSignedHeaderMock);
         when(issuerSignedPayloadMock.get("iss")).thenReturn(issNodeMock);
         when(issNodeMock.asText()).thenReturn(issuer);
         when(jwksService.getSignatureVerifierContexts(any(SdJwtVP.class), eq(issuer), eq(requestId))).thenReturn(Collections.singletonList(verifierContext));

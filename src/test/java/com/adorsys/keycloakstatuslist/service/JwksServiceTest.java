@@ -92,8 +92,6 @@ class JwksServiceTest {
     void testGetSignatureVerifierContexts_WithOneKey() throws Exception {
         KeyWrapper key = mock(KeyWrapper.class);
         when(key.getUse()).thenReturn(KeyUse.SIG);
-        when(key.getKid()).thenReturn("kid1");
-        when(key.getAlgorithm()).thenReturn("RS256");
         when(key.getAlgorithmOrDefault()).thenReturn("RS256");
 
         when(keyManager.getKeysStream(realm)).thenReturn(Stream.of(key));

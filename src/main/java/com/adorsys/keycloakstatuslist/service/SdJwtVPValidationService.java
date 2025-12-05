@@ -50,21 +50,15 @@ public class SdJwtVPValidationService {
     public SdJwtVP parseAndValidateSdJwtVP(String sdJwtVpString, String requestId) 
             throws StatusListException {
         
-        logger.debugf("Parsing SD-JWT VP token using Keycloak's built-in SdJwtVP class. RequestId: %s", requestId);
-        
         try {
             if (sdJwtVpString == null || sdJwtVpString.trim().isEmpty()) {
                 throw new StatusListException("SD-JWT VP token is empty or null");
             }
             
-            logger.debugf("SD-JWT VP token length: %d characters. RequestId: %s", sdJwtVpString.length(), requestId);
-            
             SdJwtVP sdJwtVP = SdJwtVP.of(sdJwtVpString);
             
-            logTokenStructure(sdJwtVP, requestId);
             verifySdJwtVPSignature(sdJwtVP, requestId);
             
-            logger.debugf("SD-JWT VP token structure and signature validated successfully. RequestId: %s", requestId);
             return sdJwtVP;
             
         } catch (IllegalArgumentException e) {
@@ -82,18 +76,12 @@ public class SdJwtVPValidationService {
      */
     public void verifySdJwtVPSignature(SdJwtVP sdJwtVP, String requestId) throws StatusListException {
         try {
-            logger.debugf("Verifying SD-JWT VP token issuer signature. RequestId: %s", requestId);
             
             String issuer = extractIssuerFromToken(sdJwtVP);
             if (issuer == null || issuer.trim().isEmpty()) {
                 logger.errorf("No issuer found in SD-JWT VP token. RequestId: %s", requestId);
                 throw new StatusListException("Token missing required issuer information for verification");
             }
-            
-            String keyId = extractKeyIdFromToken(sdJwtVP);
-            String tokenAlgorithm = extractAlgorithmFromToken(sdJwtVP);
-            logger.infof("Extracted issuer: %s, keyId: %s, algorithm: %s. RequestId: %s", 
-                         issuer, keyId, tokenAlgorithm, requestId);
             
             // Use the new approach with internal key management
             List<SignatureVerifierContext> verifyingKeys = jwksService.getSignatureVerifierContexts(sdJwtVP, issuer, requestId);
@@ -102,12 +90,6 @@ public class SdJwtVPValidationService {
                 logger.errorf("No valid issuer signature verifier contexts created. RequestId: %s", requestId);
                 throw new StatusListException("No public keys available for issuer: " + issuer);
             }
-            
-            logger.infof("Created %d issuer signature verifier contexts for issuer: %s. RequestId: %s", 
-                        verifyingKeys.size(), issuer, requestId);
-            
-            logger.infof("Attempting issuer signature verification with %d verifier contexts. RequestId: %s", 
-                         verifyingKeys.size(), requestId);
             
             sdJwtVP.verify(
                 verifyingKeys,
@@ -139,8 +121,6 @@ public class SdJwtVPValidationService {
     public void verifyCredentialOwnership(SdJwtVP sdJwtVP, String credentialId, String requestId)
             throws StatusListException {
 
-        logger.debugf("Verifying credential ownership with holder signature verification. RequestId: %s, CredentialId: %s",
-                     requestId, credentialId);
 
         String vpCredentialId = extractCredentialIdFromSdJwtVP(sdJwtVP);
 
@@ -167,7 +147,6 @@ public class SdJwtVPValidationService {
      */
     public void verifyHolderSignatureAndKeyBinding(SdJwtVP sdJwtVP, String requestId) throws StatusListException {
         try {
-            logger.debugf("Verifying holder signature and key binding. RequestId: %s", requestId);
 
             String issuer = extractIssuerFromToken(sdJwtVP);
             if (issuer == null || issuer.trim().isEmpty()) {
@@ -181,7 +160,6 @@ public class SdJwtVPValidationService {
                 logger.errorf("No valid issuer signature verifier contexts created for holder verification. RequestId: %s", requestId);
                 throw new StatusListException("No public keys available for issuer: " + issuer);
             }
-            logger.infof("Attempting holder signature verification with %d issuer verifier contexts and key binding required. RequestId: %s", verifyingKeys.size(), requestId);
 
             sdJwtVP.verify(
                 verifyingKeys,
@@ -382,13 +360,8 @@ public class SdJwtVPValidationService {
                     return null;
                 }
                 
-                String keyType = jwkNode.get("kty").asText();
-                logger.debugf("Extracting holder signing key of type: %s", keyType);
-                
                 PublicKey publicKey = extractPublicKeyFromJwk(jwkNode);
-                if (publicKey != null) {
-                    logger.debugf("Successfully extracted holder signing key: %s", publicKey.getAlgorithm());
-                } else {
+                if (publicKey == null) {
                     logger.warn("Failed to extract valid public key from JWK");
                 }
                 
@@ -412,7 +385,6 @@ public class SdJwtVPValidationService {
             }
 
             String keyType = jwkNode.get("kty").asText();
-            logger.debugf("Extracting public key of type: %s", keyType);
 
             if (keyType.equals("RSA")) {
                 if (!jwkNode.has("n") || !jwkNode.has("e")) {
@@ -441,28 +413,6 @@ public class SdJwtVPValidationService {
         }
     }
 
-    private void logTokenStructure(SdJwtVP sdJwtVP, String requestId) {
-        try {
-            var issuerSignedJWT = sdJwtVP.getIssuerSignedJWT();
-            if (issuerSignedJWT != null) {
-                var header = issuerSignedJWT.getHeader();
-                var payload = issuerSignedJWT.getPayload();
-                
-                logger.debugf("Token structure - Header: %s, Payload type: %s. RequestId: %s",
-                             header != null ? "present" : "null",
-                             payload != null ? payload.getClass().getSimpleName() : "null",
-                             requestId);
-                
-                if (header != null) {
-                    String alg = header.getAlgorithm() != null ? header.getAlgorithm().name() : "null";
-                    String kid = header.getKeyId() != null ? header.getKeyId() : "null";
-                    logger.debugf("Token header - Algorithm: %s, Key ID: %s. RequestId: %s", alg, kid, requestId);
-                }
-            }
-        } catch (Exception e) {
-            logger.debugf("Failed to log token structure. RequestId: %s, Error: %s", requestId, e.getMessage());
-        }
-    }
     
     private String findCredentialIdRecursively(JsonNode node) {
         if (node == null) return null;
@@ -524,13 +474,6 @@ public class SdJwtVPValidationService {
     /**
      * Creates key binding JWT verification options that enforce presenter verification.
      * This is critical for ensuring the presenter is actually the credential holder.
-     * 
-     * NEW APPROACH: Validates the key binding JWT based on:
-     * - Signature validity (proves holder has the private key)
-     * - Audience matches the revocation endpoint
-     * - Expiration is within allowed time window (prevents replay attacks)
-     * - Credential ID matches what's being revoked
-     * 
      * The key binding JWT signature itself provides proof of possession.
      */
     private KeyBindingJwtVerificationOpts getKeyBindingJwtVerificationOpts(SdJwtVP sdJwtVP, String requestId, String expectedAudience) throws StatusListException {
@@ -606,7 +549,6 @@ public class SdJwtVPValidationService {
                         requestId, nonce != null ? nonce : "N/A", aud, exp != null ? String.valueOf(exp) : "N/A", credentialId);
 
             // Build verification options
-            // Note: Keycloak library requires nonce for replay protection, but we don't validate it from database
             // We validate via signature, audience, and expiration instead
             return KeyBindingJwtVerificationOpts.builder()
                     .withKeyBindingRequired(true)
@@ -629,7 +571,7 @@ public class SdJwtVPValidationService {
                     .withKeyBindingRequired(true)
                     .withAllowedMaxAge(300)
                     .withValidateExpirationClaim(true)
-                    .withValidateNotBeforeClaim(false) // Disable nbf validation for Key Binding JWT
+                    .withValidateNotBeforeClaim(false)
                     .build();
         }
     }
@@ -648,7 +590,6 @@ public class SdJwtVPValidationService {
             }
             return null;
         } catch (Exception e) {
-            logger.debugf("Failed to extract field %s from JWT payload", fieldName, e);
             return null;
         }
     }
