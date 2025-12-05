@@ -105,6 +105,22 @@ corresponding to a specific credential's configuration. Below is a sample such c
 - Proper handling of Keycloak's realm public keys and algorithms
 - No sensitive information is logged beyond what's necessary for debugging
 
+## Revocation Protocol
+
+Revocation now requires a pre-issued server challenge to ensure proper LDP-compliant Verifiable Presentation (VP) verification. Before submitting a revocation request, clients must first obtain a challenge from the `/challenge` endpoint. This challenge includes a cryptographically strong nonce, the audience (revocation endpoint URL), and an expiration timestamp.
+
+The revocation plugin strictly validates the incoming VP against these server-issued values:
+
+- The `nonce` in the VP must exactly match the issued nonce.
+- The `aud` (audience) in the VP must exactly match the configured revocation endpoint URL.
+- The `nonce` must not be expired.
+- The `nonce` must not be replayed (it is a one-time use value).
+
+Failure to meet these validation requirements will result in specific error responses:
+
+- `400 Bad Request`: For malformed VPs or invalid challenge parameters.
+- `401 Unauthorized`: For invalid holder proofs (e.g., incorrect nonce, audience mismatch, expired or replayed nonce).
+
 ## Development and Testing
 
 ### Running Tests

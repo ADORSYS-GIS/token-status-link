@@ -13,17 +13,15 @@ import jakarta.ws.rs.Path;
 public class CustomOIDCLoginProtocolService extends OIDCLoginProtocolService {
 
     private final KeycloakSession session;
-    private final EventBuilder event;
 
     public CustomOIDCLoginProtocolService(KeycloakSession session, EventBuilder event) {
         super(session, event);
         this.session = session;
-        this.event = event;
     }
 
     @Override
     @Path("revoke")
     public Object revoke() {
-        return new CredentialRevocationResource(this.session, this.event);
+        return new CredentialRevocationResource(this.session);
     }
 }

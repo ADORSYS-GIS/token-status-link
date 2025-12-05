@@ -17,7 +17,9 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.keycloak.sdjwt.vp.SdJwtVP;
 
-import java.security.PublicKey;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.security.interfaces.RSAPublicKey;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -45,8 +47,7 @@ class CredentialRevocationServiceTest {
     @Mock
     private KeyWrapper keyWrapper;
     
-    @Mock
-    private PublicKey publicKey;
+    private RSAPublicKey publicKey;
     
     @Mock
     private StatusListService statusListService;
@@ -57,6 +58,11 @@ class CredentialRevocationServiceTest {
     @Mock
     private SdJwtVPValidationService sdJwtVPValidationService;
     
+    @Mock
+    private RevocationRecordService revocationRecordService;
+    
+    @Mock
+    private RequestValidationService requestValidationService;
     
     @Mock
     private TokenStatusRecord mockRevocationRecord;
@@ -64,7 +70,13 @@ class CredentialRevocationServiceTest {
     private CredentialRevocationService service;
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws Exception {
+        // Generate real RSA key pair
+        KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
+        keyGen.initialize(2048);
+        KeyPair keyPair = keyGen.generateKeyPair();
+        publicKey = (RSAPublicKey) keyPair.getPublic();
+
         // Setup basic session mocks
         lenient().when(session.getContext()).thenReturn(context);
         lenient().when(context.getRealm()).thenReturn(realm);
@@ -99,6 +111,7 @@ class CredentialRevocationServiceTest {
             java.lang.reflect.Field statusListField = CredentialRevocationService.class.getDeclaredField("statusListService");
             statusListField.setAccessible(true);
             statusListField.set(service, statusListService);
+
             
         } catch (Exception e) {
             fail("Failed to inject mocked dependencies: " + e.getMessage());

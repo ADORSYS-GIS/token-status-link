@@ -109,8 +109,6 @@ public class JwksService {
                             SignatureProvider signatureProvider = session
                                     .getProvider(SignatureProvider.class, key.getAlgorithmOrDefault());
                             SignatureVerifierContext verifier = signatureProvider.verifier(key);
-                            logger.debugf("Created verifier for key: %s, algorithm: %s. RequestId: %s", 
-                                        key.getKid(), key.getAlgorithm(), requestId);
                             return verifier;
                         } catch (VerificationException e) {
                             logger.warnf("Failed to create verifier for key %s. RequestId: %s, Error: %s", 
