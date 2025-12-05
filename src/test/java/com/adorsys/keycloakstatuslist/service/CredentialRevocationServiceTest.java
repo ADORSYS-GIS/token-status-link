@@ -17,7 +17,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.keycloak.sdjwt.vp.SdJwtVP;
 
-import java.security.PublicKey;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.interfaces.RSAPublicKey;
@@ -64,10 +63,6 @@ class CredentialRevocationServiceTest {
     
     @Mock
     private RequestValidationService requestValidationService;
-
-    @Mock
-    private NonceService nonceService; // Add mock for NonceService
-
     
     @Mock
     private TokenStatusRecord mockRevocationRecord;
@@ -98,7 +93,7 @@ class CredentialRevocationServiceTest {
         lenient().when(keyWrapper.getAlgorithm()).thenReturn("RS256");
         
         // Create service with mocked dependencies
-        service = new CredentialRevocationService(session, nonceService); // Pass nonceService to constructor
+        service = new CredentialRevocationService(session);
         
         // Inject mocked dependencies using reflection
         injectMockedDependencies();
@@ -261,7 +256,7 @@ class CredentialRevocationServiceTest {
     @Test
     void testRevokeCredential_ServiceInitialization() {
         // Act & Assert
-        CredentialRevocationService newService = new CredentialRevocationService(session, nonceService);
+        CredentialRevocationService newService = new CredentialRevocationService(session);
         assertNotNull(newService);
     }
 

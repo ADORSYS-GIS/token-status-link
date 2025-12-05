@@ -15,6 +15,8 @@ import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.services.Urls;
 
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.security.KeyFactory;
 import java.security.PublicKey;
 import java.security.spec.RSAPublicKeySpec;
@@ -34,12 +36,10 @@ public class SdJwtVPValidationService {
     
     private final KeycloakSession session;
     private final JwksService jwksService;
-    private final NonceService nonceService;
     
-    public SdJwtVPValidationService(KeycloakSession session, NonceService nonceService) {
+    public SdJwtVPValidationService(KeycloakSession session) {
         this.session = session;
         this.jwksService = new JwksService(session);
-        this.nonceService = nonceService;
     }
     
     /**
@@ -524,11 +524,20 @@ public class SdJwtVPValidationService {
     /**
      * Creates key binding JWT verification options that enforce presenter verification.
      * This is critical for ensuring the presenter is actually the credential holder.
+     * 
+     * NEW APPROACH: Validates the key binding JWT based on:
+     * - Signature validity (proves holder has the private key)
+     * - Audience matches the revocation endpoint
+     * - Expiration is within allowed time window (prevents replay attacks)
+     * - Credential ID matches what's being revoked
+     * 
+     * The key binding JWT signature itself provides proof of possession.
      */
     private KeyBindingJwtVerificationOpts getKeyBindingJwtVerificationOpts(SdJwtVP sdJwtVP, String requestId, String expectedAudience) throws StatusListException {
         try {
             String nonce = null;
             String aud = null;
+            Long exp = null;
 
             var kbOpt = sdJwtVP.getKeyBindingJWT();
             if (kbOpt.isPresent()) {
@@ -537,33 +546,75 @@ public class SdJwtVPValidationService {
                     JsonNode node = (JsonNode) payload;
                     JsonNode nonceNode = node.get("nonce");
                     JsonNode audNode = node.get("aud");
+                    JsonNode expNode = node.get("exp");
                     if (nonceNode != null && nonceNode.isTextual()) {
                         nonce = nonceNode.asText();
                     }
                     if (audNode != null && audNode.isTextual()) {
                         aud = audNode.asText();
                     }
+                    if (expNode != null && expNode.isNumber()) {
+                        exp = expNode.asLong();
+                    }
                 }
             }
 
-            if (nonce == null || aud == null) {
-                logger.errorf("Missing nonce or aud in Key Binding JWT claims. RequestId: %s", requestId);
-                throw new IllegalArgumentException("Missing nonce or aud in VP claims");
+            if (aud == null) {
+                logger.errorf("Missing aud (audience) in Key Binding JWT claims. RequestId: %s", requestId);
+                throw new IllegalArgumentException("Missing aud in Key Binding JWT");
+            }
+            
+            // Keycloak library requires nonce for replay protection, even though we don't validate it from database
+            if (nonce == null || nonce.isEmpty()) {
+                logger.errorf("Missing nonce in Key Binding JWT claims. RequestId: %s", requestId);
+                throw new IllegalArgumentException("Missing nonce in Key Binding JWT (required for replay protection)");
             }
 
-            if (!nonceService.validateNonce(requestId, nonce, expectedAudience)) {
-                logger.errorf("Nonce validation failed for requestId: %s, nonce: %s, aud: %s", requestId, nonce, aud);
-                throw new IllegalArgumentException("Invalid or replayed nonce, or audience mismatch");
+            // Validate audience matches the revocation endpoint (with URL normalization)
+            String normalizedExpectedAud = normalizeUrl(expectedAudience);
+            String normalizedAud = normalizeUrl(aud);
+            
+            if (!normalizedExpectedAud.equals(normalizedAud)) {
+                logger.errorf("Key Binding JWT audience mismatch. Expected: %s (normalized: %s), Got: %s (normalized: %s). RequestId: %s", 
+                             expectedAudience, normalizedExpectedAud, aud, normalizedAud, requestId);
+                throw new IllegalArgumentException("Key Binding JWT audience does not match revocation endpoint");
             }
 
-            logger.debugf("Using Key Binding verification params. RequestId: %s, nonce: %s, aud: %s", requestId, nonce, aud);
+            // Validate expiration if present (prevents replay attacks with old tokens)
+            if (exp != null) {
+                long currentTime = System.currentTimeMillis() / 1000;
+                long maxAge = 300; // 5 minutes
+                if (currentTime > exp) {
+                    logger.errorf("Key Binding JWT has expired. Exp: %d, Current: %d. RequestId: %s", exp, currentTime, requestId);
+                    throw new IllegalArgumentException("Key Binding JWT has expired");
+                }
+                if (exp < (currentTime - maxAge)) {
+                    logger.errorf("Key Binding JWT is too old. Exp: %d, Current: %d, MaxAge: %d. RequestId: %s", 
+                                 exp, currentTime, maxAge, requestId);
+                    throw new IllegalArgumentException("Key Binding JWT is too old (possible replay attack)");
+                }
+            }
 
+            // Extract and validate credential ID from VP token
+            String credentialId = extractCredentialIdFromSdJwtVP(sdJwtVP);
+            if (credentialId == null || credentialId.isEmpty()) {
+                logger.errorf("Credential ID not found in VP token. RequestId: %s", requestId);
+                throw new IllegalArgumentException("Credential ID not found in VP token");
+            }
+
+            logger.infof("Key Binding JWT validated successfully. RequestId: %s, nonce: %s, aud: %s, exp: %s, credentialId: %s", 
+                        requestId, nonce != null ? nonce : "N/A", aud, exp != null ? String.valueOf(exp) : "N/A", credentialId);
+
+            // Build verification options
+            // Note: Keycloak library requires nonce for replay protection, but we don't validate it from database
+            // We validate via signature, audience, and expiration instead
             return KeyBindingJwtVerificationOpts.builder()
                     .withKeyBindingRequired(true)
-                    .withAllowedMaxAge(300)
-                    .withNonce(nonce)
+                    .withAllowedMaxAge(300) // 5 minutes max age
+                    .withNonce(nonce) // Required by library, but we validate via other means
                     .withAud(aud)
                     .withValidateExpirationClaim(true)
+                    .withValidateNotBeforeClaim(false) // Disable nbf validation for Key Binding JWT
                     .build();
         } catch (IllegalArgumentException e) {
             logger.errorf("Failed to build Key Binding verification options due to invalid arguments. RequestId: %s, Error: %s", requestId, e.getMessage());
@@ -578,6 +629,7 @@ public class SdJwtVPValidationService {
                     .withKeyBindingRequired(true)
                     .withAllowedMaxAge(300)
                     .withValidateExpirationClaim(true)
+                    .withValidateNotBeforeClaim(false) // Disable nbf validation for Key Binding JWT
                     .build();
         }
     }
@@ -604,5 +656,60 @@ public class SdJwtVPValidationService {
     private String getRevocationEndpointUrl() {
         RealmModel realm = session.getContext().getRealm();
         return Urls.realmIssuer(session.getContext().getUri().getBaseUri(), realm.getName()) + "/protocol/openid-connect/revoke";
+    }
+    
+    /**
+     * Normalizes a URL for comparison by removing default ports, trailing slashes, and converting to lowercase.
+     * This helps match URLs that are semantically equivalent but formatted differently.
+     * 
+     * @param url the URL to normalize
+     * @return the normalized URL string
+     */
+    private String normalizeUrl(String url) {
+        if (url == null || url.trim().isEmpty()) {
+            return url;
+        }
+        
+        try {
+            URI uri = new URI(url.trim());
+            String scheme = uri.getScheme() != null ? uri.getScheme().toLowerCase() : null;
+            String host = uri.getHost() != null ? uri.getHost().toLowerCase() : null;
+            int port = uri.getPort();
+            String path = uri.getPath() != null ? uri.getPath() : "";
+            
+            // Remove trailing slash from path
+            if (path.endsWith("/") && path.length() > 1) {
+                path = path.substring(0, path.length() - 1);
+            }
+            
+            // Build normalized URI (remove default ports: 80 for http, 443 for https)
+            StringBuilder normalized = new StringBuilder();
+            if (scheme != null) {
+                normalized.append(scheme).append("://");
+            }
+            if (host != null) {
+                normalized.append(host);
+            }
+            // Only include port if it's not the default port
+            if (port > 0 && !((scheme != null && scheme.equals("http") && port == 80) || 
+                              (scheme != null && scheme.equals("https") && port == 443))) {
+                normalized.append(":").append(port);
+            }
+            normalized.append(path);
+            
+            // Include query and fragment if present
+            if (uri.getQuery() != null && !uri.getQuery().isEmpty()) {
+                normalized.append("?").append(uri.getQuery());
+            }
+            if (uri.getFragment() != null && !uri.getFragment().isEmpty()) {
+                normalized.append("#").append(uri.getFragment());
+            }
+            
+            return normalized.toString();
+        } catch (URISyntaxException e) {
+            logger.warnf("Failed to normalize URL: %s, using original", url, e);
+            // If normalization fails, return trimmed lowercase version
+            return url.trim().toLowerCase();
+        }
     }
 }

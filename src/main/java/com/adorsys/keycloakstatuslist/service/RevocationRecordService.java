@@ -18,8 +18,6 @@ import java.security.PublicKey;
 import java.security.interfaces.ECPublicKey;
 import java.security.interfaces.RSAPublicKey;
 import java.time.Instant;
-import java.util.Base64;
-import java.security.PublicKey;
 
 public class RevocationRecordService {
     

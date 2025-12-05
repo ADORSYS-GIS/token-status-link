@@ -4,14 +4,8 @@ import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationResponse;
-import com.adorsys.keycloakstatuslist.model.NonceChallenge;
 import com.adorsys.keycloakstatuslist.service.CredentialRevocationService;
-import com.adorsys.keycloakstatuslist.service.NonceService;
-import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
-import jakarta.ws.rs.Path;
-import jakarta.ws.rs.Produces;
-import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.MultivaluedMap;
@@ -19,7 +13,6 @@ import jakarta.ws.rs.core.Response;
 import org.jboss.logging.Logger;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
-import org.keycloak.services.Urls;
 import org.keycloak.services.resource.RealmResourceProvider;
 
 public class CredentialRevocationResource implements RealmResourceProvider {
@@ -29,17 +22,14 @@ public class CredentialRevocationResource implements RealmResourceProvider {
 
     private final KeycloakSession session;
     protected CredentialRevocationService revocationService;
-    protected NonceService nonceService;
-    @Context protected HttpHeaders headers;
 
     /**
      * Constructor for Keycloak resource instantiation.
      * Keycloak will inject the session.
      */
-    public CredentialRevocationResource(KeycloakSession session, NonceService nonceService) {
+    public CredentialRevocationResource(KeycloakSession session) {
         this.session = session;
-        this.nonceService = nonceService;
-        this.revocationService = new CredentialRevocationService(session, nonceService);
+        this.revocationService = new CredentialRevocationService(session);
     }
 
     @Override
@@ -50,32 +40,6 @@ public class CredentialRevocationResource implements RealmResourceProvider {
     @Override
     public void close() {
         // No specific resources to close for this provider
-    }
-
-    @GET
-    @Path("challenge")
-    @Produces(MediaType.APPLICATION_JSON)
-    public Response getChallenge() {
-        if (!isServiceEnabled()) {
-            logger.debug("Credential revocation service is disabled.");
-            return createErrorResponse(Response.Status.SERVICE_UNAVAILABLE, "Credential revocation service is disabled");
-        }
-
-        if (!isServiceConfigured()) {
-            logger.warn("Credential revocation service is not configured.");
-            return createErrorResponse(Response.Status.INTERNAL_SERVER_ERROR, "Credential revocation service is not configured");
-        }
-
-        String requestId = session.getContext().getHttpRequest().getHttpHeaders().getHeaderString("X-Request-ID");
-        if (requestId == null || requestId.trim().isEmpty()) {
-            requestId = session.getContext().getConnection().getRemoteAddr() + System.currentTimeMillis(); // Fallback
-        }
-
-        RealmModel realm = session.getContext().getRealm();
-        String revocationEndpoint = Urls.realmIssuer(session.getContext().getUri().getBaseUri(), realm.getName()) + "/protocol/openid-connect/revoke";
-
-        NonceChallenge challenge = nonceService.generateAndStoreNonce(requestId, revocationEndpoint);
-        return Response.ok(challenge).build();
     }
 
     @POST
@@ -120,10 +84,12 @@ public class CredentialRevocationResource implements RealmResourceProvider {
             request.setCredentialId(credentialId);
             request.setRevocationReason(form.getFirst("reason"));
 
-            getRevocationService().revokeCredential(request, token);
+            CredentialRevocationResponse revocationResponse = getRevocationService().revokeCredential(request, token);
             logger.infof("Successfully revoked credential '%s' via status list.", credentialId);
 
-            return Response.ok().build();
+            return Response.ok(revocationResponse)
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
 
         } catch (StatusListException e) {
             logger.errorf(e, "SD-JWT VP based revocation failed for credentialId: %s due to status list error.", credentialId);
@@ -138,14 +104,11 @@ public class CredentialRevocationResource implements RealmResourceProvider {
     }
 
     /**
-     * Gets the HTTP headers, handling both injected and constructor-provided headers.
+     * Gets the HTTP headers from the Keycloak session's HTTP request.
      * Made protected for testability.
      */
     protected HttpHeaders getHeaders() {
-        if (headers == null) {
-            throw new IllegalStateException("HttpHeaders not properly injected via @Context for standard revocation endpoint");
-        }
-        return headers;
+        return session.getContext().getHttpRequest().getHttpHeaders();
     }
 
     /**

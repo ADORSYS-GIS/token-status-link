@@ -40,9 +40,6 @@ class SdJwtVPValidationServiceTest {
     private JwksService jwksService;
     
     @Mock
-    private NonceService nonceService; // Add mock for NonceService
-    
-    @Mock
     private org.keycloak.models.KeycloakContext context;
     
     @Mock
@@ -58,7 +55,7 @@ class SdJwtVPValidationServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new SdJwtVPValidationService(session, nonceService); // Pass nonceService to constructor
+        service = new SdJwtVPValidationService(session);
         
         try {
             // Inject mocked JwksService
@@ -70,11 +67,6 @@ class SdJwtVPValidationServiceTest {
             java.lang.reflect.Field sessionField = SdJwtVPValidationService.class.getDeclaredField("session");
             sessionField.setAccessible(true);
             sessionField.set(service, session);
-
-            // Inject mocked NonceService
-            java.lang.reflect.Field nonceServiceField = SdJwtVPValidationService.class.getDeclaredField("nonceService");
-            nonceServiceField.setAccessible(true);
-            nonceServiceField.set(service, nonceService);
 
             // Mock KeycloakContext and its dependencies
             lenient().when(session.getContext()).thenReturn(context);
@@ -177,7 +169,6 @@ class SdJwtVPValidationServiceTest {
         // Arrange
         String requestId = "test-request-id";
         String issuer = "test-issuer";
-        String revocationEndpoint = "http://localhost:8080/auth/realms/test-realm/protocol/openid-connect/revoke";
 
         IssuerSignedJWT issuerSignedJwtMock = mock(IssuerSignedJWT.class);
         JsonNode issuerSignedPayloadMock = mock(JsonNode.class);
@@ -204,10 +195,14 @@ class SdJwtVPValidationServiceTest {
         when(nonceNodeMock.asText()).thenReturn("some-nonce");
         when(kbPayloadMock.get("aud")).thenReturn(audNodeMock);
         when(audNodeMock.isTextual()).thenReturn(true);
-        when(audNodeMock.asText()).thenReturn(revocationEndpoint);
+        // Test audience mismatch - set aud to different endpoint (this will cause validation to fail)
+        lenient().when(audNodeMock.asText()).thenReturn("http://different-endpoint.com/revoke");
 
-        // Mock nonceService.validateNonce to return false
-        when(nonceService.validateNonce(eq(requestId), eq("some-nonce"), eq(revocationEndpoint))).thenReturn(false);
+        // Mock credential ID extraction - mock the payload to return a credential ID
+        // Note: This may not be called if validation fails early, so use lenient()
+        JsonNode subNodeMock = mock(JsonNode.class);
+        lenient().when(issuerSignedPayloadMock.get("sub")).thenReturn(subNodeMock);
+        lenient().when(subNodeMock.asText()).thenReturn("test-credential-id");
 
         // Mock KeycloakUriInfo and RealmModel for getRevocationEndpointUrl
         org.keycloak.models.KeycloakUriInfo uriInfoMock = mock(org.keycloak.models.KeycloakUriInfo.class);
@@ -222,7 +217,7 @@ class SdJwtVPValidationServiceTest {
             service.verifySdJwtVPSignature(sdJwtVP, requestId);
         });
 
-        assertTrue(exception.getMessage().contains("SD-JWT VP issuer verification failed: Malformed VP: Invalid or replayed nonce, or audience mismatch"));
+        assertTrue(exception.getMessage().contains("SD-JWT VP issuer verification failed: Malformed VP: Key Binding JWT audience does not match revocation endpoint"));
         assertEquals(401, exception.getHttpStatus());
     }
 
@@ -231,7 +226,6 @@ class SdJwtVPValidationServiceTest {
         // Arrange
         String requestId = "test-request-id";
         String issuer = "test-issuer";
-        String revocationEndpoint = "http://localhost:8080/auth/realms/test-realm/protocol/openid-connect/revoke";
 
         IssuerSignedJWT issuerSignedJwtMock = mock(IssuerSignedJWT.class);
         JsonNode issuerSignedPayloadMock = mock(JsonNode.class);
@@ -256,10 +250,14 @@ class SdJwtVPValidationServiceTest {
         when(nonceNodeMock.asText()).thenReturn("some-nonce");
         when(kbPayloadMock.get("aud")).thenReturn(audNodeMock);
         when(audNodeMock.isTextual()).thenReturn(true);
-        when(audNodeMock.asText()).thenReturn(revocationEndpoint);
+        // Test audience mismatch - set aud to different endpoint (this will cause validation to fail)
+        lenient().when(audNodeMock.asText()).thenReturn("http://different-endpoint.com/revoke");
 
-        // Mock nonceService.validateNonce to return false
-        when(nonceService.validateNonce(eq(requestId), eq("some-nonce"), eq(revocationEndpoint))).thenReturn(false);
+        // Mock credential ID extraction - mock the payload to return a credential ID
+        // Note: This may not be called if validation fails early, so use lenient()
+        JsonNode subNodeMock = mock(JsonNode.class);
+        lenient().when(issuerSignedPayloadMock.get("sub")).thenReturn(subNodeMock);
+        lenient().when(subNodeMock.asText()).thenReturn("test-credential-id");
 
         // Mock KeycloakUriInfo and RealmModel for getRevocationEndpointUrl
         org.keycloak.models.KeycloakUriInfo uriInfoMock = mock(org.keycloak.models.KeycloakUriInfo.class);
@@ -273,7 +271,7 @@ class SdJwtVPValidationServiceTest {
             service.verifyHolderSignatureAndKeyBinding(sdJwtVP, requestId);
         });
 
-        assertTrue(exception.getMessage().contains("Invalid holder proof: Holder signature verification failed: Malformed VP: Invalid or replayed nonce, or audience mismatch"));
+        assertTrue(exception.getMessage().contains("Invalid holder proof: Holder signature verification failed: Malformed VP: Key Binding JWT audience does not match revocation endpoint"));
         assertEquals(401, exception.getHttpStatus());
     }
 }

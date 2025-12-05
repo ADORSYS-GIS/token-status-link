@@ -3,7 +3,6 @@ package com.adorsys.keycloakstatuslist.resource;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest;
 import com.adorsys.keycloakstatuslist.service.CredentialRevocationService;
-import com.adorsys.keycloakstatuslist.service.NonceService; // Import NonceService
 
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MultivaluedHashMap;
@@ -19,7 +18,6 @@ import org.keycloak.models.KeycloakContext;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.models.RealmModel;
-import org.keycloak.models.KeycloakUriInfo; // Import KeycloakUriInfo
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -63,9 +61,6 @@ class CredentialRevocationResourceTest {
     private CredentialRevocationService revocationService;
 
     @Mock
-    private NonceService nonceService; // Add mock for NonceService
-
-    @Mock
     private EventBuilder eventBuilder;
 
     private TestableCredentialRevocationResource resource;
@@ -80,10 +75,9 @@ class CredentialRevocationResourceTest {
         lenient().when(realm.getName()).thenReturn("test-realm");
 
         // Create a testable version of the resource with dependency injection
-        resource = new TestableCredentialRevocationResource(session, nonceService);
+        resource = new TestableCredentialRevocationResource(session);
         resource.setHttpHeaders(headers);
         resource.setRevocationService(revocationService);
-        resource.setNonceService(nonceService);
     }
 
     /**
@@ -93,19 +87,16 @@ class CredentialRevocationResourceTest {
      */
     private static class TestableCredentialRevocationResource extends CredentialRevocationResource {
         private final KeycloakSession session;
+        private HttpHeaders headers;
 
-        public TestableCredentialRevocationResource(KeycloakSession session, NonceService nonceService) {
-            super(session, nonceService);
+        public TestableCredentialRevocationResource(KeycloakSession session) {
+            super(session);
             this.session = session;
         }
 
         // Setters for services to allow injection in tests
         public void setRevocationService(CredentialRevocationService revocationService) {
             this.revocationService = revocationService;
-        }
-
-        public void setNonceService(NonceService nonceService) {
-            this.nonceService = nonceService;
         }
 
         // Setter for HttpHeaders to allow injection in tests
@@ -186,25 +177,6 @@ class CredentialRevocationResourceTest {
         assertNotNull(response);
         assertEquals(200, response.getStatus());
         verify(revocationService).revokeCredential(any(CredentialRevocationRequest.class), eq("test-token"));
-    }
-
-    @Test
-    void testGetChallenge_Success() {
-        when(session.getContext().getHttpRequest()).thenReturn(httpRequest);
-        when(httpRequest.getHttpHeaders()).thenReturn(headers); // Mock getHttpHeaders()
-        when(session.getContext().getConnection()).thenReturn(mock(ClientConnection.class));
-        when(session.getContext().getConnection().getRemoteAddr()).thenReturn("127.0.0.1");
-        when(session.getContext().getUri()).thenReturn(mock(KeycloakUriInfo.class));
-        when(session.getContext().getUri().getBaseUri()).thenReturn(java.net.URI.create("http://localhost:8080/auth/"));
-        when(realm.getName()).thenReturn("test-realm");
-        when(nonceService.generateAndStoreNonce(anyString(), anyString())).thenReturn(new com.adorsys.keycloakstatuslist.model.NonceChallenge("test-nonce", "http://localhost:8080/auth/realms/test-realm/protocol/openid-connect/revoke", 300));
-
-        Response response = resource.getChallenge();
-
-        assertNotNull(response);
-        assertEquals(200, response.getStatus());
-        assertTrue(response.getEntity() instanceof com.adorsys.keycloakstatuslist.model.NonceChallenge);
-        verify(nonceService).generateAndStoreNonce(anyString(), anyString());
     }
 
     @Test

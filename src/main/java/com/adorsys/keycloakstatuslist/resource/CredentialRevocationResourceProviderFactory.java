@@ -7,10 +7,6 @@ import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
 import com.adorsys.keycloakstatuslist.service.RevocationRecordService; // Import the service
 import com.adorsys.keycloakstatuslist.service.RevocationRecordService.KeyData;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
-import org.apache.hc.client5.http.classic.methods.HttpGet;
-import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
-import org.apache.hc.core5.http.io.entity.EntityUtils;
-import com.adorsys.keycloakstatuslist.service.NonceService;
 import org.jboss.logging.Logger;
 import org.keycloak.events.EventBuilder;
 import org.keycloak.models.KeycloakSession;
@@ -44,7 +40,7 @@ public class CredentialRevocationResourceProviderFactory extends OIDCLoginProtoc
 
     @Override
     public Object createProtocolEndpoint(KeycloakSession session, EventBuilder event) {
-        return new CustomOIDCLoginProtocolService(session, event, new NonceService(session));
+        return new CustomOIDCLoginProtocolService(session, event);
     }
 
     @Override

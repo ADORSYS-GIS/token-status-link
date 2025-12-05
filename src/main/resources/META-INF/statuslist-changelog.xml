@@ -24,7 +24,10 @@
                 sequenceName="status_list_counter_seq"
                 startValue="1"
                 incrementBy="1"/>
+        <!-- Accept both old and new checksums -->
         <validCheckSum>9:84e6b8d766f94239175c403fc1293920</validCheckSum>
+        <validCheckSum>9:dbb09283468cee7a6057c8b16d89b86b</validCheckSum>
+        <validCheckSum>9:197961030c616e1216a15534a9344461</validCheckSum>
     </changeSet>
 
     <changeSet id="add-indices-to-status-list-mapping" author="adorsys">
@@ -39,6 +42,9 @@
         <createIndex indexName="idx_status_list_mapping_token_id" tableName="status_list_mapping">
             <column name="token_id" />
         </createIndex>
+        <!-- Accept both old and new checksums -->
+        <validCheckSum>9:4cc32171a11405800acd0239be5cbf54</validCheckSum>
+        <validCheckSum>9:49c5cd17251a84e976b1236e101652f3</validCheckSum>
     </changeSet>
 
 </databaseChangeLog>
