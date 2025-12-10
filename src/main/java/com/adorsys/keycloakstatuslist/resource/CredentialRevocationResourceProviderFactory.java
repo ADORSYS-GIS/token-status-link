@@ -4,7 +4,7 @@ import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.service.CryptoIdentityService;
 import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
-import com.adorsys.keycloakstatuslist.service.RevocationRecordService; // Import the service
+import com.adorsys.keycloakstatuslist.service.RevocationRecordService;
 import com.adorsys.keycloakstatuslist.service.RevocationRecordService.KeyData;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
 import org.jboss.logging.Logger;
@@ -167,7 +167,7 @@ public class CredentialRevocationResourceProviderFactory extends OIDCLoginProtoc
                 return false;
             }
 
-            // Register the realm as an issuer using the retrieved JWK
+            // Register the realm as an issuer using the retrieved public key
             statusListService.registerIssuer(config.getTokenIssuerId(), keyData.jwk(), keyData.algorithm());
             registeredRealms.add(realm.getName());
             logger.info("Successfully registered realm as issuer: " + realm.getName());
