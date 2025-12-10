@@ -403,7 +403,8 @@ public class SdJwtVPValidationService {
             return KeyBindingJwtVerificationOpts.builder()
                     .withKeyBindingRequired(true)
                     .withAllowedMaxAge(300) // 5 minutes max age
-                    .withNonce(expectedNonce) 
+                    .withNonce(expectedNonce)
+                    .withAud(expectedAudience) // Required for replay protection
                     .withValidateExpirationClaim(true)
                     .withValidateNotBeforeClaim(false) // Disable nbf validation for Key Binding JWT
                     .build();
