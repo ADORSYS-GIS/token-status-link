@@ -54,8 +54,10 @@ public class CustomHttpClient {
             @Override
             public boolean retryRequest(HttpResponse response, int execCount, HttpContext context) {
                 int status = response.getCode();
-                logger.warnf("[Attempt %d/%d] Failed to send status. Response: %d %s",
-                        execCount, maxRetries, response.getCode(), response.getReasonPhrase());
+                if (status >= 500) {
+                    logger.warnf("[Attempt %d/%d] Failed to send status. Response: %d %s",
+                            execCount, maxRetries, response.getCode(), response.getReasonPhrase());
+                }
                 return execCount <= maxRetries && (status >= 500);
             }
 
