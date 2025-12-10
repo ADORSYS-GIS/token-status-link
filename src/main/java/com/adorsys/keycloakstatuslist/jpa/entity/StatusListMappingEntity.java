@@ -31,6 +31,15 @@ public class StatusListMappingEntity {
     @Column(name = "realm_id")
     private String realmId;
 
+    // --- Getters and Setters ---
+
+    public String getId() {
+        return id;
+    }
+
+    public void setId(String id) {
+        this.id = id;
+    }
 
     public Long getIdx() {
         return idx;
@@ -76,12 +85,13 @@ public class StatusListMappingEntity {
     public final boolean equals(Object o) {
         if (!(o instanceof StatusListMappingEntity that)) return false;
 
-        return Objects.equals(getIdx(), that.getIdx()) && Objects.equals(getStatusListId(), that.getStatusListId()) && Objects.equals(getUserId(), that.getUserId()) && Objects.equals(getTokenId(), that.getTokenId()) && Objects.equals(getRealmId(), that.getRealmId());
+        return Objects.equals(getId(), that.getId()) && Objects.equals(getIdx(), that.getIdx()) && Objects.equals(getStatusListId(), that.getStatusListId()) && Objects.equals(getUserId(), that.getUserId()) && Objects.equals(getTokenId(), that.getTokenId()) && Objects.equals(getRealmId(), that.getRealmId());
     }
 
     @Override
     public int hashCode() {
-        int result = Objects.hashCode(getIdx());
+        int result = Objects.hashCode(getId());
+        result = 31 * result + Objects.hashCode(getIdx());
         result = 31 * result + Objects.hashCode(getStatusListId());
         result = 31 * result + Objects.hashCode(getUserId());
         result = 31 * result + Objects.hashCode(getTokenId());
