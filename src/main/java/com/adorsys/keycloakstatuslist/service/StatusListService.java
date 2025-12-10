@@ -15,7 +15,7 @@ import org.apache.hc.client5.http.classic.methods.HttpPost;
 import org.apache.hc.core5.http.io.entity.EntityUtils;
 import org.apache.hc.core5.http.io.entity.StringEntity;
 import org.jboss.logging.Logger;
-import org.keycloak.jose.jwk.JWK; // Import added
+import org.keycloak.jose.jwk.JWK;
 
 import java.io.IOException;
 import java.time.Instant;
@@ -147,7 +147,7 @@ public class StatusListService {
         // Create a simple record with just the required fields for issuer registration
         TokenStatusRecord issuerRecord = new TokenStatusRecord();
         issuerRecord.setIssuer(issuerId);
-        issuerRecord.setPublicKey(publicKey); // Now matches the TokenStatusRecord signature
+        issuerRecord.setPublicKey(publicKey);
         issuerRecord.setAlg(algorithm);
 
         try {

@@ -18,6 +18,7 @@ import java.security.PublicKey;
 import java.security.interfaces.ECPublicKey;
 import java.security.interfaces.RSAPublicKey;
 import java.time.Instant;
+import java.util.Optional;
 
 public class RevocationRecordService {
     
@@ -40,10 +41,7 @@ public class RevocationRecordService {
         try {
             KeyManager keyManager = session.keys();
             
-            String algorithm = realm.getDefaultSignatureAlgorithm();
-            if (algorithm == null) {
-                algorithm = Algorithm.RS256;
-            }
+            String algorithm = Optional.ofNullable(realm.getDefaultSignatureAlgorithm()).orElse(Algorithm.RS256);
 
             KeyWrapper activeKey = keyManager.getActiveKey(realm, KeyUse.SIG, algorithm);
             
@@ -118,7 +116,6 @@ public class RevocationRecordService {
         } catch (Exception e) {
             logger.errorf("Failed to create revocation record. RequestId: %s, Error: %s", 
                          requestId, e.getMessage());
-            if (e instanceof StatusListException) throw (StatusListException) e;
             throw new StatusListException("Failed to create revocation record: " + e.getMessage(), e);
         }
     }
