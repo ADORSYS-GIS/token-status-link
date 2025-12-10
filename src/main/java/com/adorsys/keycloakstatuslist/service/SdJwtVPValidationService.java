@@ -17,13 +17,7 @@ import org.keycloak.services.Urls;
 
 import java.net.URI;
 import java.net.URISyntaxException;
-import java.security.KeyFactory;
 import java.security.PublicKey;
-import java.security.spec.RSAPublicKeySpec;
-import java.security.spec.ECPublicKeySpec;
-import java.security.spec.ECPoint;
-import java.math.BigInteger;
-import java.util.Base64;
 import java.util.List;
 
 /**
@@ -43,11 +37,12 @@ public class SdJwtVPValidationService {
     }
     
     /**
-     * Parses and validates the SD-JWT VP token.
-     * This validates the token structure, parses it for credential extraction, and performs
-     * cryptographic signature verification using the token's embedded keys.
+     * Parses the SD-JWT VP token WITHOUT cryptographic verification.
+     * This allows extraction of claims (like credential ID and nonce) before full verification.
+     * 
+     * Use this when you need to extract data before validating nonces or other server-side checks.
      */
-    public SdJwtVP parseAndValidateSdJwtVP(String sdJwtVpString, String requestId) 
+    public SdJwtVP parseSdJwtVP(String sdJwtVpString, String requestId) 
             throws StatusListException {
         
         try {
@@ -57,7 +52,7 @@ public class SdJwtVPValidationService {
             
             SdJwtVP sdJwtVP = SdJwtVP.of(sdJwtVpString);
             
-            verifySdJwtVPSignature(sdJwtVP, requestId);
+            logger.infof("SD-JWT VP parsed successfully. RequestId: %s", requestId);
             
             return sdJwtVP;
             
@@ -71,10 +66,15 @@ public class SdJwtVPValidationService {
     }
     
     /**
-     * Verifies the SD-JWT VP token's issuer signature using Keycloak's internal key management.
-     * This ensures the token was properly issued by the claimed issuer.
+     * Verifies the SD-JWT VP token's issuer signature and Key Binding JWT using Keycloak's internal key management.
+     * This ensures the token was properly issued by the claimed issuer and signed by the holder.
+     *      * 
+     * @param sdJwtVP the parsed SD-JWT VP token
+     * @param requestId the request ID for logging
+     * @param credentialId the credential ID being revoked
+     * @param expectedNonce the server-generated nonce from the challenge (NOT from client's JWT)
      */
-    public void verifySdJwtVPSignature(SdJwtVP sdJwtVP, String requestId) throws StatusListException {
+    public void verifySdJwtVPSignature(SdJwtVP sdJwtVP, String requestId, String credentialId, String expectedNonce) throws StatusListException {
         try {
             
             String issuer = extractIssuerFromToken(sdJwtVP);
@@ -94,33 +94,32 @@ public class SdJwtVPValidationService {
             sdJwtVP.verify(
                 verifyingKeys,
                 getIssuerSignedJwtVerificationOpts(),
-                getKeyBindingJwtVerificationOpts(sdJwtVP, requestId, getRevocationEndpointUrl())
+                getKeyBindingJwtVerificationOpts(sdJwtVP, requestId, getRevocationEndpointUrl(), credentialId, expectedNonce)
             );
             
-            logger.infof("SD-JWT VP issuer signature verification completed successfully. RequestId: %s", requestId);
+            logger.infof("SD-JWT VP signature verification completed successfully with nonce validation. RequestId: %s, Nonce: %s", requestId, expectedNonce);
             
         } catch (VerificationException e) {
-            logger.errorf("SD-JWT VP issuer signature verification failed - REJECTING REQUEST. RequestId: %s, Error: %s",
+            logger.errorf("SD-JWT VP signature verification failed - REJECTING REQUEST. RequestId: %s, Error: %s",
                          requestId, e.getMessage());
-            throw new StatusListException("Invalid SD-JWT VP issuer signature: " + e.getMessage(), e, 401);
+            throw new StatusListException("Invalid SD-JWT VP signature: " + e.getMessage(), e, 401);
             
         } catch (Exception e) {
-            logger.errorf("SD-JWT VP issuer verification failed - REJECTING REQUEST. RequestId: %s, Error: %s",
+            logger.errorf("SD-JWT VP verification failed - REJECTING REQUEST. RequestId: %s, Error: %s",
                          requestId, e.getMessage());
-            throw new StatusListException("SD-JWT VP issuer verification failed: " + e.getMessage(), e, 401);
+            throw new StatusListException("SD-JWT VP verification failed: " + e.getMessage(), e, 401);
         }
     }
 
     /**
      * Verifies that the SD-JWT VP token proves ownership of the specified credential.
-     * This includes credential ID matching, holder signature verification, and key binding validation.
-     *
+     * This checks that the credential ID in the VP matches the requested credential ID.
+     * 
      * SECURITY: This method ensures that only the actual credential holder can revoke their credential
-     * by verifying their cryptographic signature on the VP token.
+     * by verifying the credential ID match. The cryptographic proof is verified separately.
      */
     public void verifyCredentialOwnership(SdJwtVP sdJwtVP, String credentialId, String requestId)
             throws StatusListException {
-
 
         String vpCredentialId = extractCredentialIdFromSdJwtVP(sdJwtVP);
 
@@ -134,55 +133,9 @@ public class SdJwtVPValidationService {
             throw new StatusListException("SD-JWT VP token does not prove ownership of the specified credential");
         }
 
-        verifyHolderSignatureAndKeyBinding(sdJwtVP, requestId);
-
-        logger.infof("Credential ownership verified successfully with holder signature. RequestId: %s", requestId);
+        logger.infof("Credential ownership verified successfully (credential ID match). RequestId: %s", requestId);
     }
 
-    /**
-     * Verifies the holder's signature and key binding to ensure true ownership.
-     * This is the critical security check that proves the credential holder actually signed the VP token.
-     *
-     * SECURITY: If holder signature verification fails, the request is rejected immediately.
-     */
-    public void verifyHolderSignatureAndKeyBinding(SdJwtVP sdJwtVP, String requestId) throws StatusListException {
-        try {
-
-            String issuer = extractIssuerFromToken(sdJwtVP);
-            if (issuer == null || issuer.trim().isEmpty()) {
-                logger.errorf("No issuer found in SD-JWT VP token for holder verification. RequestId: %s", requestId);
-                throw new StatusListException("Token missing required issuer information for holder verification");
-            }
-
-            // Build issuer verifiers (required by library even during presentation verification)
-            List<org.keycloak.crypto.SignatureVerifierContext> verifyingKeys = jwksService.getSignatureVerifierContexts(sdJwtVP, issuer, requestId);
-            if (verifyingKeys.isEmpty()) {
-                logger.errorf("No valid issuer signature verifier contexts created for holder verification. RequestId: %s", requestId);
-                throw new StatusListException("No public keys available for issuer: " + issuer);
-            }
-
-            sdJwtVP.verify(
-                verifyingKeys,
-                getIssuerSignedJwtVerificationOpts(),
-                getKeyBindingJwtVerificationOpts(sdJwtVP, requestId, getRevocationEndpointUrl())
-            );
-
-            logger.infof("Holder signature verification completed successfully. RequestId: %s", requestId);
-
-        } catch (VerificationException e) {
-            logger.errorf("Holder signature verification failed - REJECTING REQUEST. RequestId: %s, Error: %s",
-                         requestId, e.getMessage());
-            throw new StatusListException("Invalid holder proof: Invalid holder signature: " + e.getMessage(), e, 401);
-        } catch (IllegalArgumentException e) {
-            logger.errorf("Holder signature verification failed due to malformed key binding JWT. RequestId: %s, Error: %s",
-                         requestId, e.getMessage());
-            throw new StatusListException("Malformed VP: " + e.getMessage(), e, 400);
-        } catch (Exception e) {
-            logger.errorf("Holder signature verification failed - REJECTING REQUEST. RequestId: %s, Error: %s",
-                         requestId, e.getMessage());
-            throw new StatusListException("Invalid holder proof: Holder signature verification failed: " + e.getMessage(), e, 401);
-        }
-    }
     
     /**
      * Creates a SignatureVerifierContext using the provided PublicKey.
@@ -283,137 +236,38 @@ public class SdJwtVPValidationService {
     }
 
     /**
-     * Extracts the JWT ID from the SD-JWT VP token.
+     * Extracts the nonce from the Key Binding JWT.
+     * This is used for replay attack prevention.
+     * 
+     * @param sdJwtVP the SD-JWT VP token
+     * @return the nonce string from the Key Binding JWT, or null if not present
      */
-    public String extractJwtIdFromToken(SdJwtVP sdJwtVP) {
+    public String extractNonceFromKeyBindingJWT(SdJwtVP sdJwtVP) {
         try {
-            return extractPayloadField(sdJwtVP, "jti");
-        } catch (Exception e) {
-            logger.warn("Failed to extract JWT ID from SD-JWT VP token", e);
-            return null;
-        }
-    }
-    
-    /**
-     * Extracts the key ID from the SD-JWT VP token header.
-     */
-    public String extractKeyIdFromToken(SdJwtVP sdJwtVP) {
-        try {
-            return extractHeaderParam(sdJwtVP, "kid");
-        } catch (Exception e) {
-            logger.warn("Failed to extract key ID from SD-JWT VP token", e);
-            return null;
-        }
-    }
-
-    /**
-     * Extracts the algorithm from the SD-JWT VP token header.
-     */
-    public String extractAlgorithmFromToken(SdJwtVP sdJwtVP) {
-        try {
-            return extractHeaderParam(sdJwtVP, "alg");
-        } catch (Exception e) {
-            logger.warn("Failed to extract algorithm from SD-JWT VP token", e);
-            return null;
-        }
-    }
-
-    private String extractHeaderParam(SdJwtVP sdJwtVP, String paramName) {
-        var jwt = sdJwtVP.getIssuerSignedJWT();
-        var header = jwt.getHeader();
-        if ("kid".equals(paramName)) {
-            return header != null ? header.getKeyId() : null;
-        }
-        if ("alg".equals(paramName)) {
-            var algorithm = header != null ? header.getAlgorithm() : null;
-            return algorithm != null ? algorithm.name() : null;
-        }
-        return null;
-    }
-    
-    /**
-     * Extracts the holder's signing key from the token's cnf.jwk field.
-     * This is the key that the credential holder used to sign the VP token.
-     */
-    public PublicKey extractSigningKeyFromToken(SdJwtVP sdJwtVP) {
-        try {
-            var jwt = sdJwtVP.getIssuerSignedJWT();
-            var payload = jwt.getPayload();
-            
-            if (payload instanceof JsonNode) {
-                JsonNode payloadNode = (JsonNode) payload;
-                JsonNode cnfNode = payloadNode.get("cnf");
-                
-                if (cnfNode == null || !cnfNode.isObject()) {
-                    logger.debug("No cnf field found in token payload");
-                    return null;
-                }
-                
-                JsonNode jwkNode = cnfNode.get("jwk");
-                if (jwkNode == null || !jwkNode.isObject()) {
-                    logger.debug("No jwk field found in cnf object");
-                    return null;
-                }
-                
-                if (!jwkNode.has("kty")) {
-                    logger.warn("JWK missing required 'kty' field");
-                    return null;
-                }
-                
-                PublicKey publicKey = extractPublicKeyFromJwk(jwkNode);
-                if (publicKey == null) {
-                    logger.warn("Failed to extract valid public key from JWK");
-                }
-                
-                return publicKey;
-            } else {
-                logger.debug("Token payload is not a JsonNode, cannot extract signing key");
+            var kbOpt = sdJwtVP.getKeyBindingJWT();
+            if (kbOpt.isEmpty()) {
+                logger.debug("No Key Binding JWT present in SD-JWT VP");
                 return null;
             }
             
+            var payload = kbOpt.get().getPayload();
+            if (payload instanceof com.fasterxml.jackson.databind.JsonNode) {
+                com.fasterxml.jackson.databind.JsonNode node = (com.fasterxml.jackson.databind.JsonNode) payload;
+                com.fasterxml.jackson.databind.JsonNode nonceNode = node.get("nonce");
+                if (nonceNode != null && nonceNode.isTextual()) {
+                    return nonceNode.asText();
+                }
+            }
+            
+            logger.debug("Nonce not found in Key Binding JWT payload");
+            return null;
+            
         } catch (Exception e) {
-            logger.warn("Failed to extract signing key from token's cnf.jwk", e);
+            logger.warn("Failed to extract nonce from Key Binding JWT", e);
             return null;
         }
     }
-    
-    private PublicKey extractPublicKeyFromJwk(JsonNode jwkNode) throws StatusListException {
-        try {
-            if (!jwkNode.has("kty")) {
-                logger.warn("JWK missing required 'kty' field");
-                return null;
-            }
 
-            String keyType = jwkNode.get("kty").asText();
-
-            if (keyType.equals("RSA")) {
-                if (!jwkNode.has("n") || !jwkNode.has("e")) {
-                    logger.warn("RSA JWK missing required 'n' or 'e' fields");
-                    return null;
-                }
-                BigInteger modulus = new BigInteger(1, Base64.getUrlDecoder().decode(jwkNode.get("n").asText()));
-                BigInteger exponent = new BigInteger(1, Base64.getUrlDecoder().decode(jwkNode.get("e").asText()));
-                return KeyFactory.getInstance("RSA").generatePublic(new RSAPublicKeySpec(modulus, exponent));
-            } else if (keyType.equals("EC")) {
-                if (!jwkNode.has("x") || !jwkNode.has("y")) {
-                    logger.warn("EC JWK missing required 'x' or 'y' fields");
-                    return null;
-                }
-                ECPoint point = new ECPoint(
-                    new BigInteger(1, Base64.getUrlDecoder().decode(jwkNode.get("x").asText())),
-                    new BigInteger(1, Base64.getUrlDecoder().decode(jwkNode.get("y").asText()))
-                );
-                return KeyFactory.getInstance("EC").generatePublic(new ECPublicKeySpec(point, null)); // Elliptic curves don't have an exponent
-            }
-            logger.warnf("Unsupported JWK key type: %s", keyType);
-            return null;
-        } catch (Exception e) {
-            logger.error("Failed to extract public key from JWK", e);
-            throw new StatusListException("Failed to extract public key from JWK: " + e.getMessage(), e);
-        }
-    }
-
-    
     private String findCredentialIdRecursively(JsonNode node) {
         if (node == null) return null;
         
@@ -476,23 +330,26 @@ public class SdJwtVPValidationService {
      * This is critical for ensuring the presenter is actually the credential holder.
      * The key binding JWT signature itself provides proof of possession.
      */
-    private KeyBindingJwtVerificationOpts getKeyBindingJwtVerificationOpts(SdJwtVP sdJwtVP, String requestId, String expectedAudience) throws StatusListException {
+    private KeyBindingJwtVerificationOpts getKeyBindingJwtVerificationOpts(
+            SdJwtVP sdJwtVP, 
+            String requestId, 
+            String expectedAudience,
+            String credentialId,
+            String expectedNonce) throws StatusListException {
         try {
-            String nonce = null;
             String aud = null;
             Long exp = null;
 
+            // Extract claims from Key Binding JWT (but NOT the nonce - we use server's nonce)
             var kbOpt = sdJwtVP.getKeyBindingJWT();
             if (kbOpt.isPresent()) {
                 var payload = kbOpt.get().getPayload();
                 if (payload instanceof JsonNode) {
                     JsonNode node = (JsonNode) payload;
-                    JsonNode nonceNode = node.get("nonce");
+                    // NOTE: We do NOT extract nonce from client - we use expectedNonce from server
                     JsonNode audNode = node.get("aud");
                     JsonNode expNode = node.get("exp");
-                    if (nonceNode != null && nonceNode.isTextual()) {
-                        nonce = nonceNode.asText();
-                    }
+                    
                     if (audNode != null && audNode.isTextual()) {
                         aud = audNode.asText();
                     }
@@ -507,10 +364,10 @@ public class SdJwtVPValidationService {
                 throw new IllegalArgumentException("Missing aud in Key Binding JWT");
             }
             
-            // Keycloak library requires nonce for replay protection, even though we don't validate it from database
-            if (nonce == null || nonce.isEmpty()) {
-                logger.errorf("Missing nonce in Key Binding JWT claims. RequestId: %s", requestId);
-                throw new IllegalArgumentException("Missing nonce in Key Binding JWT (required for replay protection)");
+            // SECURITY FIX: Validate that server provided the expected nonce
+            if (expectedNonce == null || expectedNonce.isEmpty()) {
+                logger.errorf("Server did not provide expected nonce. RequestId: %s", requestId);
+                throw new IllegalArgumentException("Server-generated nonce not provided for Key Binding JWT verification");
             }
 
             // Validate audience matches the revocation endpoint (with URL normalization)
@@ -538,23 +395,15 @@ public class SdJwtVPValidationService {
                 }
             }
 
-            // Extract and validate credential ID from VP token
-            String credentialId = extractCredentialIdFromSdJwtVP(sdJwtVP);
-            if (credentialId == null || credentialId.isEmpty()) {
-                logger.errorf("Credential ID not found in VP token. RequestId: %s", requestId);
-                throw new IllegalArgumentException("Credential ID not found in VP token");
-            }
+            logger.infof("Key Binding JWT verification options built with server nonce. RequestId: %s, expectedNonce: %s, aud: %s, exp: %s, credentialId: %s", 
+                        requestId, expectedNonce, aud, exp != null ? String.valueOf(exp) : "N/A", credentialId);
 
-            logger.infof("Key Binding JWT validated successfully. RequestId: %s, nonce: %s, aud: %s, exp: %s, credentialId: %s", 
-                        requestId, nonce != null ? nonce : "N/A", aud, exp != null ? String.valueOf(exp) : "N/A", credentialId);
-
-            // Build verification options
-            // We validate via signature, audience, and expiration instead
+            // Build verification options with SERVER-GENERATED nonce
+            // The Keycloak library will verify that the client's Key Binding JWT contains this exact nonce
             return KeyBindingJwtVerificationOpts.builder()
                     .withKeyBindingRequired(true)
                     .withAllowedMaxAge(300) // 5 minutes max age
-                    .withNonce(nonce) // Required by library, but we validate via other means
-                    .withAud(aud)
+                    .withNonce(expectedNonce) 
                     .withValidateExpirationClaim(true)
                     .withValidateNotBeforeClaim(false) // Disable nbf validation for Key Binding JWT
                     .build();
@@ -562,17 +411,9 @@ public class SdJwtVPValidationService {
             logger.errorf("Failed to build Key Binding verification options due to invalid arguments. RequestId: %s, Error: %s", requestId, e.getMessage());
             throw new StatusListException("Malformed VP: " + e.getMessage(), e, 400);
         } catch (Exception e) {
-
-            logger.warnf("Could not determine expected audience from session context, using default. RequestId: %s, Error: %s", 
+            logger.errorf("Unexpected error building Key Binding verification options. RequestId: %s, Error: %s", 
                         requestId, e.getMessage());
-            
-            // Fallback to secure defaults if we can't get the context
-            return KeyBindingJwtVerificationOpts.builder()
-                    .withKeyBindingRequired(true)
-                    .withAllowedMaxAge(300)
-                    .withValidateExpirationClaim(true)
-                    .withValidateNotBeforeClaim(false)
-                    .build();
+            throw new StatusListException("Failed to build Key Binding verification options: " + e.getMessage(), e);
         }
     }
 
