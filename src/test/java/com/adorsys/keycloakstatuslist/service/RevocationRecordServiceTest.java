@@ -51,6 +51,7 @@ class RevocationRecordServiceTest {
         lenient().when(context.getRealm()).thenReturn(realm);
         lenient().when(session.keys()).thenReturn(keyManager);
         lenient().when(realm.getName()).thenReturn("test-realm");
+        lenient().when(realm.getDefaultSignatureAlgorithm()).thenReturn("RS256");
 
         KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA");
         kpg.initialize(2048);
@@ -129,7 +130,7 @@ class RevocationRecordServiceTest {
             service.createRevocationRecord(request, requestId);
         });
         
-        assertTrue(exception.getMessage().contains("No active signing key found for realm"));
+        assertTrue(exception.getMessage().contains("No active signing key found for realm: test-realm"));
     }
 
     @Test
@@ -145,7 +146,7 @@ class RevocationRecordServiceTest {
             service.createRevocationRecord(request, requestId);
         });
         
-        assertTrue(exception.getMessage().contains("Active key has no public key for realm"));
+        assertTrue(exception.getMessage().contains("Active key has no public key for realm: test-realm"));
     }
 
     @Test
