@@ -81,7 +81,7 @@ class StatusListServiceTest {
         // Test register issuer success
         setupSuccessfulResponse();
         // Updated to pass JWK object
-        assertDoesNotThrow(() -> statusListService.registerIssuer(ISSUER_ID, mockJwk, ALGORITHM));
+        assertDoesNotThrow(() -> statusListService.registerIssuer(ISSUER_ID, mockJwk));
         verifyHttpClientCall(1);
 
         // Test publish record success
@@ -131,7 +131,7 @@ class StatusListServiceTest {
             setupResponseWithStatus(409);
 
             // Act & Assert
-            statusListService.registerIssuer(ISSUER_ID, mockJwk, ALGORITHM);
+            statusListService.registerIssuer(ISSUER_ID, mockJwk);
             verifyHttpClientCall(1);
         });
     }
@@ -143,7 +143,7 @@ class StatusListServiceTest {
 
         // Act & Assert
         StatusListServerException exception = assertThrows(StatusListServerException.class,
-                () -> statusListService.registerIssuer(ISSUER_ID, mockJwk, ALGORITHM));
+                () -> statusListService.registerIssuer(ISSUER_ID, mockJwk));
         assertEquals(500, exception.getStatusCode());
         assertDoesNotThrow(() -> verifyHttpClientCall(1));
     }
@@ -171,12 +171,6 @@ class StatusListServiceTest {
                 () -> statusListService.publishRecord(record3));
         assertTrue(exception.getMessage().contains("Public key is required"));
 
-        // Test missing algorithm
-        final TokenStatusRecord record4 = createTestRecord();
-        record4.setAlg(null);
-        exception = assertThrows(StatusListException.class,
-                () -> statusListService.publishRecord(record4));
-        assertTrue(exception.getMessage().contains("Algorithm (alg) is required"));
     }
 
     @Test
@@ -291,7 +285,6 @@ class StatusListServiceTest {
         record.setIssuer(ISSUER_ID);
         record.setIssuerId(ISSUER_ID);
         record.setPublicKey(mockJwk); // Set mock JWK object
-        record.setAlg(ALGORITHM);
         record.setStatus(TokenStatus.VALID);
         record.setIssuedAt(Instant.now());
         record.setExpiresAt(Instant.now().plusSeconds(3600));

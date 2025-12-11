@@ -168,7 +168,7 @@ public class CredentialRevocationResourceProviderFactory extends OIDCLoginProtoc
             }
 
             // Register the realm as an issuer using the retrieved public key
-            statusListService.registerIssuer(config.getTokenIssuerId(), keyData.jwk(), keyData.algorithm());
+            statusListService.registerIssuer(config.getTokenIssuerId(), keyData.jwk());
             registeredRealms.add(realm.getName());
             logger.info("Successfully registered realm as issuer: " + realm.getName());
             return true;

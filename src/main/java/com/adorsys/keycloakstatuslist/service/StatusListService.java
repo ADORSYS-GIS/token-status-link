@@ -140,7 +140,7 @@ public class StatusListService {
         }
     }
 
-    public void registerIssuer(String issuerId, JWK publicKey, String algorithm) throws StatusListException {
+    public void registerIssuer(String issuerId, JWK publicKey) throws StatusListException {
         String requestId = UUID.randomUUID().toString();
         logger.info("Request ID: " + requestId + ", Registering issuer: " + issuerId + " with server: " + serverUrl);
 
@@ -148,7 +148,6 @@ public class StatusListService {
         TokenStatusRecord issuerRecord = new TokenStatusRecord();
         issuerRecord.setIssuer(issuerId);
         issuerRecord.setPublicKey(publicKey);
-        issuerRecord.setAlg(algorithm);
 
         try {
             String jsonPayload = objectMapper.writeValueAsString(issuerRecord);
@@ -216,13 +215,6 @@ public class StatusListService {
         if (statusRecord.getPublicKey() == null) {
             throw new StatusListException(
                     "Public key is required and must be retrieved from Keycloak's KeyManager for credentialId: "
-                            + credentialId);
-        }
-
-        // Require alg to be set by the caller
-        if (statusRecord.getAlg() == null || statusRecord.getAlg().isEmpty()) {
-            throw new StatusListException(
-                    "Algorithm (alg) is required and must be retrieved from Keycloak's KeyManager for credentialId: "
                             + credentialId);
         }
 

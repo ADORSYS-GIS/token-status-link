@@ -82,7 +82,7 @@ class RevocationRecordServiceTest {
         assertNotNull(result.getPublicKey());
         assertTrue(result.getPublicKey() instanceof JWK);
         assertEquals("test-kid", result.getPublicKey().getKeyId());
-        assertEquals("RS256", result.getAlg());
+        assertEquals("RS256", result.getPublicKey().getAlgorithm());
     }
 
     @Test
@@ -159,7 +159,7 @@ class RevocationRecordServiceTest {
         when(keyWrapper.getAlgorithm()).thenReturn(null);
         
         TokenStatusRecord result = service.createRevocationRecord(request, requestId);
-        assertEquals("RS256", result.getAlg());
+        assertEquals("RS256", result.getPublicKey().getAlgorithm());
     }
     
     @Test
