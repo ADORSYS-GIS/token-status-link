@@ -19,6 +19,7 @@ import org.mockito.Mock;
 import java.net.URI;
 import java.util.HashMap;
 import java.util.Random;
+import java.util.UUID;
 
 import static com.adorsys.keycloakstatuslist.StatusListProtocolMapper.Constants;
 import static org.hamcrest.MatcherAssert.assertThat;
