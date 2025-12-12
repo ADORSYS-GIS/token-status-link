@@ -15,6 +15,7 @@ import org.apache.hc.client5.http.classic.methods.HttpPost;
 import org.apache.hc.core5.http.io.entity.EntityUtils;
 import org.apache.hc.core5.http.io.entity.StringEntity;
 import org.jboss.logging.Logger;
+import org.keycloak.jose.jwk.JWK;
 
 import java.io.IOException;
 import java.time.Instant;
@@ -137,8 +138,9 @@ public class StatusListService {
                     ": " + e.getMessage(), e);
             throw new StatusListException("Unexpected error updating record for credentialId: " + credentialId, e);
         }
-}
-    public void registerIssuer(String issuerId, String publicKey, String algorithm) throws StatusListException {
+    }
+
+    public void registerIssuer(String issuerId, JWK publicKey) throws StatusListException {
         String requestId = UUID.randomUUID().toString();
         logger.info("Request ID: " + requestId + ", Registering issuer: " + issuerId + " with server: " + serverUrl);
 
@@ -146,7 +148,6 @@ public class StatusListService {
         TokenStatusRecord issuerRecord = new TokenStatusRecord();
         issuerRecord.setIssuer(issuerId);
         issuerRecord.setPublicKey(publicKey);
-        issuerRecord.setAlg(algorithm);
 
         try {
             String jsonPayload = objectMapper.writeValueAsString(issuerRecord);
@@ -210,18 +211,10 @@ public class StatusListService {
             statusRecord.setIssuer(statusRecord.getIssuerId());
         }
 
-        // Require public_key to be set by the caller (e.g.,
-        // TokenStatusEventListenerProvider)
-        if (statusRecord.getPublicKey() == null || statusRecord.getPublicKey().isEmpty()) {
+        // Require public_key to be set by the caller
+        if (statusRecord.getPublicKey() == null) {
             throw new StatusListException(
                     "Public key is required and must be retrieved from Keycloak's KeyManager for credentialId: "
-                            + credentialId);
-        }
-
-        // Require alg to be set by the caller
-        if (statusRecord.getAlg() == null || statusRecord.getAlg().isEmpty()) {
-            throw new StatusListException(
-                    "Algorithm (alg) is required and must be retrieved from Keycloak's KeyManager for credentialId: "
                             + credentialId);
         }
 

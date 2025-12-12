@@ -4,13 +4,11 @@ import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.service.CryptoIdentityService;
 import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
+import com.adorsys.keycloakstatuslist.service.RevocationRecordService;
+import com.adorsys.keycloakstatuslist.service.RevocationRecordService.KeyData;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
 import org.jboss.logging.Logger;
-import org.keycloak.crypto.Algorithm;
-import org.keycloak.crypto.KeyUse;
-import org.keycloak.crypto.KeyWrapper;
 import org.keycloak.events.EventBuilder;
-import org.keycloak.models.KeyManager;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.models.RealmModel;
@@ -148,6 +146,14 @@ public class CredentialRevocationResourceProviderFactory extends OIDCLoginProtoc
                 return true; // Disabled, no need to register
             }
 
+            KeyData keyData;
+            try {
+                keyData = RevocationRecordService.getRealmKeyData(session, realm);
+            } catch (StatusListException e) {
+                logger.warn("Could not retrieve valid signing key for realm: " + realm.getName() + ". " + e.getMessage());
+                return false;
+            }
+
             CryptoIdentityService cryptoIdentityService = new CryptoIdentityService(session);
             StatusListService statusListService = new StatusListService(
                     config.getServerUrl(),
@@ -155,43 +161,14 @@ public class CredentialRevocationResourceProviderFactory extends OIDCLoginProtoc
                     CustomHttpClient.getHttpClient()
             );
 
+            // Check if the status list server is reachable
             if (!statusListService.checkServerHealth()) {
-                logger.warnf("Health check failed for server: %s", config.getServerUrl());
+                logger.warn("Status list server is not reachable for realm: " + realm.getName());
                 return false;
             }
 
-            // Get realm's public key and algorithm
-            KeyManager keyManager = session.keys();
-            KeyWrapper activeKey = keyManager.getActiveKey(realm, KeyUse.SIG, Algorithm.RS256);
-            if (activeKey == null) {
-                logger.warn("No active key found for realm: " + realm.getName());
-                return false;
-            }
-
-            // Convert public key to PEM format
-            String publicKey = null;
-            if (activeKey.getPublicKey() != null) {
-                try {
-                    byte[] encoded = activeKey.getPublicKey().getEncoded();
-                    String base64 = java.util.Base64.getEncoder().encodeToString(encoded);
-                    publicKey = "-----BEGIN PUBLIC KEY-----\n" +
-                            base64.replaceAll("(.{64})", "$1\n") +
-                            "\n-----END PUBLIC KEY-----";
-                } catch (Exception e) {
-                    logger.error("Failed to convert public key to PEM format for realm: " + realm.getName(), e);
-                    return false;
-                }
-            }
-
-            String algorithm = activeKey.getAlgorithm() != null ? activeKey.getAlgorithm() : "RS256";
-
-            if (publicKey == null) {
-                logger.warn("No public key available for realm: " + realm.getName());
-                return false;
-            }
-
-            // Register the realm as an issuer
-            statusListService.registerIssuer(config.getTokenIssuerId(), publicKey, algorithm);
+            // Register the realm as an issuer using the retrieved public key
+            statusListService.registerIssuer(config.getTokenIssuerId(), keyData.jwk());
             registeredRealms.add(realm.getName());
             logger.info("Successfully registered realm as issuer: " + realm.getName());
             return true;

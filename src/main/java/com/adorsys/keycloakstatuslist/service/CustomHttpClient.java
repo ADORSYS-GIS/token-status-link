@@ -53,10 +53,13 @@ public class CustomHttpClient {
 
             @Override
             public boolean retryRequest(HttpResponse response, int execCount, HttpContext context) {
-                logger.warnf("[Attempt %d/%d] Failed to send status. Response: %d %s",
-                        execCount, maxRetries, response.getCode(), response.getReasonPhrase());
                 int status = response.getCode();
-                return execCount <= maxRetries && (status >= 500);
+                Boolean isRetriable = status >= 500;
+                if (isRetriable) {
+                    logger.warnf("[Attempt %d/%d] Failed to send status. Response: %d %s",
+                            execCount, maxRetries, status, response.getReasonPhrase());
+                }
+                return execCount <= maxRetries && isRetriable;
             }
 
             @Override
