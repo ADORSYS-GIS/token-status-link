@@ -134,7 +134,7 @@ class CredentialRevocationResourceProviderFactoryTest {
         StatusListService mockService = mockedStatusListServiceConstruction.constructed().get(0);
         
         try {
-            verify(mockService).registerIssuer(argThat(arg -> arg.endsWith("::test-realm")), eq(mockJwk), eq("RS256"));
+            verify(mockService).registerIssuer(argThat(arg -> arg.endsWith("::test-realm")), eq(mockJwk));
         } catch (StatusListException e) {
             fail("Should not throw exception");
         }
@@ -164,7 +164,7 @@ class CredentialRevocationResourceProviderFactoryTest {
         StatusListService mockService = mockedStatusListServiceConstruction.constructed().get(0);
         
         try {
-            verify(mockService, never()).registerIssuer(any(), any(), any());
+            verify(mockService, never()).registerIssuer(any(), any());
         } catch (StatusListException e) {
             fail("Should not throw exception");
         }
@@ -208,7 +208,7 @@ class CredentialRevocationResourceProviderFactoryTest {
 
         StatusListService mockService = mockedStatusListServiceConstruction.constructed().get(0);
         try {
-            doThrow(new RuntimeException("API Error")).when(mockService).registerIssuer(any(), any(), any());
+            doThrow(new RuntimeException("API Error")).when(mockService).registerIssuer(any(), any());
         } catch (com.adorsys.keycloakstatuslist.exception.StatusListException e) {
             fail("Should not throw exception during setup");
         }

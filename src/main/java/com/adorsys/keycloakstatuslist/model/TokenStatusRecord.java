@@ -29,9 +29,6 @@ public class TokenStatusRecord {
     @JsonProperty("public_key")
     private JWK publicKey;
 
-    @JsonProperty("alg")
-    private String alg;
-
     @JsonProperty("status")
     private int status;
 
@@ -99,14 +96,6 @@ public class TokenStatusRecord {
 
     public void setPublicKey(JWK publicKey) {
         this.publicKey = publicKey;
-    }
-
-    public String getAlg() {
-        return alg;
-    }
-
-    public void setAlg(String alg) {
-        this.alg = alg;
     }
 
     public int getStatus() {

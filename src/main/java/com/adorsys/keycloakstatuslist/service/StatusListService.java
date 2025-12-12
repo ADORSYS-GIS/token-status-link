@@ -15,7 +15,7 @@ import org.apache.hc.client5.http.classic.methods.HttpPost;
 import org.apache.hc.core5.http.io.entity.EntityUtils;
 import org.apache.hc.core5.http.io.entity.StringEntity;
 import org.jboss.logging.Logger;
-import org.keycloak.jose.jwk.JWK; // Import added
+import org.keycloak.jose.jwk.JWK;
 
 import java.io.IOException;
 import java.time.Instant;
@@ -140,7 +140,7 @@ public class StatusListService {
         }
     }
 
-    public void registerIssuer(String issuerId, JWK publicKey, String algorithm) throws StatusListException {
+    public void registerIssuer(String issuerId, JWK publicKey) throws StatusListException {
         String requestId = UUID.randomUUID().toString();
         logger.info("Request ID: " + requestId + ", Registering issuer: " + issuerId + " with server: " + serverUrl);
 
@@ -148,8 +148,7 @@ public class StatusListService {
         TokenStatusRecord issuerRecord = new TokenStatusRecord();
         issuerRecord.setIssuer(issuerId);
 
-        issuerRecord.setPublicKey(publicKey); // Now matches the TokenStatusRecord signature
-        issuerRecord.setAlg(algorithm);
+        issuerRecord.setPublicKey(publicKey);
 
         try {
             String jsonPayload = objectMapper.writeValueAsString(issuerRecord);
@@ -217,13 +216,6 @@ public class StatusListService {
         if (statusRecord.getPublicKey() == null) {
             throw new StatusListException(
                     "Public key is required and must be retrieved from Keycloak's KeyManager for credentialId: "
-                            + credentialId);
-        }
-
-        // Require alg to be set by the caller
-        if (statusRecord.getAlg() == null || statusRecord.getAlg().isEmpty()) {
-            throw new StatusListException(
-                    "Algorithm (alg) is required and must be retrieved from Keycloak's KeyManager for credentialId: "
                             + credentialId);
         }
 

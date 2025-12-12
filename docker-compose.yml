@@ -12,8 +12,10 @@ services:
 
   keycloak-token-status-plugin:
     image: quay.io/keycloak/keycloak:26.4.5
-    entrypoint: /bin/sh
-    command: -c "/opt/keycloak/bin/kc.sh build && exec /opt/keycloak/bin/kc.sh start-dev --features=oid4vc-vci --log-level=INFO,com.adorsys.keycloakstatuslist:DEBUG --db=postgres --db-username=admin --db-password=admin --db-url=jdbc:postgresql://postgres:5432/keycloak_token_status_plugin"
+    command: >
+      start-dev --features=oid4vc-vci --log-level=INFO,com.adorsys.keycloakstatuslist:DEBUG
+      --db=postgres --db-username=admin --db-password=admin
+      --db-url=jdbc:postgresql://postgres:5432/keycloak_token_status_plugin
     environment:
       - KC_BOOTSTRAP_ADMIN_USERNAME=admin
       - KC_BOOTSTRAP_ADMIN_PASSWORD=admin
