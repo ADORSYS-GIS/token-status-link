@@ -122,7 +122,6 @@ class CredentialRevocationServiceTest {
             java.lang.reflect.Field statusListField = CredentialRevocationService.class.getDeclaredField("statusListService");
             statusListField.setAccessible(true);
             statusListField.set(service, statusListService);
-
             
         } catch (Exception e) {
             fail("Failed to inject mocked dependencies: " + e.getMessage());

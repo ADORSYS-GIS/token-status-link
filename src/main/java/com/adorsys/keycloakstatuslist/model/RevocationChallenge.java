@@ -20,4 +20,3 @@ public record RevocationChallenge(
         return Instant.now().isAfter(expiresAt);
     }
 }
-

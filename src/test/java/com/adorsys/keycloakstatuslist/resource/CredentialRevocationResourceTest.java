@@ -55,7 +55,6 @@ class CredentialRevocationResourceTest {
     @Mock
     private HttpHeaders headers;
 
-
     // Service-related mocks
     @Mock
     private CredentialRevocationService revocationService;

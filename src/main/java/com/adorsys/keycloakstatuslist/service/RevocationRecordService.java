@@ -58,7 +58,6 @@ public class RevocationRecordService {
                 throw new StatusListException("Active key has no public key for realm: " + realm.getName());
             }
             
-
             PublicKey pubKey = (PublicKey) activeKey.getPublicKey();
             String finalAlg = activeKey.getAlgorithm() != null ? activeKey.getAlgorithm() : algorithm;
             

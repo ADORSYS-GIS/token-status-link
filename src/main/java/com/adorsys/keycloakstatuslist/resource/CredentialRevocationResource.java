@@ -160,4 +160,3 @@ public class CredentialRevocationResource implements RealmResourceProvider {
                 .build();
     }
 }
-

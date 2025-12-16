@@ -15,12 +15,6 @@ import java.util.Map;
 /**
  * REST resource for issuing nonce challenges for credential revocation.
  * Implements the first step of the secure 2-step revocation flow.
- * 
- * Flow:
- * 1. Wallet calls POST /revoke/challenge with credential_id
- * 2. Server generates and returns a fresh nonce with audience and expiration
- * 3. Wallet creates SD-JWT VP with Key Binding JWT containing the nonce
- * 4. Wallet calls POST /revoke with the VP
  */
 @Path("/revoke/challenge")
 public class RevocationChallengeResource {
@@ -100,4 +94,3 @@ public class RevocationChallengeResource {
         }
     }
 }
-

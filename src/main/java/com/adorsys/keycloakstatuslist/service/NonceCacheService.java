@@ -14,12 +14,6 @@ import java.util.UUID;
  * Service for managing nonce challenges in credential revocation.
  * Uses an in-memory cache with automatic expiration to prevent replay attacks.
  * Implements RealmResourceProvider so Keycloak can discover it via standard SPI.
- * 
- * Security properties:
- * - Each nonce can only be used once (consumed on first use)
- * - Nonces expire after 10 minutes
- * - Cache is limited to 50,000 entries to prevent DoS attacks
- * - Memory footprint: ~10MB for 50k nonces
  */
 public class NonceCacheService implements NonceCacheProvider, RealmResourceProvider {
     
@@ -28,7 +22,6 @@ public class NonceCacheService implements NonceCacheProvider, RealmResourceProvi
     private static final int MAX_CACHE_SIZE = 50_000;
     
     // Thread-safe cache with automatic expiration
-    // 50k nonces × ~200 bytes ≈ 10 MB RAM, safe for production
     private final Cache<String, RevocationChallenge> cache = Caffeine.newBuilder()
             .expireAfterWrite(Duration.ofSeconds(NONCE_EXPIRATION_SECONDS))
             .maximumSize(MAX_CACHE_SIZE)
@@ -123,4 +116,3 @@ public class NonceCacheService implements NonceCacheProvider, RealmResourceProvi
         logger.debug("NonceCacheService closed and cache cleaned up");
     }
 }
-

@@ -136,7 +136,6 @@ public class SdJwtVPValidationService {
         logger.infof("Credential ownership verified successfully (credential ID match). RequestId: %s", requestId);
     }
 
-    
     /**
      * Creates a SignatureVerifierContext using the provided PublicKey.
      * This method provides proper cryptographic signature verification.

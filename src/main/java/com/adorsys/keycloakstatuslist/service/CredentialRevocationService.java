@@ -74,11 +74,9 @@ public class CredentialRevocationService {
             SdJwtVP sdJwtVP = sdJwtVPValidationService.parseSdJwtVP(sdJwtVpToken, requestId);
             
             // Step 2: SECURITY - Validate nonce to prevent replay attacks
-            // This extracts the client's nonce, validates it against server cache, and consumes it
             RevocationChallenge challenge = validateNonce(sdJwtVP, request.getCredentialId(), requestId);
             
             // Step 3: Verify the SD-JWT VP signature using the expected nonce from the challenge
-            // This ensures the Key Binding JWT contains the exact nonce the server issued
             sdJwtVPValidationService.verifySdJwtVPSignature(sdJwtVP, requestId, request.getCredentialId(), challenge.nonce());
             
             // Step 4: Verify credential ownership

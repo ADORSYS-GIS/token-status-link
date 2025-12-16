@@ -51,4 +51,3 @@ public class RevocationChallengeResponse {
         this.expiresIn = expiresIn;
     }
 }
-

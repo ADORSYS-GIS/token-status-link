@@ -57,4 +57,3 @@ public class NonceCacheServiceProviderFactory implements RealmResourceProviderFa
         return PROVIDER_ID;
     }
 }
-
