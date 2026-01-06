@@ -1,9 +1,12 @@
 package com.adorsys.keycloakstatuslist;
 
+import com.adorsys.keycloakstatuslist.client.ApacheHttpStatusListClient;
+import com.adorsys.keycloakstatuslist.client.StatusListHttpClient;
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
 import com.adorsys.keycloakstatuslist.model.Status;
 import com.adorsys.keycloakstatuslist.model.StatusListClaim;
+import com.adorsys.keycloakstatuslist.service.CircuitBreaker;
 import com.adorsys.keycloakstatuslist.service.CryptoIdentityService;
 import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
@@ -71,11 +74,31 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         this.session = session;
         this.cryptoIdentityService = new CryptoIdentityService(session);
         StatusListConfig config = new StatusListConfig(session.getContext().getRealm());
-        this.statusListService = new StatusListService(
+        
+        // Create circuit breaker if enabled
+        CircuitBreaker circuitBreaker = null;
+        if (config.isCircuitBreakerEnabled()) {
+            circuitBreaker = new CircuitBreaker(
+                    "StatusListCircuitBreaker",
+                    config.getCircuitBreakerFailureThreshold(),
+                    config.getCircuitBreakerTimeoutThreshold(),
+                    config.getCircuitBreakerWindowSeconds(),
+                    config.getCircuitBreakerCooldownSeconds()
+            );
+        }
+        
+        // Create HTTP client with custom timeouts for issuance path
+        StatusListHttpClient httpClient = new ApacheHttpStatusListClient(
                 config.getServerUrl(),
                 cryptoIdentityService.getJwtToken(config),
-                CustomHttpClient.getHttpClient()
+                CustomHttpClient.getHttpClient(
+                        config.getIssuanceConnectTimeout(),
+                        config.getIssuanceReadTimeout()
+                ),
+                circuitBreaker
         );
+        
+        this.statusListService = new StatusListService(httpClient);
     }
 
     @Override

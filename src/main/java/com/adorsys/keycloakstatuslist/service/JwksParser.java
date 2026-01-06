@@ -1,15 +1,12 @@
 package com.adorsys.keycloakstatuslist.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import org.jboss.logging.Logger;
 
 /**
  * Service responsible for parsing JWKS JSON and finding keys by kid.
  * Handles JWKS structure validation and key searching.
  */
 public class JwksParser {
-    
-    private static final Logger logger = Logger.getLogger(JwksParser.class);
     
     /**
      * Finds a key in the JWKS JSON by its "kid" (Key ID).
