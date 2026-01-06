@@ -30,8 +30,10 @@ import static org.mockito.Mockito.*;
 
 class StatusListProtocolMapperTest extends MockKeycloakTest {
 
-    protected static final String TEST_SERVER_URL = "https://example.com";
     LogCaptor logCaptor = LogCaptor.forClass(StatusListProtocolMapper.class);
+
+    protected static final String TEST_SERVER_URL = "https://example.com";
+
     @Mock
     ProtocolMapperModel mapperModel;
 
