@@ -1,5 +1,7 @@
 package com.adorsys.keycloakstatuslist.service;
 
+import com.adorsys.keycloakstatuslist.client.ApacheHttpStatusListClient;
+import com.adorsys.keycloakstatuslist.client.StatusListHttpClient;
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest;
@@ -44,13 +46,12 @@ public class CredentialRevocationService {
             CryptoIdentityService cryptoIdentityService = new CryptoIdentityService(session);
             
             // For revocation operations, we don't need circuit breaker - use default timeouts
-            com.adorsys.keycloakstatuslist.client.StatusListHttpClient httpClient = 
-                    new com.adorsys.keycloakstatuslist.client.ApacheHttpStatusListClient(
-                            config.getServerUrl(),
-                            cryptoIdentityService.getJwtToken(config),
-                            CustomHttpClient.getHttpClient(),
-                            null // No circuit breaker for revocation operations
-                    );
+            StatusListHttpClient httpClient = new ApacheHttpStatusListClient(
+                    config.getServerUrl(),
+                    cryptoIdentityService.getJwtToken(config),
+                    CustomHttpClient.getHttpClient(),
+                    null // No circuit breaker for revocation operations
+            );
             this.statusListService = new StatusListService(httpClient);
         }
         return statusListService;

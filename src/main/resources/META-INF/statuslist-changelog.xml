@@ -5,6 +5,7 @@
         xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-3.8.xsd">
 
     <changeSet id="create-status-list-mapping" author="adorsys">
+        <validCheckSum>9:dbb09283468cee7a6057c8b16d89b86b</validCheckSum>
         <createTable tableName="status_list_mapping">
             <column name="id" type="varchar(36)">
                 <constraints nullable="false" primaryKey="true"
@@ -31,6 +32,7 @@
     </changeSet>
 
     <changeSet id="add-indices-to-status-list-mapping" author="adorsys">
+        <validCheckSum>9:4cc32171a11405800acd0239be5cbf54</validCheckSum>
 
         <createIndex indexName="idx_status_list_mapping_realm_user"
                      tableName="status_list_mapping">
