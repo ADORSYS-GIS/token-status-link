@@ -1,6 +1,7 @@
 package com.adorsys.keycloakstatuslist.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.jboss.logging.Logger;
 
 /**
  * Service responsible for parsing JWKS JSON and finding keys by kid.
