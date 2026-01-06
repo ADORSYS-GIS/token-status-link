@@ -233,6 +233,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
                 status.set(new Status(statusList));
             });
         } catch (Exception e) {
+            logger.error("Failed to store index mapping", e);
             if (realmConfig.isMandatory()) {
                 logger.error("Status list is mandatory and publication failed; failing issuance", e);
                 throw new RuntimeException("Status list publication failed and is mandatory", e);
