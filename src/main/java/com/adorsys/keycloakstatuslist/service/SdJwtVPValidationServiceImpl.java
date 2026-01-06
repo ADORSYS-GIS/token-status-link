@@ -1,6 +1,7 @@
 package com.adorsys.keycloakstatuslist.service;
 
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
+import com.adorsys.keycloakstatuslist.service.validation.SdJwtVPValidationService;
 import com.fasterxml.jackson.databind.JsonNode;
 
 import java.math.BigInteger;
@@ -27,7 +28,7 @@ import org.keycloak.sdjwt.vp.SdJwtVP;
  * Default implementation of SdJwtVPValidationService. Handles token parsing, signature verification,
  * and credential extraction using Keycloak's internal key management.
  */
-public class SdJwtVPValidationService {
+public class SdJwtVPValidationServiceImpl implements SdJwtVPValidationService {
 
     private static final Logger logger = Logger.getLogger(SdJwtVPValidationService.class);
 
@@ -38,7 +39,7 @@ public class SdJwtVPValidationService {
      * Primary constructor using dependency injection for the JwksService collaborator. This improves
      * testability by allowing callers to provide custom implementations.
      */
-    public SdJwtVPValidationService(KeycloakSession session, JwksService jwksService) {
+    public SdJwtVPValidationServiceImpl(KeycloakSession session, JwksService jwksService) {
         this.session = session;
         this.jwksService = jwksService;
     }
@@ -50,15 +51,11 @@ public class SdJwtVPValidationService {
      * <p>For tests or advanced usage prefer the constructor that accepts all collaborators
      * explicitly.
      */
-    public SdJwtVPValidationService(KeycloakSession session) {
+    public SdJwtVPValidationServiceImpl(KeycloakSession session) {
         this(session, new JwksService(session));
     }
 
-    /**
-     * Parses and validates the SD-JWT VP token. This validates the token structure, parses it for
-     * credential extraction, and performs cryptographic signature verification using the token's
-     * embedded keys.
-     */
+    @Override
     public SdJwtVP parseAndValidateSdJwtVP(String sdJwtVpString, String requestId)
             throws StatusListException {
 
@@ -153,6 +150,7 @@ public class SdJwtVPValidationService {
      * SECURITY: This method ensures that only the actual credential holder can revoke their credential
      * by verifying their cryptographic signature on the VP token.
      */
+    @Override
     public void verifyCredentialOwnership(SdJwtVP sdJwtVP, String credentialId, String requestId)
             throws StatusListException {
 

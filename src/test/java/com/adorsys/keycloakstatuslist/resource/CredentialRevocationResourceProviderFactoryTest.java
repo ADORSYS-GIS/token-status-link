@@ -30,6 +30,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.MockedConstruction;
 import org.mockito.MockedStatic;
 
+@SuppressWarnings("unchecked")
 class CredentialRevocationResourceProviderFactoryTest {
 
     private CredentialRevocationResourceProviderFactory factory;
@@ -96,7 +97,6 @@ class CredentialRevocationResourceProviderFactoryTest {
         assertInstanceOf(CustomOIDCLoginProtocolService.class, endpoint);
     }
 
-    @SuppressWarnings("unchecked")
     @Test
     void testPostInitRegistersListenerAndProcessesRealms() throws IOException {
         CloseableHttpClient httpClient = mock(CloseableHttpClient.class);
@@ -232,7 +232,6 @@ class CredentialRevocationResourceProviderFactoryTest {
         listenerCaptor.getValue().onEvent(new PostMigrationEvent(sessionFactory));
     }
 
-    @SuppressWarnings("unchecked")
     private void setupSuccessfulHealthCheck() {
         try {
             CloseableHttpClient httpClient = mock(CloseableHttpClient.class);

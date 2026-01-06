@@ -30,11 +30,11 @@ class SdJwtVPValidationServiceTest {
     @Mock
     private PublicKey publicKey;
 
-    private SdJwtVPValidationService service;
+    private SdJwtVPValidationServiceImpl service;
 
     @BeforeEach
     void setUp() {
-        service = new SdJwtVPValidationService(session, jwksService);
+        service = new SdJwtVPValidationServiceImpl(session, jwksService);
     }
 
     @Test

@@ -5,6 +5,10 @@ import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationResponse;
 import com.adorsys.keycloakstatuslist.model.TokenStatusRecord;
+import com.adorsys.keycloakstatuslist.service.http.CloseableHttpClientAdapter;
+import com.adorsys.keycloakstatuslist.service.http.HttpClient;
+import com.adorsys.keycloakstatuslist.service.validation.RequestValidationService;
+import com.adorsys.keycloakstatuslist.service.validation.SdJwtVPValidationService;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -57,9 +61,9 @@ public class CredentialRevocationService {
         this(
                 session,
                 null, // lazily initialized when first used
-                new SdJwtVPValidationService(session),
+                new SdJwtVPValidationServiceImpl(session),
                 new RevocationRecordService(session),
-                new RequestValidationService());
+                new RequestValidationServiceImpl());
     }
 
     /**
@@ -70,11 +74,12 @@ public class CredentialRevocationService {
             RealmModel realm = session.getContext().getRealm();
             StatusListConfig config = new StatusListConfig(realm);
             CryptoIdentityService cryptoIdentityService = new CryptoIdentityService(session);
+            HttpClient httpClient = new CloseableHttpClientAdapter(CustomHttpClient.getHttpClient());
             this.statusListService =
                     new StatusListService(
                             config.getServerUrl(),
                             cryptoIdentityService.getJwtToken(config),
-                            CustomHttpClient.getHttpClient());
+                            httpClient);
         }
         return statusListService;
     }

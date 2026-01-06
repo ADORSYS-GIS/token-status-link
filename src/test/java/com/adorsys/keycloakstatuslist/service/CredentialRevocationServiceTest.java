@@ -8,6 +8,7 @@ import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationResponse;
 import com.adorsys.keycloakstatuslist.model.TokenStatusRecord;
+import com.adorsys.keycloakstatuslist.service.validation.SdJwtVPValidationService;
 
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
@@ -96,7 +97,7 @@ class CredentialRevocationServiceTest {
                         statusListService,
                         sdJwtVPValidationService,
                         new RevocationRecordService(session),
-                        new RequestValidationService());
+                        new RequestValidationServiceImpl());
     }
 
     @Test

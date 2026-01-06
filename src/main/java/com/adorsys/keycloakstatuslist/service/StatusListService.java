@@ -14,10 +14,10 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+import com.adorsys.keycloakstatuslist.service.http.HttpClient;
 import org.apache.hc.client5.http.classic.methods.HttpGet;
 import org.apache.hc.client5.http.classic.methods.HttpPatch;
 import org.apache.hc.client5.http.classic.methods.HttpPost;
-import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.core5.http.io.entity.EntityUtils;
 import org.apache.hc.core5.http.io.entity.StringEntity;
 import org.jboss.logging.Logger;
@@ -28,10 +28,10 @@ public class StatusListService {
 
     private final String serverUrl;
     private final String authToken;
-    private final CloseableHttpClient httpClient;
+    private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
 
-    public StatusListService(String serverUrl, String authToken, CloseableHttpClient httpClient) {
+    public StatusListService(String serverUrl, String authToken, HttpClient httpClient) {
         // Ensure serverUrl ends with a slash
         this.serverUrl = serverUrl.endsWith("/") ? serverUrl : serverUrl + "/";
         this.authToken = authToken;
