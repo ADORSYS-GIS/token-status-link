@@ -25,9 +25,9 @@ public class CredentialRevocationResource extends TokenRevocationEndpoint {
     /**
      * Constructor with dependency injection for better testability.
      *
-     * @param session Keycloak session
-     * @param event EventBuilder for logging
-     * @param headers HTTP headers (can be injected via @Context)
+     * @param session           Keycloak session
+     * @param event             EventBuilder for logging
+     * @param headers           HTTP headers (can be injected via @Context)
      * @param revocationService Credential revocation service (can be injected for testing)
      */
     public CredentialRevocationResource(KeycloakSession session, EventBuilder event, HttpHeaders headers, CredentialRevocationService revocationService) {

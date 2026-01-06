@@ -49,7 +49,7 @@ public class Status {
      */
     public Map<String, Object> toMap() {
         return Map.of(
-            "status_list", statusList != null ? statusList.toMap() : null
+                "status_list", statusList != null ? statusList.toMap() : null
         );
     }
 }

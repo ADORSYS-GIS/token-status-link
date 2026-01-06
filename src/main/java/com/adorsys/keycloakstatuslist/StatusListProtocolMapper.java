@@ -205,7 +205,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
     }
 
     private Status storeIndexMapping(String statusListId, String uri, String userId, String tokenId,
-            KeycloakSession session, StatusListConfig realmConfig) {
+                                     KeycloakSession session, StatusListConfig realmConfig) {
         logger.debugf("Storing index mapping: status_list_id=%s, userId=%s, tokenId=%s",
                 statusListId, userId, tokenId);
         AtomicReference<Status> status = new AtomicReference<>();

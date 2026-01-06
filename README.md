@@ -68,7 +68,7 @@ OAuth 2.0 Status List specification:
 1. Build the plugin using Maven:
 
 ```bash
-mvn clean package
+./mvnw clean package
 ```
 
 2. Copy the resulting JAR file from `target/keycloak-token-status-plugin-1.0.0-SNAPSHOT.jar` to Keycloak's `providers`
@@ -107,10 +107,24 @@ corresponding to a specific credential's configuration. Below is a sample such c
 
 ## Development and Testing
 
-### Running Tests
+### Running Tests and Formatting
+
+To check code formatting (Spotless), use:
 
 ```bash
-mvn test
+./mvnw spotless:check
+```
+
+To automatically format the code according to the configured rules, use:
+
+```bash
+./mvnw spotless:apply
+```
+
+To run tests:
+
+```bash
+./mvnw test
 ```
 
 ### Integration Testing with a Status List Server

@@ -32,12 +32,12 @@ class JwksKeyExtractorTest {
         keyNode.put("kty", "RSA");
         keyNode.put("n", "AQAB");
         keyNode.put("e", "AQAB");
-        
+
         // This test data is intentionally invalid for RSA (too short), so we expect an exception
         StatusListException exception = assertThrows(StatusListException.class, () -> {
             service.extractPublicKeyFromJwksKey(keyNode);
         });
-        
+
         assertTrue(exception.getMessage().contains("Failed to extract public key from JWKS key node"));
     }
 
@@ -48,12 +48,12 @@ class JwksKeyExtractorTest {
         keyNode.put("crv", "P-256");
         keyNode.put("x", "invalid-base64!");
         keyNode.put("y", "AQAB");
-        
+
         // This test data is intentionally invalid (invalid Base64), so we expect an exception
         StatusListException exception = assertThrows(StatusListException.class, () -> {
             service.extractPublicKeyFromJwksKey(keyNode);
         });
-        
+
         assertTrue(exception.getMessage().contains("Failed to extract public key from JWKS key node"));
     }
 
@@ -61,11 +61,11 @@ class JwksKeyExtractorTest {
     void testExtractPublicKeyFromJwksKey_UnsupportedType() {
         ObjectNode keyNode = objectMapper.createObjectNode();
         keyNode.put("kty", "UNSUPPORTED");
-        
+
         StatusListException exception = assertThrows(StatusListException.class, () -> {
             service.extractPublicKeyFromJwksKey(keyNode);
         });
-        
+
         assertTrue(exception.getMessage().contains("Unsupported JWKS key type: UNSUPPORTED"));
     }
 
@@ -75,11 +75,11 @@ class JwksKeyExtractorTest {
         keyNode.put("n", "AQAB");
         keyNode.put("e", "AQAB");
         // Missing 'kty' field
-        
+
         StatusListException exception = assertThrows(StatusListException.class, () -> {
             service.extractPublicKeyFromJwksKey(keyNode);
         });
-        
+
         assertTrue(exception.getMessage().contains("Failed to extract public key from JWKS key node"));
     }
 
@@ -90,11 +90,11 @@ class JwksKeyExtractorTest {
         keyNode.put("crv", "P-192"); // Unsupported curve
         keyNode.put("x", "AQAB");
         keyNode.put("y", "AQAB");
-        
+
         StatusListException exception = assertThrows(StatusListException.class, () -> {
             service.extractPublicKeyFromJwksKey(keyNode);
         });
-        
+
         assertTrue(exception.getMessage().contains("Unsupported EC curve: P-192"));
     }
 } 

@@ -11,7 +11,7 @@ import java.time.Instant;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class TokenStatusRecord {
-    
+
     // Static mapper for toString() to avoid creating it every time
     private static final ObjectMapper MAPPER = new ObjectMapper()
             .registerModule(new JavaTimeModule())

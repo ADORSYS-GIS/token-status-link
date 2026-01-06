@@ -56,7 +56,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         // Run mocks
         mockDefaultRealmConfig();
     }
-    
+
     @Test
     void testDefaultConstructor() {
         new StatusListProtocolMapper();

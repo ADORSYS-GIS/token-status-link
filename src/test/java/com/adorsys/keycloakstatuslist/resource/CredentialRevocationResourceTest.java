@@ -26,7 +26,7 @@ import static org.mockito.Mockito.*;
 
 /**
  * Unit tests for CredentialRevocationResource.
- * 
+ * <p>
  * This test focuses on testing the business logic without trying to mock
  * the complex Keycloak parent class infrastructure.
  */
@@ -36,20 +36,20 @@ class CredentialRevocationResourceTest {
     // Session-related mocks
     @Mock
     private KeycloakSession session;
-    
+
     @Mock
     private KeycloakSessionFactory sessionFactory;
-    
+
     @Mock
     private KeycloakContext context;
-    
+
     @Mock
     private RealmModel realm;
 
     // HTTP-related mocks
     @Mock
     private HttpRequest httpRequest;
-    
+
     @Mock
     private HttpHeaders headers;
 
@@ -70,52 +70,6 @@ class CredentialRevocationResourceTest {
 
         // Create a testable version of the resource with dependency injection
         resource = new TestableCredentialRevocationResource(session, headers, revocationService);
-    }
-
-    /**
-     * Testable version of CredentialRevocationResource that overrides the parent
-     * class behavior
-     * to avoid complex Keycloak setup requirements.
-     */
-    private static class TestableCredentialRevocationResource extends CredentialRevocationResource {
-        private final KeycloakSession session;
-
-        public TestableCredentialRevocationResource(KeycloakSession session, HttpHeaders headers, CredentialRevocationService revocationService) {
-            super(session, null, headers, revocationService);
-            this.session = session;
-        }
-
-        @Override
-        public Response revoke() {
-            // Get the form parameters and authorization header directly
-            MultivaluedMap<String, String> form = session.getContext().getHttpRequest().getDecodedFormParameters();
-            String authorizationHeader = getHeaders().getHeaderString(HttpHeaders.AUTHORIZATION);
-
-            if (authorizationHeader != null && authorizationHeader.toLowerCase().startsWith("bearer ")) {
-                String token = authorizationHeader.substring("bearer ".length()).trim();
-                String credentialId = form.getFirst("token");
-
-                if (credentialId != null && !credentialId.isEmpty()) {
-                    try {
-                        CredentialRevocationRequest request = new CredentialRevocationRequest();
-                        request.setCredentialId(credentialId);
-                        request.setRevocationReason(form.getFirst("reason"));
-
-                        getRevocationService().revokeCredential(request, token);
-
-                        // Return success response
-                        return Response.ok().build();
-
-                    } catch (Exception e) {
-                        // Fall back to standard success response
-                        return Response.ok().build();
-                    }
-                }
-            }
-
-            // Return success response for all other cases
-            return Response.ok().build();
-        }
     }
 
     /**
@@ -239,5 +193,51 @@ class CredentialRevocationResourceTest {
         assertNotNull(response);
         assertEquals(200, response.getStatus());
         verify(revocationService).revokeCredential(any(CredentialRevocationRequest.class), eq("token-with-spaces"));
+    }
+
+    /**
+     * Testable version of CredentialRevocationResource that overrides the parent
+     * class behavior
+     * to avoid complex Keycloak setup requirements.
+     */
+    private static class TestableCredentialRevocationResource extends CredentialRevocationResource {
+        private final KeycloakSession session;
+
+        public TestableCredentialRevocationResource(KeycloakSession session, HttpHeaders headers, CredentialRevocationService revocationService) {
+            super(session, null, headers, revocationService);
+            this.session = session;
+        }
+
+        @Override
+        public Response revoke() {
+            // Get the form parameters and authorization header directly
+            MultivaluedMap<String, String> form = session.getContext().getHttpRequest().getDecodedFormParameters();
+            String authorizationHeader = getHeaders().getHeaderString(HttpHeaders.AUTHORIZATION);
+
+            if (authorizationHeader != null && authorizationHeader.toLowerCase().startsWith("bearer ")) {
+                String token = authorizationHeader.substring("bearer ".length()).trim();
+                String credentialId = form.getFirst("token");
+
+                if (credentialId != null && !credentialId.isEmpty()) {
+                    try {
+                        CredentialRevocationRequest request = new CredentialRevocationRequest();
+                        request.setCredentialId(credentialId);
+                        request.setRevocationReason(form.getFirst("reason"));
+
+                        getRevocationService().revokeCredential(request, token);
+
+                        // Return success response
+                        return Response.ok().build();
+
+                    } catch (Exception e) {
+                        // Fall back to standard success response
+                        return Response.ok().build();
+                    }
+                }
+            }
+
+            // Return success response for all other cases
+            return Response.ok().build();
+        }
     }
 }
