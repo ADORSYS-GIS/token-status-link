@@ -28,19 +28,19 @@ class RevocationRecordServiceTest {
 
     @Mock
     private KeycloakSession session;
-    
+
     @Mock
     private RealmModel realm;
-    
+
     @Mock
     private KeycloakContext context;
-    
+
     @Mock
     private KeyManager keyManager;
-    
+
     @Mock
     private KeyWrapper keyWrapper;
-    
+
     private PublicKey rsaPublicKey;
 
     private RevocationRecordService service;
@@ -56,7 +56,7 @@ class RevocationRecordServiceTest {
         KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA");
         kpg.initialize(2048);
         rsaPublicKey = kpg.generateKeyPair().getPublic();
-        
+
         service = new RevocationRecordService(session);
     }
 
@@ -65,18 +65,18 @@ class RevocationRecordServiceTest {
         String credentialId = "test-credential-123";
         String revocationReason = "User requested revocation";
         String requestId = "test-request-id";
-        
+
         CredentialRevocationRequest request = new CredentialRevocationRequest(
                 credentialId, revocationReason
         );
-        
+
         when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq("RS256"))).thenReturn(keyWrapper);
         when(keyWrapper.getPublicKey()).thenReturn(rsaPublicKey);
         when(keyWrapper.getAlgorithm()).thenReturn("RS256");
         when(keyWrapper.getKid()).thenReturn("test-kid");
-        
+
         TokenStatusRecord result = service.createRevocationRecord(request, requestId);
-        
+
         assertNotNull(result);
         assertEquals(credentialId, result.getCredentialId());
         assertEquals("test-realm", result.getIssuer());
@@ -90,14 +90,14 @@ class RevocationRecordServiceTest {
     void testCreateRevocationRecord_WithNullReason() throws Exception {
         String credentialId = "test-credential-123";
         String requestId = "test-request-id";
-        
+
         CredentialRevocationRequest request = new CredentialRevocationRequest(credentialId, null);
-        
+
         when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq("RS256"))).thenReturn(keyWrapper);
         when(keyWrapper.getPublicKey()).thenReturn(rsaPublicKey);
         when(keyWrapper.getAlgorithm()).thenReturn("RS256");
         when(keyWrapper.getKid()).thenReturn("test-kid");
-        
+
         TokenStatusRecord result = service.createRevocationRecord(request, requestId);
         assertEquals("Credential revoked", result.getStatusReason());
     }
@@ -106,14 +106,14 @@ class RevocationRecordServiceTest {
     void testCreateRevocationRecord_WithEmptyReason() throws Exception {
         String credentialId = "test-credential-123";
         String requestId = "test-request-id";
-        
+
         CredentialRevocationRequest request = new CredentialRevocationRequest(credentialId, "");
-        
+
         when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq("RS256"))).thenReturn(keyWrapper);
         when(keyWrapper.getPublicKey()).thenReturn(rsaPublicKey);
         when(keyWrapper.getAlgorithm()).thenReturn("RS256");
         when(keyWrapper.getKid()).thenReturn("test-kid");
-        
+
         TokenStatusRecord result = service.createRevocationRecord(request, requestId);
         assertEquals("Credential revoked", result.getStatusReason());
     }
@@ -123,13 +123,13 @@ class RevocationRecordServiceTest {
         String credentialId = "test-credential-123";
         String requestId = "test-request-id";
         CredentialRevocationRequest request = new CredentialRevocationRequest(credentialId, "reason");
-        
+
         when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq("RS256"))).thenReturn(null);
-        
+
         StatusListException exception = assertThrows(StatusListException.class, () -> {
             service.createRevocationRecord(request, requestId);
         });
-        
+
         assertTrue(exception.getMessage().contains("No active signing key found for realm: test-realm"));
     }
 
@@ -138,14 +138,14 @@ class RevocationRecordServiceTest {
         String credentialId = "test-credential-123";
         String requestId = "test-request-id";
         CredentialRevocationRequest request = new CredentialRevocationRequest(credentialId, "reason");
-        
+
         when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq("RS256"))).thenReturn(keyWrapper);
         when(keyWrapper.getPublicKey()).thenReturn(null);
-        
+
         StatusListException exception = assertThrows(StatusListException.class, () -> {
             service.createRevocationRecord(request, requestId);
         });
-        
+
         assertTrue(exception.getMessage().contains("Active key has no public key for realm: test-realm"));
     }
 
@@ -154,28 +154,28 @@ class RevocationRecordServiceTest {
         String credentialId = "test-credential-123";
         String requestId = "test-request-id";
         CredentialRevocationRequest request = new CredentialRevocationRequest(credentialId, "reason");
-        
+
         when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq("RS256"))).thenReturn(keyWrapper);
         when(keyWrapper.getPublicKey()).thenReturn(rsaPublicKey);
         when(keyWrapper.getAlgorithm()).thenReturn(null);
-        
+
         TokenStatusRecord result = service.createRevocationRecord(request, requestId);
         assertEquals("RS256", result.getPublicKey().getAlgorithm());
     }
-    
+
     @Test
     void testCreateRevocationRecord_KeyManagerException() throws Exception {
         String credentialId = "test-credential-123";
         String requestId = "test-request-id";
         CredentialRevocationRequest request = new CredentialRevocationRequest(credentialId, "reason");
-        
+
         when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq("RS256")))
-            .thenThrow(new RuntimeException("Key manager error"));
-        
+                .thenThrow(new RuntimeException("Key manager error"));
+
         StatusListException exception = assertThrows(StatusListException.class, () -> {
             service.createRevocationRecord(request, requestId);
         });
-        
+
         assertTrue(exception.getMessage().contains("Failed to retrieve realm public key"));
     }
 
@@ -193,16 +193,16 @@ class RevocationRecordServiceTest {
         String credentialId = "test-credential-123";
         String requestId = "test-request-id";
         String realmName = "custom-realm-name";
-        
+
         when(realm.getName()).thenReturn(realmName);
         CredentialRevocationRequest request = new CredentialRevocationRequest(credentialId, "reason");
-        
+
         when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq("RS256"))).thenReturn(keyWrapper);
         when(keyWrapper.getPublicKey()).thenReturn(rsaPublicKey);
         when(keyWrapper.getAlgorithm()).thenReturn("RS256");
-        
+
         TokenStatusRecord result = service.createRevocationRecord(request, requestId);
-        
+
         assertEquals(realmName, result.getIssuer());
     }
 }

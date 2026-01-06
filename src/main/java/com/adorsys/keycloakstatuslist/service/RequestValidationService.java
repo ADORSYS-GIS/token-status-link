@@ -8,10 +8,10 @@ import com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest;
  * Performs basic validation on request parameters.
  */
 public class RequestValidationService {
-    
+
     /**
      * Validates a credential revocation request.
-     * 
+     *
      * @param request the revocation request to validate
      * @throws StatusListException if validation fails
      */
@@ -19,7 +19,7 @@ public class RequestValidationService {
         if (request == null) {
             throw new StatusListException("Revocation request cannot be null");
         }
-        
+
         if (request.getCredentialId() == null || request.getCredentialId().trim().isEmpty()) {
             throw new StatusListException("Credential ID is required");
         }

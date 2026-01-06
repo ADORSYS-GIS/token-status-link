@@ -13,14 +13,11 @@ import java.util.UUID;
 @SuppressWarnings("ClassCanBeRecord")
 public class StatusListConfig {
 
-    private static final Logger logger = Logger.getLogger(StatusListConfig.class);
-
     // Configuration keys
     public static final String STATUS_LIST_ENABLED = "status-list-enabled";
     public static final String STATUS_LIST_SERVER_URL = "status-list-server-url";
     public static final String STATUS_LIST_TOKEN_ISSUER_PREFIX = "status-list-token-issuer-prefix";
-   
-
+    private static final Logger logger = Logger.getLogger(StatusListConfig.class);
     // Default values
     private static final boolean DEFAULT_ENABLED = true;
     private static final String DEFAULT_SERVER_URL = "https://statuslist.eudi-adorsys.com/";

@@ -20,16 +20,16 @@ import java.util.Base64;
  * Handles RSA and EC key extraction with proper parameter validation.
  */
 public class JwksKeyExtractor {
-    
+
     private static final Logger logger = Logger.getLogger(JwksKeyExtractor.class);
-    
+
     /**
      * Extracts the public key from a JWKS key node.
      */
     public PublicKey extractPublicKeyFromJwksKey(JsonNode keyNode) throws StatusListException {
         try {
             String kty = keyNode.get("kty").asText();
-            
+
             if (kty.equals("RSA")) {
                 return extractRsaPublicKey(keyNode);
             } else if (kty.equals("EC")) {
@@ -37,13 +37,13 @@ public class JwksKeyExtractor {
             } else {
                 throw new StatusListException("Unsupported JWKS key type: " + kty);
             }
-            
+
         } catch (Exception e) {
             logger.errorf("Failed to extract public key from JWKS key node. Error: %s", e.getMessage());
             throw new StatusListException("Failed to extract public key from JWKS key node: " + e.getMessage(), e);
         }
     }
-    
+
     /**
      * Extracts an RSA public key from a JWKS key node.
      */
@@ -62,7 +62,7 @@ public class JwksKeyExtractor {
         KeyFactory keyFactory = KeyFactory.getInstance("RSA");
         return keyFactory.generatePublic(rsaPublicKeySpec);
     }
-    
+
     /**
      * Extracts an EC public key from a JWKS key node.
      */
@@ -89,7 +89,7 @@ public class JwksKeyExtractor {
         KeyFactory keyFactory = KeyFactory.getInstance("EC");
         return keyFactory.generatePublic(ecPublicKeySpec);
     }
-    
+
     /**
      * Gets EC parameter specification for the given curve.
      */

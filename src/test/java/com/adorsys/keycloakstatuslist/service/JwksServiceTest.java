@@ -26,7 +26,7 @@ class JwksServiceTest {
 
     @Mock
     private KeycloakSession session;
-    
+
     @Mock
     private org.keycloak.models.KeycloakContext context;
 

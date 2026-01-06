@@ -22,19 +22,19 @@ class SdJwtVPValidationServiceTest {
 
     @Mock
     private KeycloakSession session;
-    
+
     @Mock
     private JwksService jwksService;
-    
+
     @Mock
     private org.keycloak.models.KeycloakContext context;
-    
+
     @Mock
     private SdJwtVP sdJwtVP;
-    
+
     @Mock
     private PublicKey publicKey;
-    
+
     @Mock
     private SignatureVerifierContext verifierContext;
 
@@ -43,13 +43,13 @@ class SdJwtVPValidationServiceTest {
     @BeforeEach
     void setUp() {
         service = new SdJwtVPValidationService(session);
-        
+
         try {
             // Inject mocked JwksService
             java.lang.reflect.Field jwksField = SdJwtVPValidationService.class.getDeclaredField("jwksService");
             jwksField.setAccessible(true);
             jwksField.set(service, jwksService);
-            
+
             // Inject mocked session
             java.lang.reflect.Field sessionField = SdJwtVPValidationService.class.getDeclaredField("session");
             sessionField.setAccessible(true);
@@ -58,12 +58,13 @@ class SdJwtVPValidationServiceTest {
             fail("Failed to inject mocked dependencies: " + e.getMessage());
         }
     }
+
     @Test
     void testParseAndValidateSdJwtVP_NullToken() {
         StatusListException exception = assertThrows(StatusListException.class, () -> {
             service.parseAndValidateSdJwtVP(null, "test-request-id");
         });
-        
+
         assertTrue(exception.getMessage().contains("SD-JWT VP token is empty or null"));
     }
 
@@ -72,7 +73,7 @@ class SdJwtVPValidationServiceTest {
         StatusListException exception = assertThrows(StatusListException.class, () -> {
             service.parseAndValidateSdJwtVP("", "test-request-id");
         });
-        
+
         assertTrue(exception.getMessage().contains("SD-JWT VP token is empty or null"));
     }
 
@@ -81,7 +82,7 @@ class SdJwtVPValidationServiceTest {
         StatusListException exception = assertThrows(StatusListException.class, () -> {
             service.parseAndValidateSdJwtVP("   ", "test-request-id");
         });
-        
+
         assertTrue(exception.getMessage().contains("SD-JWT VP token is empty or null"));
     }
 
@@ -90,7 +91,7 @@ class SdJwtVPValidationServiceTest {
         StatusListException exception = assertThrows(StatusListException.class, () -> {
             service.parseAndValidateSdJwtVP("invalid.token.format", "test-request-id");
         });
-        
+
         assertTrue(exception.getMessage().contains("Invalid SD-JWT VP token format"));
     }
 
@@ -98,7 +99,7 @@ class SdJwtVPValidationServiceTest {
     void testCreateSignatureVerifierContextFromPublicKey_Success() throws Exception {
         // Test successful creation of SignatureVerifierContext
         SignatureVerifierContext result = service.createSignatureVerifierContextFromPublicKey(publicKey, "RS256");
-        
+
         assertNotNull(result);
         // Verify it's the correct type
         assertTrue(result instanceof org.keycloak.crypto.AsymmetricSignatureVerifierContext);
@@ -108,7 +109,7 @@ class SdJwtVPValidationServiceTest {
     void testCreateSignatureVerifierContextFromPublicKey_WithECAlgorithm() throws Exception {
         // Test with EC algorithm
         SignatureVerifierContext result = service.createSignatureVerifierContextFromPublicKey(publicKey, "ES256");
-        
+
         assertNotNull(result);
         assertTrue(result instanceof org.keycloak.crypto.AsymmetricSignatureVerifierContext);
     }
@@ -119,7 +120,7 @@ class SdJwtVPValidationServiceTest {
         StatusListException exception = assertThrows(StatusListException.class, () -> {
             service.createSignatureVerifierContextFromPublicKey(null, "RS256");
         });
-        
+
         assertTrue(exception.getMessage().contains("Failed to create signature verifier context from public key"));
     }
 
@@ -129,7 +130,7 @@ class SdJwtVPValidationServiceTest {
         StatusListException exception = assertThrows(StatusListException.class, () -> {
             service.createSignatureVerifierContextFromPublicKey(publicKey, null);
         });
-        
+
         assertTrue(exception.getMessage().contains("Failed to create signature verifier context from public key"));
     }
 
@@ -139,7 +140,7 @@ class SdJwtVPValidationServiceTest {
         StatusListException exception = assertThrows(StatusListException.class, () -> {
             service.createSignatureVerifierContextFromPublicKey(publicKey, "");
         });
-        
+
         assertTrue(exception.getMessage().contains("Failed to create signature verifier context from public key"));
     }
 } 

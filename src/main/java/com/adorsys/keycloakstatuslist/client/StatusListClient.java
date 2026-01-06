@@ -1,6 +1,5 @@
 package com.adorsys.keycloakstatuslist.client;
 
-import java.io.IOException;
 
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.model.TokenStatusRecord;
@@ -8,7 +7,6 @@ import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.jboss.logging.Logger;
 
 /**
@@ -44,7 +42,7 @@ public class StatusListClient {
     public boolean publishRecord(TokenStatusRecord statusRecord) {
         // Basic validation for backward compatibility with tests
         validateBasicFields(statusRecord);
-        
+
         try {
             statusListService.publishRecord(statusRecord);
             return true;

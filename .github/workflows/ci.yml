@@ -29,5 +29,8 @@ jobs:
       - name: Build only (skip tests)
         run: ./mvnw clean package -DskipTests --batch-mode
 
+      - name: Check formatting (Spotless)
+        run: ./mvnw spotless:check --batch-mode
+
       - name: Run tests
         run: ./mvnw test --batch-mode
