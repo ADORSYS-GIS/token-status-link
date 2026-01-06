@@ -40,7 +40,7 @@ class StatusListServiceTest {
 
     @Mock
     private CloseableHttpClient httpClient;
-    
+
     @Mock
     private JWK mockJwk;
 
@@ -57,7 +57,7 @@ class StatusListServiceTest {
     private void setupResponse(int statusCode) throws IOException {
         setupResponse(statusCode, "{}");
     }
-    
+
     private void setupResponse(int statusCode, String responseBody) throws IOException {
         doAnswer(invocation -> {
             HttpClientResponseHandler<Object> handler = invocation.getArgument(1);

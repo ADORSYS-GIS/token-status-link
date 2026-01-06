@@ -9,9 +9,9 @@ import org.jboss.logging.Logger;
 
 public final class StatusListJpaEntityProviderFactory implements JpaEntityProviderFactory {
 
-    public static final String ID = "status-list-jpa-entity-provider";
-
     private static final Logger logger = Logger.getLogger(StatusListJpaEntityProviderFactory.class);
+
+    public static final String ID = "status-list-jpa-entity-provider";
 
     @Override
     public JpaEntityProvider create(KeycloakSession session) {

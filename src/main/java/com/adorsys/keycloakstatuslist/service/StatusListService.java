@@ -101,14 +101,6 @@ public class StatusListService {
         return httpClient.checkStatusListExists(statusListId);
     }
 
-    public record StatusListPayload(
-            @JsonProperty("list_id") String listId,
-            List<StatusEntry> status
-    ) {
-        public record StatusEntry(int index, String status) {
-        }
-    }
-
     public void publishOrUpdate(StatusListPayload payload) throws StatusListException {
         String requestId = UUID.randomUUID().toString();
         String listId = payload.listId();
@@ -142,5 +134,13 @@ public class StatusListService {
      */
     public boolean checkServerHealth() {
         return httpClient.checkServerHealth();
+    }
+
+    public record StatusListPayload(
+            @JsonProperty("list_id") String listId,
+            List<StatusEntry> status
+    ) {
+        public record StatusEntry(int index, String status) {
+        }
     }
 }

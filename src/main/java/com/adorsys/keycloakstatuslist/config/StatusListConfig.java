@@ -27,7 +27,6 @@ public class StatusListConfig {
     public static final String STATUS_LIST_CIRCUIT_BREAKER_WINDOW_SECONDS = "status-list-circuit-breaker-window-seconds";
     public static final String STATUS_LIST_CIRCUIT_BREAKER_COOLDOWN_SECONDS = "status-list-circuit-breaker-cooldown-seconds";
    
-
     // Default values
     private static final boolean DEFAULT_ENABLED = true;
     private static final String DEFAULT_SERVER_URL = "https://statuslist.eudi-adorsys.com/";
