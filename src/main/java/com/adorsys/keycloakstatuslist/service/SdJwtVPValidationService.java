@@ -34,9 +34,13 @@ public class SdJwtVPValidationService {
     private final KeycloakSession session;
     private final JwksService jwksService;
 
-    public SdJwtVPValidationService(KeycloakSession session) {
+    /**
+     * Primary constructor using dependency injection for the JwksService collaborator. This improves
+     * testability by allowing callers to provide custom implementations.
+     */
+    public SdJwtVPValidationService(KeycloakSession session, JwksService jwksService) {
         this.session = session;
-        this.jwksService = new JwksService(session);
+        this.jwksService = jwksService;
     }
 
     /**
@@ -45,6 +49,15 @@ public class SdJwtVPValidationService {
      *
      * <p>For tests or advanced usage prefer the constructor that accepts all collaborators
      * explicitly.
+     */
+    public SdJwtVPValidationService(KeycloakSession session) {
+        this(session, new JwksService(session));
+    }
+
+    /**
+     * Parses and validates the SD-JWT VP token. This validates the token structure, parses it for
+     * credential extraction, and performs cryptographic signature verification using the token's
+     * embedded keys.
      */
     public SdJwtVP parseAndValidateSdJwtVP(String sdJwtVpString, String requestId)
             throws StatusListException {

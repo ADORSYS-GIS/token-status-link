@@ -29,7 +29,6 @@ import org.keycloak.jose.jwk.JWK;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-@SuppressWarnings("unchecked")
 @ExtendWith(MockitoExtension.class)
 class StatusListServiceTest {
 
@@ -53,6 +52,7 @@ class StatusListServiceTest {
         setupResponse(statusCode, "{}");
     }
 
+    @SuppressWarnings("unchecked")
     private void setupResponse(int statusCode, String responseBody) throws IOException {
         doAnswer(
                 invocation -> {
@@ -75,6 +75,7 @@ class StatusListServiceTest {
         setupResponse(statusCode);
     }
 
+    @SuppressWarnings("unchecked")
     private void verifyHttpClientCall(int expectedCalls) throws IOException {
         verify(httpClient, times(expectedCalls))
                 .execute(any(HttpPost.class), any(HttpClientResponseHandler.class));
@@ -310,6 +311,7 @@ class StatusListServiceTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
     void publishOrUpdate_shouldPublish_whenListDoesNotExist() throws IOException {
         doAnswer(
                 invocation -> {
@@ -339,6 +341,7 @@ class StatusListServiceTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
     void publishOrUpdate_shouldUpdate_whenListExists() throws IOException {
         doAnswer(
                 invocation -> {
@@ -369,6 +372,7 @@ class StatusListServiceTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
     void publishOrUpdate_shouldThrowException_whenCheckFails() throws IOException {
         doThrow(new IOException("Server connection failed"))
                 .when(httpClient)

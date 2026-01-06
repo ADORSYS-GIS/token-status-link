@@ -17,11 +17,7 @@ public class StatusListClient {
     private final StatusListService statusListService;
 
     public StatusListClient(String serverUrl, String authToken) {
-        this(new StatusListService(
-                serverUrl,
-                authToken,
-                CustomHttpClient.getHttpClient()
-        ));
+        this(new StatusListService(serverUrl, authToken, CustomHttpClient.getHttpClient()));
     }
 
     public StatusListClient(StatusListService statusListService) {
