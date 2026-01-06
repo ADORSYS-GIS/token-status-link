@@ -173,7 +173,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         Status status = storeIndexMapping(listId, uri.toString(), userId, tokenId, session, config);
 
         if (status == null) {
-            logger.error("Failed to send status to server. Status claim not mapped");
+            logger.warn("Status list publication failed or was skipped; continuing without status claim");
             return;
         }
 
@@ -210,8 +210,8 @@ public class StatusListProtocolMapper extends OID4VCMapper {
                 statusListId, userId, tokenId);
         AtomicReference<Status> status = new AtomicReference<>();
 
-        withEntityManagerInTransaction(session, em -> {
-            try {
+        try {
+            withEntityManagerInTransaction(session, em -> {
                 StatusListMappingEntity mapping = new StatusListMappingEntity();
                 mapping.setStatusListId(statusListId);
                 mapping.setUserId(userId);
@@ -224,14 +224,21 @@ public class StatusListProtocolMapper extends OID4VCMapper {
                 Long generatedIdx = mapping.getIdx();
                 logger.debugf("Stored mapping with generated index: %d", generatedIdx);
 
-                sendStatusToServer(generatedIdx, statusListId, realmConfig);
+                try {
+                    sendStatusToServer(generatedIdx, statusListId, realmConfig);
+                } catch (IOException io) {
+                    throw new RuntimeException("Failed to publish status to server", io);
+                }
                 StatusListClaim statusList = new StatusListClaim(generatedIdx, uri);
                 status.set(new Status(statusList));
-            } catch (Exception e) {
-                logger.error("Failed to store index mapping", e);
-                session.getTransactionManager().setRollbackOnly();
+            });
+        } catch (Exception e) {
+            if (realmConfig.isMandatory()) {
+                logger.error("Status list is mandatory and publication failed; failing issuance", e);
+                throw new RuntimeException("Status list publication failed and is mandatory", e);
             }
-        });
+            logger.warn("Status list publication failed; proceeding without status claim", e);
+        }
 
         return status.get();
     }

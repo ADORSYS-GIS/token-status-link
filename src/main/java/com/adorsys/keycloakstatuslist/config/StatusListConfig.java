@@ -19,10 +19,12 @@ public class StatusListConfig {
     public static final String STATUS_LIST_ENABLED = "status-list-enabled";
     public static final String STATUS_LIST_SERVER_URL = "status-list-server-url";
     public static final String STATUS_LIST_TOKEN_ISSUER_PREFIX = "status-list-token-issuer-prefix";
+    public static final String STATUS_LIST_MANDATORY = "status-list-mandatory";
 
     // Default values
     private static final boolean DEFAULT_ENABLED = true;
     private static final String DEFAULT_SERVER_URL = "https://statuslist.eudi-adorsys.com/";
+    private static final boolean DEFAULT_MANDATORY = false;
 
     private final RealmModel realm;
 
@@ -45,6 +47,11 @@ public class StatusListConfig {
     public boolean isEnabled() {
         String value = realm.getAttribute(STATUS_LIST_ENABLED);
         return value != null ? Boolean.parseBoolean(value) : DEFAULT_ENABLED;
+    }
+
+    public boolean isMandatory() {
+        String value = realm.getAttribute(STATUS_LIST_MANDATORY);
+        return value != null ? Boolean.parseBoolean(value) : DEFAULT_MANDATORY;
     }
 
     /**
