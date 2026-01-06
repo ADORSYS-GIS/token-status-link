@@ -1,12 +1,9 @@
 package com.adorsys.keycloakstatuslist.client;
 
-
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.model.TokenStatusRecord;
 import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.jboss.logging.Logger;
 
 /**
@@ -16,17 +13,18 @@ import org.jboss.logging.Logger;
 public class StatusListClient {
 
     private static final Logger logger = Logger.getLogger(StatusListClient.class);
-    private static final ObjectMapper objectMapper = new ObjectMapper()
-            .registerModule(new JavaTimeModule());
 
     private final StatusListService statusListService;
 
     public StatusListClient(String serverUrl, String authToken) {
-        this(new StatusListService(
+        // For direct client usage, use default timeouts and no circuit breaker
+        StatusListHttpClient httpClient = new ApacheHttpStatusListClient(
                 serverUrl,
                 authToken,
-                CustomHttpClient.getHttpClient()
-        ));
+                CustomHttpClient.getHttpClient(),
+                null
+        );
+        this.statusListService = new StatusListService(httpClient);
     }
 
     public StatusListClient(StatusListService statusListService) {

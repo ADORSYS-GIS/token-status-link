@@ -1,5 +1,7 @@
 package com.adorsys.keycloakstatuslist.resource;
 
+import com.adorsys.keycloakstatuslist.client.ApacheHttpStatusListClient;
+import com.adorsys.keycloakstatuslist.client.StatusListHttpClient;
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.service.CryptoIdentityService;
@@ -155,11 +157,15 @@ public class CredentialRevocationResourceProviderFactory extends OIDCLoginProtoc
             }
 
             CryptoIdentityService cryptoIdentityService = new CryptoIdentityService(session);
-            StatusListService statusListService = new StatusListService(
+            
+            // For admin operations, we don't need circuit breaker - use default timeouts
+            StatusListHttpClient httpClient = new ApacheHttpStatusListClient(
                     config.getServerUrl(),
                     cryptoIdentityService.getJwtToken(config),
-                    CustomHttpClient.getHttpClient()
+                    CustomHttpClient.getHttpClient(),
+                    null // No circuit breaker for admin operations
             );
+            StatusListService statusListService = new StatusListService(httpClient);
 
             // Check if the status list server is reachable
             if (!statusListService.checkServerHealth()) {

@@ -8,7 +8,7 @@ import org.jboss.logging.Logger;
  * Handles JWKS structure validation and key searching.
  */
 public class JwksParser {
-
+    
     private static final Logger logger = Logger.getLogger(JwksParser.class);
 
     /**

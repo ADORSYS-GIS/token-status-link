@@ -1,5 +1,7 @@
 package com.adorsys.keycloakstatuslist.service;
 
+import com.adorsys.keycloakstatuslist.client.ApacheHttpStatusListClient;
+import com.adorsys.keycloakstatuslist.client.StatusListHttpClient;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.exception.StatusListServerException;
 import com.adorsys.keycloakstatuslist.model.TokenStatus;
@@ -15,7 +17,7 @@ import org.apache.hc.core5.http.message.BasicClassicHttpResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.keycloak.jose.jwk.JWK; // Import added
+import org.keycloak.jose.jwk.JWK;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -46,7 +48,10 @@ class StatusListServiceTest {
 
     @BeforeEach
     void setUp() {
-        statusListService = new StatusListService(SERVER_URL, null, httpClient);
+        // Create HTTP client with no circuit breaker for testing
+        StatusListHttpClient httpClientImpl = new ApacheHttpStatusListClient(
+                SERVER_URL, null, httpClient, null);
+        statusListService = new StatusListService(httpClientImpl);
     }
 
     private void setupResponse(int statusCode) throws IOException {
@@ -96,7 +101,9 @@ class StatusListServiceTest {
         // Test publish record with auth token
         final TokenStatusRecord record = createTestRecord();
         reset(httpClient);
-        statusListService = new StatusListService(SERVER_URL, "test-token", httpClient);
+        StatusListHttpClient httpClientWithAuth = new ApacheHttpStatusListClient(
+                SERVER_URL, "test-token", httpClient, null);
+        statusListService = new StatusListService(httpClientWithAuth);
         setupSuccessfulResponse();
         assertDoesNotThrow(() -> statusListService.publishRecord(record));
         verifyHttpClientCall(1);

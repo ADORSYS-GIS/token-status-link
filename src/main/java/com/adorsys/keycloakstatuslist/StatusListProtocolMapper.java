@@ -1,9 +1,12 @@
 package com.adorsys.keycloakstatuslist;
 
+import com.adorsys.keycloakstatuslist.client.ApacheHttpStatusListClient;
+import com.adorsys.keycloakstatuslist.client.StatusListHttpClient;
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
 import com.adorsys.keycloakstatuslist.model.Status;
 import com.adorsys.keycloakstatuslist.model.StatusListClaim;
+import com.adorsys.keycloakstatuslist.service.CircuitBreaker;
 import com.adorsys.keycloakstatuslist.service.CryptoIdentityService;
 import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
@@ -27,6 +30,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
@@ -41,6 +45,9 @@ public class StatusListProtocolMapper extends OID4VCMapper {
 
     private static final Logger logger = Logger.getLogger(StatusListProtocolMapper.class);
     private static final List<ProviderConfigProperty> CONFIG_PROPERTIES = new ArrayList<>();
+    
+    // Cache StatusListService per realm to share circuit breaker across all token issuance requests
+    private static final Map<String, StatusListService> serviceCache = new ConcurrentHashMap<>();
 
     private final KeycloakSession session;
     private final CryptoIdentityService cryptoIdentityService;
@@ -70,12 +77,38 @@ public class StatusListProtocolMapper extends OID4VCMapper {
     public StatusListProtocolMapper(KeycloakSession session) {
         this.session = session;
         this.cryptoIdentityService = new CryptoIdentityService(session);
-        StatusListConfig config = new StatusListConfig(session.getContext().getRealm());
-        this.statusListService = new StatusListService(
-                config.getServerUrl(),
-                cryptoIdentityService.getJwtToken(config),
-                CustomHttpClient.getHttpClient()
-        );
+        
+        // Get or create cached StatusListService for this realm
+        // This ensures circuit breaker is shared across all token issuance requests
+        String realmId = session.getContext().getRealm().getId();
+        this.statusListService = serviceCache.computeIfAbsent(realmId, key -> {
+            StatusListConfig config = new StatusListConfig(session.getContext().getRealm());
+            
+            // Create circuit breaker if enabled
+            CircuitBreaker circuitBreaker = null;
+            if (config.isCircuitBreakerEnabled()) {
+                circuitBreaker = new CircuitBreaker(
+                        "StatusListCircuitBreaker-" + realmId,
+                        config.getCircuitBreakerFailureThreshold(),
+                        config.getCircuitBreakerTimeoutThreshold(),
+                        config.getCircuitBreakerWindowSeconds(),
+                        config.getCircuitBreakerCooldownSeconds()
+                );
+            }
+            
+            // Create HTTP client with custom timeouts for issuance path
+            StatusListHttpClient httpClient = new ApacheHttpStatusListClient(
+                    config.getServerUrl(),
+                    cryptoIdentityService.getJwtToken(config),
+                    CustomHttpClient.getHttpClient(
+                            config.getIssuanceConnectTimeout(),
+                            config.getIssuanceReadTimeout()
+                    ),
+                    circuitBreaker
+            );
+            
+            return new StatusListService(httpClient);
+        });
     }
 
     @Override
