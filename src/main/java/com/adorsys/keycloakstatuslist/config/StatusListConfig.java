@@ -19,7 +19,6 @@ public class StatusListConfig {
     public static final String STATUS_LIST_ENABLED = "status-list-enabled";
     public static final String STATUS_LIST_SERVER_URL = "status-list-server-url";
     public static final String STATUS_LIST_TOKEN_ISSUER_PREFIX = "status-list-token-issuer-prefix";
-   
 
     // Default values
     private static final boolean DEFAULT_ENABLED = true;

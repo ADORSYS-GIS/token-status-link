@@ -36,27 +36,27 @@ class CredentialRevocationServiceTest {
 
     @Mock
     private KeycloakSession session;
-    
+
     @Mock
     private RealmModel realm;
-    
+
     @Mock
     private KeycloakContext context;
-    
+
     @Mock
     private KeyManager keyManager;
-    
+
     @Mock
     private KeyWrapper keyWrapper;
-    
+
     private RSAPublicKey publicKey;
-    
+
     @Mock
     private StatusListService statusListService;
-    
+
     @Mock
     private SdJwtVP sdJwtVP;
-    
+
     @Mock
     private SdJwtVPValidationService sdJwtVPValidationService;
     
@@ -87,11 +87,11 @@ class CredentialRevocationServiceTest {
         lenient().when(context.getRealm()).thenReturn(realm);
         lenient().when(session.keys()).thenReturn(keyManager);
         lenient().when(realm.getName()).thenReturn("test-realm");
-        
+
         // Setup realm attributes
         lenient().when(realm.getAttribute("status-list-enabled")).thenReturn("true");
         lenient().when(realm.getAttribute(anyString())).thenReturn(null);
-        
+
         // Setup key management
         lenient().when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq("RS256"))).thenReturn(keyWrapper);
         lenient().when(keyWrapper.getPublicKey()).thenReturn(publicKey);
@@ -105,24 +105,24 @@ class CredentialRevocationServiceTest {
         
         // Create service with mocked dependencies
         service = new CredentialRevocationService(session);
-        
+
         // Inject mocked dependencies using reflection
         injectMockedDependencies();
     }
-    
+
     private void injectMockedDependencies() {
         try {
             // Inject mocked SdJwtVPValidationService
             java.lang.reflect.Field sdJwtVPValidationField = CredentialRevocationService.class.getDeclaredField("sdJwtVPValidationService");
             sdJwtVPValidationField.setAccessible(true);
             sdJwtVPValidationField.set(service, sdJwtVPValidationService);
-            
-            
+
+
             // Inject mocked StatusListService
             java.lang.reflect.Field statusListField = CredentialRevocationService.class.getDeclaredField("statusListService");
             statusListField.setAccessible(true);
             statusListField.set(service, statusListService);
-            
+
         } catch (Exception e) {
             fail("Failed to inject mocked dependencies: " + e.getMessage());
         }
@@ -149,16 +149,16 @@ class CredentialRevocationServiceTest {
         doNothing().when(sdJwtVPValidationService).verifySdJwtVPSignature(any(SdJwtVP.class), anyString(), anyString(), anyString());
         doNothing().when(sdJwtVPValidationService).verifyCredentialOwnership(any(SdJwtVP.class), anyString(), anyString());
         doNothing().when(statusListService).publishRecord(any(TokenStatusRecord.class));
-        
+
         // Act
         CredentialRevocationResponse response = service.revokeCredential(request, "valid-sd-jwt-vp-token");
-        
+
         // Assert - Test ONLY the main service's orchestration logic
         assertNotNull(response);
         assertEquals(request.getCredentialId(), response.getCredentialId());
         assertNotNull(response.getRevokedAt());
         assertEquals(request.getRevocationReason(), response.getRevocationReason());
-        
+
         // Verify the orchestration flow - services called in correct order
         verify(sdJwtVPValidationService).parseSdJwtVP(anyString(), anyString());
         verify(sdJwtVPValidationService).extractNonceFromKeyBindingJWT(any(SdJwtVP.class));
@@ -181,10 +181,10 @@ class CredentialRevocationServiceTest {
         StatusListException exception = assertThrows(StatusListException.class, () -> {
             service.revokeCredential(request, "valid-sd-jwt-vp-token");
         });
-        
+
         // Test that the main service properly handles the error
         assertTrue(exception.getMessage().contains("Validation failed"));
-        
+
         // Verify no other services were called
         verify(sdJwtVPValidationService).parseSdJwtVP(anyString(), anyString());
         verify(statusListService, never()).publishRecord(any());
@@ -195,7 +195,7 @@ class CredentialRevocationServiceTest {
     void testRevokeCredential_SdJwtVPValidationFailure() throws Exception {
         // Arrange
         CredentialRevocationRequest request = createValidRequest();
-        
+
         // Mock request validation to succeed, but SD-JWT validation to fail
         when(sdJwtVPValidationService.parseSdJwtVP(anyString(), anyString()))
             .thenThrow(new StatusListException("SD-JWT validation failed"));
@@ -204,10 +204,10 @@ class CredentialRevocationServiceTest {
         StatusListException exception = assertThrows(StatusListException.class, () -> {
             service.revokeCredential(request, "valid-sd-jwt-vp-token");
         });
-        
+
         // Test that the main service properly handles the error
         assertTrue(exception.getMessage().contains("SD-JWT validation failed"));
-        
+
         // Verify the flow stopped at SD-JWT validation
         verify(sdJwtVPValidationService).parseSdJwtVP(anyString(), anyString());
         verify(statusListService, never()).publishRecord(any());
@@ -234,16 +234,16 @@ class CredentialRevocationServiceTest {
         doNothing().when(sdJwtVPValidationService).verifySdJwtVPSignature(any(SdJwtVP.class), anyString(), anyString(), anyString());
         doNothing().when(sdJwtVPValidationService).verifyCredentialOwnership(any(SdJwtVP.class), anyString(), anyString());
         doThrow(new StatusListException("Status list publication failed"))
-            .when(statusListService).publishRecord(any(TokenStatusRecord.class));
-        
+                .when(statusListService).publishRecord(any(TokenStatusRecord.class));
+
         // Act & Assert
         StatusListException exception = assertThrows(StatusListException.class, () -> {
             service.revokeCredential(request, "valid-sd-jwt-vp-token");
         });
-        
+
         // Test that the main service properly handles the error
         assertTrue(exception.getMessage().contains("Status list publication failed"));
-        
+
         // Verify the complete flow was executed
         verify(sdJwtVPValidationService).parseSdJwtVP(anyString(), anyString());
         verify(sdJwtVPValidationService).extractNonceFromKeyBindingJWT(any(SdJwtVP.class));
@@ -273,7 +273,7 @@ class CredentialRevocationServiceTest {
             request2.getCredentialId(),
             Instant.now().plusSeconds(600)
         );
-        
+      
         // Mock all dependencies to succeed
         when(sdJwtVPValidationService.parseSdJwtVP(anyString(), anyString())).thenReturn(sdJwtVP);
         when(sdJwtVPValidationService.extractNonceFromKeyBindingJWT(any(SdJwtVP.class)))
@@ -283,11 +283,11 @@ class CredentialRevocationServiceTest {
         doNothing().when(sdJwtVPValidationService).verifySdJwtVPSignature(any(SdJwtVP.class), anyString(), anyString(), anyString());
         doNothing().when(sdJwtVPValidationService).verifyCredentialOwnership(any(SdJwtVP.class), anyString(), anyString());
         doNothing().when(statusListService).publishRecord(any(TokenStatusRecord.class));
-        
+
         // Act
         service.revokeCredential(request1, "valid-sd-jwt-vp-token");
         service.revokeCredential(request2, "valid-sd-jwt-vp-token");
-        
+
         // Assert - Verify that different request IDs were generated
         verify(sdJwtVPValidationService, times(2)).parseSdJwtVP(anyString(), anyString());
         verify(sdJwtVPValidationService, times(2)).extractNonceFromKeyBindingJWT(any(SdJwtVP.class));
@@ -300,7 +300,7 @@ class CredentialRevocationServiceTest {
     void testRevokeCredential_UnexpectedException() throws Exception {
         // Arrange
         CredentialRevocationRequest request = createValidRequest();
-        
+
         // Mock an unexpected exception
         when(sdJwtVPValidationService.parseSdJwtVP(anyString(), anyString()))
             .thenThrow(new RuntimeException("Unexpected error"));
@@ -309,7 +309,7 @@ class CredentialRevocationServiceTest {
         StatusListException exception = assertThrows(StatusListException.class, () -> {
             service.revokeCredential(request, "valid-sd-jwt-vp-token");
         });
-        
+
         // Test that the main service properly wraps unexpected exceptions
         assertTrue(exception.getMessage().contains("Failed to process credential revocation"));
         assertTrue(exception.getMessage().contains("Unexpected error"));

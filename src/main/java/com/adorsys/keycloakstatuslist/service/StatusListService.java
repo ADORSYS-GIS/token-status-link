@@ -288,14 +288,6 @@ public class StatusListService {
         }
     }
 
-    public record StatusListPayload(
-            @JsonProperty("list_id") String listId,
-            List<StatusEntry> status
-    ) {
-        public record StatusEntry(int index, String status) {
-        }
-    }
-
     public void publishOrUpdate(StatusListPayload payload) throws StatusListException {
         String requestId = UUID.randomUUID().toString();
         String listId = payload.listId();
@@ -422,6 +414,14 @@ public class StatusListService {
         } catch (IOException e) {
             logger.errorf(e, "Request ID: %s, Error during server health check", requestId);
             return false;
+        }
+    }
+
+    public record StatusListPayload(
+            @JsonProperty("list_id") String listId,
+            List<StatusEntry> status
+    ) {
+        public record StatusEntry(int index, String status) {
         }
     }
 }

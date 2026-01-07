@@ -25,17 +25,17 @@ import java.util.List;
  * Handles token parsing, signature verification, and credential extraction.
  */
 public class SdJwtVPValidationService {
-    
+
     private static final Logger logger = Logger.getLogger(SdJwtVPValidationService.class);
-    
+
     private final KeycloakSession session;
     private final JwksService jwksService;
-    
+
     public SdJwtVPValidationService(KeycloakSession session) {
         this.session = session;
         this.jwksService = new JwksService(session);
     }
-    
+
     /**
      * Parses the SD-JWT VP token WITHOUT cryptographic verification.
      * This allows extraction of claims (like credential ID and nonce) before full verification.
@@ -55,7 +55,7 @@ public class SdJwtVPValidationService {
             logger.infof("SD-JWT VP parsed successfully. RequestId: %s", requestId);
             
             return sdJwtVP;
-            
+
         } catch (IllegalArgumentException e) {
             logger.errorf("Invalid SD-JWT VP token format. RequestId: %s, Error: %s", requestId, e.getMessage());
             throw new StatusListException("Malformed VP: Invalid SD-JWT VP token format: " + e.getMessage(), e, 400);
@@ -64,7 +64,7 @@ public class SdJwtVPValidationService {
             throw new StatusListException("Malformed VP: Failed to parse SD-JWT VP token: " + e.getMessage(), e, 400);
         }
     }
-    
+
     /**
      * Verifies the SD-JWT VP token's issuer signature and Key Binding JWT using Keycloak's internal key management.
      * This ensures the token was properly issued by the claimed issuer and signed by the holder.
@@ -76,16 +76,16 @@ public class SdJwtVPValidationService {
      */
     public void verifySdJwtVPSignature(SdJwtVP sdJwtVP, String requestId, String credentialId, String expectedNonce) throws StatusListException {
         try {
-            
+          
             String issuer = extractIssuerFromToken(sdJwtVP);
             if (issuer == null || issuer.trim().isEmpty()) {
                 logger.errorf("No issuer found in SD-JWT VP token. RequestId: %s", requestId);
                 throw new StatusListException("Token missing required issuer information for verification");
             }
-            
+
             // Use the new approach with internal key management
             List<SignatureVerifierContext> verifyingKeys = jwksService.getSignatureVerifierContexts(sdJwtVP, issuer, requestId);
-            
+
             if (verifyingKeys.isEmpty()) {
                 logger.errorf("No valid issuer signature verifier contexts created. RequestId: %s", requestId);
                 throw new StatusListException("No public keys available for issuer: " + issuer);
@@ -148,52 +148,52 @@ public class SdJwtVPValidationService {
             if (algorithm == null || algorithm.trim().isEmpty()) {
                 throw new IllegalArgumentException("Algorithm cannot be null or empty");
             }
-            
+
             KeyWrapper keyWrapper = new KeyWrapper() {
                 @Override
                 public String getKid() {
                     return "external-key";
                 }
-                
+
                 @Override
                 public String getAlgorithm() {
                     return algorithm;
                 }
-                
+
                 @Override
                 public PublicKey getPublicKey() {
                     return publicKey;
                 }
-                
+
                 @Override
                 public String getProviderId() {
                     return "external";
                 }
-                
+
                 @Override
                 public String getType() {
                     return "RSA";
                 }
-                
+
                 @Override
                 public KeyStatus getStatus() {
                     return KeyStatus.ACTIVE;
                 }
-                
+
                 @Override
                 public long getProviderPriority() {
                     return 0L;
                 }
             };
-            
+
             return new AsymmetricSignatureVerifierContext(keyWrapper);
-            
+
         } catch (Exception e) {
             logger.error("Failed to create signature verifier context from public key", e);
             throw new StatusListException("Failed to create signature verifier context from public key: " + e.getMessage(), e);
         }
     }
-    
+
     /**
      * Extracts the credential ID from the SD-JWT VP token.
      * Searches recursively through the payload for credential ID fields.
@@ -201,7 +201,7 @@ public class SdJwtVPValidationService {
     public String extractCredentialIdFromSdJwtVP(SdJwtVP sdJwtVP) {
         try {
             var payload = sdJwtVP.getIssuerSignedJWT().getPayload();
-            
+
             String credentialId = extractField(payload, "sub");
             if (credentialId == null) {
                 credentialId = extractField(payload, "credential_id");
@@ -209,19 +209,19 @@ public class SdJwtVPValidationService {
             if (credentialId == null) {
                 credentialId = extractField(payload, "jti");
             }
-            
+
             if (credentialId == null) {
                 credentialId = findCredentialIdRecursively(payload);
             }
-            
+
             return credentialId;
-            
+
         } catch (Exception e) {
             logger.warn("Failed to extract credential ID from SD-JWT VP token", e);
             return null;
         }
     }
-    
+
     /**
      * Extracts the issuer from the SD-JWT VP token.
      */
@@ -269,13 +269,13 @@ public class SdJwtVPValidationService {
 
     private String findCredentialIdRecursively(JsonNode node) {
         if (node == null) return null;
-        
+
         if (node.isObject()) {
             JsonNode credentialId = node.get("credential_id");
             if (credentialId != null && credentialId.isTextual()) {
                 return credentialId.asText();
             }
-            
+
             String[] idFields = {"sub", "jti", "id", "credentialId", "credential_id"};
             for (String field : idFields) {
                 JsonNode idNode = node.get(field);
@@ -283,7 +283,7 @@ public class SdJwtVPValidationService {
                     return idNode.asText();
                 }
             }
-            
+
             for (JsonNode child : node) {
                 String id = findCredentialIdRecursively(child);
                 if (id != null) return id;
@@ -294,10 +294,10 @@ public class SdJwtVPValidationService {
                 if (id != null) return id;
             }
         }
-        
+
         return null;
     }
-    
+
     private String extractField(Object payload, String fieldName) {
         try {
             if (payload instanceof JsonNode) {

@@ -7,8 +7,7 @@ import com.fasterxml.jackson.databind.JsonNode;
  * Handles JWKS structure validation and key searching.
  */
 public class JwksParser {
-    
-    
+
     /**
      * Finds a key in the JWKS JSON by its "kid" (Key ID).
      */
@@ -16,17 +15,17 @@ public class JwksParser {
         if (jwksJson == null || !jwksJson.has("keys") || !jwksJson.get("keys").isArray()) {
             return null;
         }
-        
+
         JsonNode keysNode = jwksJson.get("keys");
         for (JsonNode key : keysNode) {
             if (key.has("kid") && kid.equals(key.get("kid").asText())) {
                 return key;
             }
         }
-        
+
         return null;
     }
-    
+
     /**
      * Validates if a JWKS key node has the required fields for extraction.
      */
@@ -34,25 +33,25 @@ public class JwksParser {
         if (!jwk.isObject() || !jwk.has("kty")) {
             return false;
         }
-        
+
         String kty = jwk.get("kty").asText();
-        
+
         if (kty.equals("RSA")) {
             return jwk.has("n") && jwk.has("e");
         } else if (kty.equals("EC")) {
             return jwk.has("crv") && jwk.has("x") && jwk.has("y");
         }
-        
+
         return false;
     }
-    
+
     /**
      * Gets the key type from a JWKS key node.
      */
     public String getKeyType(JsonNode jwk) {
         return jwk.has("kty") ? jwk.get("kty").asText() : null;
     }
-    
+
     /**
      * Gets the key ID from a JWKS key node.
      */

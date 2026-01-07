@@ -1,4 +1,4 @@
- package com.adorsys.keycloakstatuslist.resource;
+package com.adorsys.keycloakstatuslist.resource;
 
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.service.CryptoIdentityService;
@@ -90,7 +90,7 @@ class CredentialRevocationResourceProviderFactoryTest {
         if (mockedHttpClient != null) mockedHttpClient.close();
         if (mockedStatusListServiceConstruction != null) mockedStatusListServiceConstruction.close();
         if (mockedCryptoServiceConstruction != null) mockedCryptoServiceConstruction.close();
-        
+
         factory.close();
     }
 
@@ -105,7 +105,7 @@ class CredentialRevocationResourceProviderFactoryTest {
     void testPostInitRegistersListenerAndProcessesRealms() throws IOException {
         CloseableHttpClient httpClient = mock(CloseableHttpClient.class);
         CloseableHttpResponse httpResponse = mock(CloseableHttpResponse.class);
-        
+
         mockedHttpClient.when(CustomHttpClient::getHttpClient).thenReturn(httpClient);
 
         when(httpClient.execute(any(HttpGet.class), any(HttpClientResponseHandler.class))).thenAnswer(invocation -> {
@@ -122,7 +122,7 @@ class CredentialRevocationResourceProviderFactoryTest {
 
         ArgumentCaptor<ProviderEventListener> listenerCaptor = ArgumentCaptor.forClass(ProviderEventListener.class);
         factory.postInit(sessionFactory);
-        
+
         verify(sessionFactory, atLeastOnce()).register(listenerCaptor.capture());
 
         listenerCaptor.getValue().onEvent(new PostMigrationEvent(sessionFactory));
@@ -132,7 +132,7 @@ class CredentialRevocationResourceProviderFactoryTest {
 
         assertEquals(1, mockedStatusListServiceConstruction.constructed().size());
         StatusListService mockService = mockedStatusListServiceConstruction.constructed().get(0);
-        
+
         try {
             verify(mockService).registerIssuer(argThat(arg -> arg.endsWith("::test-realm")), eq(mockJwk));
         } catch (StatusListException e) {
@@ -162,7 +162,7 @@ class CredentialRevocationResourceProviderFactoryTest {
         // Service is constructed but registration is skipped
         assertEquals(1, mockedStatusListServiceConstruction.constructed().size());
         StatusListService mockService = mockedStatusListServiceConstruction.constructed().get(0);
-        
+
         try {
             verify(mockService, never()).registerIssuer(any(), any());
         } catch (StatusListException e) {
@@ -199,7 +199,7 @@ class CredentialRevocationResourceProviderFactoryTest {
     @Test
     void testInitializeRealms_GracefulFailureOnServiceException() {
         setupSuccessfulHealthCheck();
-        
+
         RevocationRecordService.KeyData keyData = new RevocationRecordService.KeyData(mock(JWK.class), "RS256");
         mockedRevocationService.when(() -> RevocationRecordService.getRealmKeyData(session, realm))
                 .thenReturn(keyData);
@@ -219,9 +219,9 @@ class CredentialRevocationResourceProviderFactoryTest {
     private void triggerInitialization() {
         ArgumentCaptor<ProviderEventListener> listenerCaptor = ArgumentCaptor.forClass(ProviderEventListener.class);
         factory.postInit(sessionFactory);
-        
+
         verify(sessionFactory, atLeastOnce()).register(listenerCaptor.capture());
-        
+
         listenerCaptor.getValue().onEvent(new PostMigrationEvent(sessionFactory));
     }
 
@@ -230,7 +230,7 @@ class CredentialRevocationResourceProviderFactoryTest {
             CloseableHttpClient httpClient = mock(CloseableHttpClient.class);
             CloseableHttpResponse httpResponse = mock(CloseableHttpResponse.class);
             mockedHttpClient.when(CustomHttpClient::getHttpClient).thenReturn(httpClient);
-            
+
             when(httpClient.execute(any(HttpGet.class), any(HttpClientResponseHandler.class))).thenAnswer(invocation -> {
                 HttpClientResponseHandler<?> handler = invocation.getArgument(1);
                 when(httpResponse.getCode()).thenReturn(200);

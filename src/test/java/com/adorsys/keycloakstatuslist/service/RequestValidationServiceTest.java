@@ -29,7 +29,7 @@ class RequestValidationServiceTest {
                 "test-credential-123",
                 "User requested revocation"
         );
-        
+
         // Act & Assert - should not throw exception
         assertDoesNotThrow(() -> {
             service.validateRevocationRequest(request);
@@ -42,7 +42,7 @@ class RequestValidationServiceTest {
         StatusListException exception = assertThrows(StatusListException.class, () -> {
             service.validateRevocationRequest(null);
         });
-        
+
         assertEquals("Revocation request cannot be null", exception.getMessage());
     }
 
@@ -53,12 +53,12 @@ class RequestValidationServiceTest {
                 null,
                 "User requested revocation"
         );
-        
+
         // Act & Assert
         StatusListException exception = assertThrows(StatusListException.class, () -> {
             service.validateRevocationRequest(request);
         });
-        
+
         assertEquals("Credential ID is required", exception.getMessage());
     }
 
@@ -69,12 +69,12 @@ class RequestValidationServiceTest {
                 "",
                 "User requested revocation"
         );
-        
+
         // Act & Assert
         StatusListException exception = assertThrows(StatusListException.class, () -> {
             service.validateRevocationRequest(request);
         });
-        
+
         assertEquals("Credential ID is required", exception.getMessage());
     }
 
@@ -85,12 +85,12 @@ class RequestValidationServiceTest {
                 "   ",
                 "User requested revocation"
         );
-        
+
         // Act & Assert
         StatusListException exception = assertThrows(StatusListException.class, () -> {
             service.validateRevocationRequest(request);
         });
-        
+
         assertEquals("Credential ID is required", exception.getMessage());
     }
 
@@ -101,12 +101,12 @@ class RequestValidationServiceTest {
                 null,
                 null
         );
-        
+
         // Act & Assert 
         StatusListException exception = assertThrows(StatusListException.class, () -> {
             service.validateRevocationRequest(request);
         });
-        
+
         assertEquals("Credential ID is required", exception.getMessage());
     }
 
@@ -117,12 +117,12 @@ class RequestValidationServiceTest {
                 "",
                 ""
         );
-        
+
         // Act & Assert 
         StatusListException exception = assertThrows(StatusListException.class, () -> {
             service.validateRevocationRequest(request);
         });
-        
+
         assertEquals("Credential ID is required", exception.getMessage());
     }
 
@@ -133,7 +133,7 @@ class RequestValidationServiceTest {
                 "test-credential-123",
                 null
         );
-        
+
         // Act & Assert 
         assertDoesNotThrow(() -> {
             service.validateRevocationRequest(request);
@@ -147,7 +147,7 @@ class RequestValidationServiceTest {
                 "test-credential-123",
                 ""
         );
-        
+
         // Act & Assert 
         assertDoesNotThrow(() -> {
             service.validateRevocationRequest(request);
@@ -162,7 +162,7 @@ class RequestValidationServiceTest {
                 "test-credential-123",
                 longReason
         );
-        
+
         // Act & Assert 
         assertDoesNotThrow(() -> {
             service.validateRevocationRequest(request);
@@ -176,7 +176,7 @@ class RequestValidationServiceTest {
                 "test-credential-123-with-special-chars!@#$%",
                 "Reason with special chars: !@#$%^&*()"
         );
-        
+
         // Act & Assert 
         assertDoesNotThrow(() -> {
             service.validateRevocationRequest(request);
@@ -190,7 +190,7 @@ class RequestValidationServiceTest {
                 "test-credential-123-üöä",
                 "Reason with unicode: üöäéèê"
         );
-        
+
         // Act & Assert 
         assertDoesNotThrow(() -> {
             service.validateRevocationRequest(request);
@@ -204,7 +204,7 @@ class RequestValidationServiceTest {
                 "test-credential-456",
                 "Reason with numbers: 1234567890"
         );
-        
+
         // Act & Assert 
         assertDoesNotThrow(() -> {
             service.validateRevocationRequest(request);
@@ -218,7 +218,7 @@ class RequestValidationServiceTest {
                 "test-credential-id-with-hyphens",
                 "Reason with hyphens: user-requested-revocation"
         );
-        
+
         // Act & Assert 
         assertDoesNotThrow(() -> {
             service.validateRevocationRequest(request);
@@ -232,7 +232,7 @@ class RequestValidationServiceTest {
                 "test_credential_id_with_underscores",
                 "Reason with underscores: user_requested_revocation"
         );
-        
+
         // Act & Assert 
         assertDoesNotThrow(() -> {
             service.validateRevocationRequest(request);
@@ -246,7 +246,7 @@ class RequestValidationServiceTest {
                 "test credential id with spaces",
                 "Reason with spaces: user requested revocation"
         );
-        
+
         // Act & Assert 
         assertDoesNotThrow(() -> {
             service.validateRevocationRequest(request);
@@ -258,12 +258,12 @@ class RequestValidationServiceTest {
         // Arrange
         String longCredentialId = "b".repeat(1000);
         String longReason = "c".repeat(500);
-        
+
         CredentialRevocationRequest request = new CredentialRevocationRequest(
                 longCredentialId,
                 longReason
         );
-        
+
         // Act & Assert 
         assertDoesNotThrow(() -> {
             service.validateRevocationRequest(request);
