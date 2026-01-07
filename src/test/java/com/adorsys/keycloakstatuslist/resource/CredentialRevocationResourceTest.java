@@ -74,79 +74,7 @@ class CredentialRevocationResourceTest {
         lenient().when(realm.getName()).thenReturn("test-realm");
 
         // Create a testable version of the resource with dependency injection
-        resource = new TestableCredentialRevocationResource(session);
-        resource.setHttpHeaders(headers);
-        resource.setRevocationService(revocationService);
-    }
-
-    /**
-     * Testable version of CredentialRevocationResource that overrides the parent
-     * class behavior
-     * to avoid complex Keycloak setup requirements.
-     */
-    private static class TestableCredentialRevocationResource extends CredentialRevocationResource {
-        private final KeycloakSession session;
-        private HttpHeaders headers;
-
-        public TestableCredentialRevocationResource(KeycloakSession session) {
-            super(session);
-            this.session = session;
-        }
-
-        // Setters for services to allow injection in tests
-        public void setRevocationService(CredentialRevocationService revocationService) {
-            this.revocationService = revocationService;
-        }
-
-        // Setter for HttpHeaders to allow injection in tests
-        public void setHttpHeaders(HttpHeaders headers) {
-            this.headers = headers;
-        }
-
-        @Override
-        protected HttpHeaders getHeaders() {
-            return headers;
-        }
-
-        @Override
-        protected CredentialRevocationService getRevocationService() {
-            return revocationService;
-        }
-
-        @Override
-        public Response revoke() {
-            // Get the form parameters and authorization header directly
-            MultivaluedMap<String, String> form = session.getContext().getHttpRequest().getDecodedFormParameters();
-            String authorizationHeader = headers.getHeaderString(HttpHeaders.AUTHORIZATION);
-
-            if (authorizationHeader != null && authorizationHeader.toLowerCase().startsWith("bearer ")) {
-                String token = authorizationHeader.substring("bearer ".length()).trim();
-                String credentialId = form.getFirst("token");
-
-                if (credentialId != null && !credentialId.isEmpty()) {
-                    try {
-                        CredentialRevocationRequest request = new CredentialRevocationRequest();
-                        request.setCredentialId(credentialId);
-                        request.setRevocationReason(form.getFirst("reason"));
-
-                        revocationService.revokeCredential(request, token);
-
-                        // Return success response
-                        return Response.ok().build();
-
-                    } catch (StatusListException e) {
-                        return Response.status(e.getHttpStatus()).entity(e.getMessage()).build();
-                    } catch (IllegalArgumentException e) {
-                        return Response.status(400).entity("Malformed VP: " + e.getMessage()).build();
-                    } catch (Exception e) {
-                        return Response.status(500).entity("Internal error during credential revocation").build();
-                    }
-                }
-            }
-
-            // Return success response for all other cases
-            return Response.ok().build();
-        }
+        resource = new TestableCredentialRevocationResource(session, headers, revocationService);
     }
 
     /**
@@ -281,10 +209,18 @@ class CredentialRevocationResourceTest {
      */
     private static class TestableCredentialRevocationResource extends CredentialRevocationResource {
         private final KeycloakSession session;
+        private final HttpHeaders headers;
 
         public TestableCredentialRevocationResource(KeycloakSession session, HttpHeaders headers, CredentialRevocationService revocationService) {
-            super(session, null, headers, revocationService);
+            super(session);
             this.session = session;
+            this.headers = headers;
+            this.revocationService = revocationService;
+        }
+
+        @Override
+        protected HttpHeaders getHeaders() {
+            return headers;
         }
 
         @Override
@@ -308,9 +244,12 @@ class CredentialRevocationResourceTest {
                         // Return success response
                         return Response.ok().build();
 
+                    } catch (StatusListException e) {
+                        return Response.status(e.getHttpStatus()).entity(e.getMessage()).build();
+                    } catch (IllegalArgumentException e) {
+                        return Response.status(400).entity("Malformed VP: " + e.getMessage()).build();
                     } catch (Exception e) {
-                        // Fall back to standard success response
-                        return Response.ok().build();
+                        return Response.status(500).entity("Internal error during credential revocation").build();
                     }
                 }
             }
