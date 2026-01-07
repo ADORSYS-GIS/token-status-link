@@ -3,6 +3,7 @@ package com.adorsys.keycloakstatuslist.service;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.service.validation.SdJwtVPValidationService;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -118,7 +119,7 @@ public class DefaultSdJwtVPValidationService implements SdJwtVPValidationService
     /**
      * Verifies that the SD-JWT VP token proves ownership of the specified credential.
      * This checks that the credential ID in the VP matches the requested credential ID.
-     * 
+     * <p></p>
      * SECURITY: This method ensures that only the actual credential holder can revoke their credential
      * by verifying the credential ID match. The cryptographic proof is verified separately.
      */
@@ -344,9 +345,8 @@ public class DefaultSdJwtVPValidationService implements SdJwtVPValidationService
             }
             
             var payload = kbOpt.get().getPayload();
-            if (payload instanceof com.fasterxml.jackson.databind.JsonNode) {
-                com.fasterxml.jackson.databind.JsonNode node = (com.fasterxml.jackson.databind.JsonNode) payload;
-                com.fasterxml.jackson.databind.JsonNode nonceNode = node.get("nonce");
+            if (payload != null) {
+                JsonNode nonceNode = payload.get("nonce");
                 if (nonceNode != null && nonceNode.isTextual()) {
                     return nonceNode.asText();
                 }
@@ -396,8 +396,7 @@ public class DefaultSdJwtVPValidationService implements SdJwtVPValidationService
 
     private String extractField(Object payload, String fieldName) {
         try {
-            if (payload instanceof JsonNode) {
-                JsonNode node = (JsonNode) payload;
+            if (payload instanceof JsonNode node) {
                 JsonNode field = node.get(fieldName);
                 return field != null ? field.asText() : null;
             }
@@ -412,11 +411,10 @@ public class DefaultSdJwtVPValidationService implements SdJwtVPValidationService
      * options control how the issuer signature is validated.
      */
     private IssuerSignedJwtVerificationOpts getIssuerSignedJwtVerificationOpts() {
-
         return IssuerSignedJwtVerificationOpts.builder()
-
-                .withValidateNotBeforeClaim(false)
-                .withValidateExpirationClaim(false)
+                .withIatCheck(Integer.MAX_VALUE, true)
+                .withNbfCheck(true)
+                .withExpCheck(true)
                 .build();
     }
 
@@ -438,12 +436,11 @@ public class DefaultSdJwtVPValidationService implements SdJwtVPValidationService
             // Extract claims from Key Binding JWT (but NOT the nonce - we use server's nonce)
             var kbOpt = sdJwtVP.getKeyBindingJWT();
             if (kbOpt.isPresent()) {
-                var payload = kbOpt.get().getPayload();
-                if (payload instanceof JsonNode) {
-                    JsonNode node = (JsonNode) payload;
+                ObjectNode payload = kbOpt.get().getPayload();
+                if (payload != null) {
                     // NOTE: We do NOT extract nonce from client - we use expectedNonce from server
-                    JsonNode audNode = node.get("aud");
-                    JsonNode expNode = node.get("exp");
+                    JsonNode audNode = payload.get("aud");
+                    JsonNode expNode = payload.get("exp");
                     
                     if (audNode != null && audNode.isTextual()) {
                         aud = audNode.asText();
@@ -497,11 +494,11 @@ public class DefaultSdJwtVPValidationService implements SdJwtVPValidationService
             // The Keycloak library will verify that the client's Key Binding JWT contains this exact nonce
             return KeyBindingJwtVerificationOpts.builder()
                     .withKeyBindingRequired(true)
-                    .withAllowedMaxAge(300) // 5 minutes max age
-                    .withNonce(expectedNonce)
-                    .withAud(expectedAudience) // Required for replay protection
-                    .withValidateExpirationClaim(true)
-                    .withValidateNotBeforeClaim(false) // Disable nbf validation for Key Binding JWT
+                    .withIatCheck(300) // 5 minutes max age
+                    .withNonceCheck(expectedNonce)
+                    .withAudCheck(expectedAudience) // Required for replay protection
+                    .withExpCheck(true)
+                    .withNbfCheck(true) // Disable nbf validation for Key Binding JWT
                     .build();
         } catch (IllegalArgumentException e) {
             logger.errorf("Failed to build Key Binding verification options due to invalid arguments. RequestId: %s, Error: %s", requestId, e.getMessage());
@@ -520,9 +517,8 @@ public class DefaultSdJwtVPValidationService implements SdJwtVPValidationService
         try {
             var jwt = sdJwtVP.getIssuerSignedJWT();
             var payload = jwt.getPayload();
-            if (payload instanceof JsonNode) {
-                JsonNode payloadNode = (JsonNode) payload;
-                JsonNode fieldNode = payloadNode.get(fieldName);
+            if (payload != null) {
+                JsonNode fieldNode = payload.get(fieldName);
                 return fieldNode != null ? fieldNode.asText() : null;
             }
             return null;
