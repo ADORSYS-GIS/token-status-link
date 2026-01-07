@@ -67,7 +67,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         long idx = mockEntityPersist();
 
         // Act
-        mapper.setClaimsForSubject(claims, userSession);
+        mapper.setClaim(claims, userSession);
 
         // Assertions
         assertThat(claims.keySet(), hasItem(Constants.STATUS_CLAIM_KEY));
@@ -90,7 +90,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         when(realm.getAttribute(StatusListConfig.STATUS_LIST_ENABLED))
                 .thenReturn("false");
 
-        mapper.setClaimsForSubject(claims, userSession);
+        mapper.setClaim(claims, userSession);
 
         assertThat("Claims should remain unmapped", claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
         assertThat(logCaptor.getDebugLogs(), hasItem(containsString("Status list is disabled")));
@@ -101,7 +101,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         when(realm.getAttribute(StatusListConfig.STATUS_LIST_SERVER_URL))
                 .thenReturn("invalid-url");
 
-        mapper.setClaimsForSubject(claims, userSession);
+        mapper.setClaim(claims, userSession);
 
         assertThat("Claims should remain unmapped", claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
         assertThat(logCaptor.getErrorLogs(), hasItem(containsString("Invalid status list server URL")));
@@ -111,7 +111,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
     void shouldNotMap_IfDbPersistenceFails() {
         doThrow(new PersistenceException("DB Error")).when(entityManager).persist(any());
 
-        mapper.setClaimsForSubject(claims, userSession);
+        mapper.setClaim(claims, userSession);
 
         assertThat("Claims should remain unmapped", claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
         assertThat(logCaptor.getErrorLogs(), hasItem(containsString("Failed to store index mapping")));
@@ -124,7 +124,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
                 .when(statusListService).publishOrUpdate(any(StatusListService.StatusListPayload.class));
 
         // Act
-        mapper.setClaimsForSubject(claims, userSession);
+        mapper.setClaim(claims, userSession);
 
         // Assert
         assertThat("Claims should remain unmapped", claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));

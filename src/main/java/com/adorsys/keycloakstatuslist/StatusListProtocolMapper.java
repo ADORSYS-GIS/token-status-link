@@ -55,9 +55,6 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         String TOKEN_STATUS_VALID = "VALID";
 
         String HTTP_ENDPOINT_RETRIEVE_PATH = "/statuslists/%s";
-        String HTTP_ENDPOINT_PUBLISH_PATH = "/statuslists/publish";
-        String HTTP_ENDPOINT_UPDATE_PATH = "/statuslists/update";
-        String BEARER_PREFIX = "Bearer ";
     }
 
     public StatusListProtocolMapper() {
@@ -121,12 +118,12 @@ public class StatusListProtocolMapper extends OID4VCMapper {
     }
 
     @Override
-    public void setClaimsForCredential(VerifiableCredential verifiableCredential, UserSessionModel userSessionModel) {
+    public void setClaim(VerifiableCredential verifiableCredential, UserSessionModel userSessionModel) {
         // No-op. W3C Verifiable Credentials are not supported by this mapper.
     }
 
     @Override
-    public void setClaimsForSubject(Map<String, Object> claims, UserSessionModel userSessionModel) {
+    public void setClaim(Map<String, Object> claims, UserSessionModel userSessionModel) {
         logger.debugf("Adding status list data to credential claims (TokenStatusList)");
         if (session == null) {
             logger.error("Keycloak session is not available.");
@@ -170,7 +167,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         UserSessionModel userSession = session.getContext().getUserSession();
         String userId = userSession != null ? userSession.getUser().getId() : null;
 
-        Status status = storeIndexMapping(listId, uri.toString(), userId, tokenId, session, config);
+        Status status = storeIndexMapping(listId, uri.toString(), userId, tokenId, session);
 
         if (status == null) {
             logger.error("Failed to send status to server. Status claim not mapped");
@@ -205,7 +202,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
     }
 
     private Status storeIndexMapping(String statusListId, String uri, String userId, String tokenId,
-                                     KeycloakSession session, StatusListConfig realmConfig) {
+                                     KeycloakSession session) {
         logger.debugf("Storing index mapping: status_list_id=%s, userId=%s, tokenId=%s",
                 statusListId, userId, tokenId);
         AtomicReference<Status> status = new AtomicReference<>();
@@ -224,7 +221,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
                 Long generatedIdx = mapping.getIdx();
                 logger.debugf("Stored mapping with generated index: %d", generatedIdx);
 
-                sendStatusToServer(generatedIdx, statusListId, realmConfig);
+                sendStatusToServer(generatedIdx, statusListId);
                 StatusListClaim statusList = new StatusListClaim(generatedIdx, uri);
                 status.set(new Status(statusList));
             } catch (Exception e) {
@@ -236,7 +233,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         return status.get();
     }
 
-    private void sendStatusToServer(long idx, String statusListId, StatusListConfig realmConfig) throws IOException {
+    private void sendStatusToServer(long idx, String statusListId) throws IOException {
         Objects.requireNonNull(cryptoIdentityService);
 
         // Prepare payload

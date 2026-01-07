@@ -2,28 +2,34 @@ package com.adorsys.keycloakstatuslist.service;
 
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.keycloak.crypto.AsymmetricSignatureVerifierContext;
 import org.keycloak.crypto.SignatureVerifierContext;
 import org.keycloak.models.KeycloakSession;
+import org.keycloak.sdjwt.IssuerSignedJWT;
+import org.keycloak.sdjwt.vp.KeyBindingJWT;
 import org.keycloak.sdjwt.vp.SdJwtVP;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-
-import org.keycloak.sdjwt.IssuerSignedJWT;
-import org.keycloak.sdjwt.vp.KeyBindingJWT;
 
 import java.security.PublicKey;
 import java.util.Collections;
 import java.util.Optional;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
-import static org.mockito.Mockito.lenient;
 
 
 /**
@@ -81,36 +87,32 @@ class SdJwtVPValidationServiceTest {
 
     @Test
     void testParseSdJwtVP_NullToken() {
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.parseSdJwtVP(null, "test-request-id");
-        });
+        StatusListException exception = assertThrows(StatusListException.class,
+                () -> service.parseSdJwtVP(null, "test-request-id"));
 
         assertTrue(exception.getMessage().contains("SD-JWT VP token is empty or null"));
     }
 
     @Test
     void testParseSdJwtVP_EmptyToken() {
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.parseSdJwtVP("", "test-request-id");
-        });
+        StatusListException exception = assertThrows(StatusListException.class,
+                () -> service.parseSdJwtVP("", "test-request-id"));
 
         assertTrue(exception.getMessage().contains("SD-JWT VP token is empty or null"));
     }
 
     @Test
     void testParseSdJwtVP_WhitespaceToken() {
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.parseSdJwtVP("   ", "test-request-id");
-        });
+        StatusListException exception = assertThrows(StatusListException.class,
+                () -> service.parseSdJwtVP("   ", "test-request-id"));
 
         assertTrue(exception.getMessage().contains("SD-JWT VP token is empty or null"));
     }
 
     @Test
     void testParseSdJwtVP_InvalidFormat() {
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.parseSdJwtVP("invalid.token.format", "test-request-id");
-        });
+        StatusListException exception = assertThrows(StatusListException.class,
+                () -> service.parseSdJwtVP("invalid.token.format", "test-request-id"));
 
         assertTrue(exception.getMessage().contains("Invalid SD-JWT VP token format"));
     }
@@ -122,7 +124,7 @@ class SdJwtVPValidationServiceTest {
 
         assertNotNull(result);
         // Verify it's the correct type
-        assertTrue(result instanceof org.keycloak.crypto.AsymmetricSignatureVerifierContext);
+        assertInstanceOf(AsymmetricSignatureVerifierContext.class, result);
     }
 
     @Test
@@ -131,15 +133,14 @@ class SdJwtVPValidationServiceTest {
         SignatureVerifierContext result = service.createSignatureVerifierContextFromPublicKey(publicKey, "ES256");
 
         assertNotNull(result);
-        assertTrue(result instanceof org.keycloak.crypto.AsymmetricSignatureVerifierContext);
+        assertInstanceOf(AsymmetricSignatureVerifierContext.class, result);
     }
 
     @Test
     void testCreateSignatureVerifierContextFromPublicKey_NullPublicKey() {
         // Test with null public key
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.createSignatureVerifierContextFromPublicKey(null, "RS256");
-        });
+        StatusListException exception = assertThrows(StatusListException.class,
+                () -> service.createSignatureVerifierContextFromPublicKey(null, "RS256"));
 
         assertTrue(exception.getMessage().contains("Failed to create signature verifier context from public key"));
     }
@@ -147,9 +148,8 @@ class SdJwtVPValidationServiceTest {
     @Test
     void testCreateSignatureVerifierContextFromPublicKey_NullAlgorithm() {
         // Test with null algorithm
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.createSignatureVerifierContextFromPublicKey(publicKey, null);
-        });
+        StatusListException exception = assertThrows(StatusListException.class,
+                () -> service.createSignatureVerifierContextFromPublicKey(publicKey, null));
 
         assertTrue(exception.getMessage().contains("Failed to create signature verifier context from public key"));
     }
@@ -157,9 +157,8 @@ class SdJwtVPValidationServiceTest {
     @Test
     void testCreateSignatureVerifierContextFromPublicKey_EmptyAlgorithm() {
         // Test with empty algorithm
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.createSignatureVerifierContextFromPublicKey(publicKey, "");
-        });
+        StatusListException exception = assertThrows(StatusListException.class,
+                () -> service.createSignatureVerifierContextFromPublicKey(publicKey, ""));
 
         assertTrue(exception.getMessage().contains("Failed to create signature verifier context from public key"));
     }
@@ -171,7 +170,7 @@ class SdJwtVPValidationServiceTest {
         String issuer = "test-issuer";
 
         IssuerSignedJWT issuerSignedJwtMock = mock(IssuerSignedJWT.class);
-        JsonNode issuerSignedPayloadMock = mock(JsonNode.class);
+        ObjectNode issuerSignedPayloadMock = mock(ObjectNode.class);
         JsonNode issNodeMock = mock(JsonNode.class);
 
         when(sdJwtVP.getIssuerSignedJWT()).thenReturn(issuerSignedJwtMock);
@@ -182,7 +181,7 @@ class SdJwtVPValidationServiceTest {
 
         // Mock KeyBindingJwtVerificationOpts to return a present optional with a mocked JWT
         KeyBindingJWT kbJwtMock = mock(KeyBindingJWT.class);
-        JsonNode kbPayloadMock = mock(JsonNode.class);
+        ObjectNode kbPayloadMock = mock(ObjectNode.class);
         JsonNode nonceNodeMock = mock(JsonNode.class);
         JsonNode audNodeMock = mock(JsonNode.class);
 
@@ -211,12 +210,11 @@ class SdJwtVPValidationServiceTest {
 
 
         // Act & Assert
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.verifySdJwtVPSignature(sdJwtVP, requestId, "test-credential-id", "expected-nonce");
-        });
+        StatusListException exception = assertThrows(StatusListException.class,
+                () -> service.verifySdJwtVPSignature(sdJwtVP, requestId, "test-credential-id", "expected-nonce"));
 
-        assertTrue(exception.getMessage().contains("SD-JWT VP verification failed") || 
-                   exception.getMessage().contains("Key Binding JWT audience does not match"));
+        assertTrue(exception.getMessage().contains("SD-JWT VP verification failed") ||
+                exception.getMessage().contains("Key Binding JWT audience does not match"));
         assertEquals(401, exception.getHttpStatus());
     }
 
@@ -227,7 +225,7 @@ class SdJwtVPValidationServiceTest {
         String issuer = "test-issuer";
 
         IssuerSignedJWT issuerSignedJwtMock = mock(IssuerSignedJWT.class);
-        JsonNode issuerSignedPayloadMock = mock(JsonNode.class);
+        ObjectNode issuerSignedPayloadMock = mock(ObjectNode.class);
         JsonNode issNodeMock = mock(JsonNode.class);
 
         when(sdJwtVP.getIssuerSignedJWT()).thenReturn(issuerSignedJwtMock);
@@ -238,7 +236,7 @@ class SdJwtVPValidationServiceTest {
 
         // Mock KeyBinding JWT with valid aud but test with null expectedNonce
         KeyBindingJWT kbJwtMock = mock(KeyBindingJWT.class);
-        JsonNode kbPayloadMock = mock(JsonNode.class);
+        ObjectNode kbPayloadMock = mock(ObjectNode.class);
         JsonNode audNodeMock = mock(JsonNode.class);
 
         when(sdJwtVP.getKeyBindingJWT()).thenReturn(Optional.of(kbJwtMock));
@@ -255,13 +253,12 @@ class SdJwtVPValidationServiceTest {
         when(session.getContext().getRealm().getName()).thenReturn("test-realm");
 
         // Act & Assert - Test with null expectedNonce
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.verifySdJwtVPSignature(sdJwtVP, requestId, "test-credential-id", null);
-        });
+        StatusListException exception = assertThrows(StatusListException.class,
+                () -> service.verifySdJwtVPSignature(sdJwtVP, requestId, "test-credential-id", null));
 
         assertTrue(exception.getMessage().contains("Server-generated nonce not provided") ||
-                   exception.getMessage().contains("Malformed VP") ||
-                   exception.getMessage().contains("SD-JWT VP verification failed"));
+                exception.getMessage().contains("Malformed VP") ||
+                exception.getMessage().contains("SD-JWT VP verification failed"));
         // Note: Returns 401 because the exception is caught and wrapped as authentication failure
         assertEquals(401, exception.getHttpStatus());
     }
