@@ -5,19 +5,19 @@ import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationResponse;
 import com.adorsys.keycloakstatuslist.service.CredentialRevocationService;
-import jakarta.ws.rs.POST;
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.MultivaluedMap;
 import jakarta.ws.rs.core.Response;
 import org.jboss.logging.Logger;
+import org.keycloak.events.EventBuilder;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
-import org.keycloak.services.resource.RealmResourceProvider;
+import org.keycloak.protocol.oidc.endpoints.TokenRevocationEndpoint;
 
-public class CredentialRevocationResource implements RealmResourceProvider {
+public class CredentialRevocationEndpoint extends TokenRevocationEndpoint {
 
-    private static final Logger logger = Logger.getLogger(CredentialRevocationResource.class);
+    private static final Logger logger = Logger.getLogger(CredentialRevocationEndpoint.class);
     private static final String BEARER_PREFIX = "bearer";
 
     private final KeycloakSession session;
@@ -28,25 +28,19 @@ public class CredentialRevocationResource implements RealmResourceProvider {
      *
      * @param session           Keycloak session
      * @param event             EventBuilder for logging
-     * @param headers           HTTP headers (can be injected via @Context)
      * @param revocationService Credential revocation service (can be injected for testing)
      */
-    public CredentialRevocationResource(KeycloakSession session) {
+    public CredentialRevocationEndpoint(
+            KeycloakSession session,
+            EventBuilder event,
+            CredentialRevocationService revocationService
+    ) {
+        super(session, event);
         this.session = session;
-        this.revocationService = new CredentialRevocationService(session);
+        this.revocationService = revocationService;
     }
 
     @Override
-    public Object getResource() {
-        return this;
-    }
-
-    @Override
-    public void close() {
-        // No specific resources to close for this provider
-    }
-
-    @POST
     public Response revoke() {
         MultivaluedMap<String, String> form = session.getContext().getHttpRequest().getDecodedFormParameters();
         String authorizationHeader = getHeaders().getHeaderString(HttpHeaders.AUTHORIZATION);
@@ -64,8 +58,10 @@ public class CredentialRevocationResource implements RealmResourceProvider {
         }
 
         if (authorizationHeader == null || authorizationHeader.trim().isEmpty()) {
-            logger.debug("No authorization header provided, returning error for custom revocation");
-            return createErrorResponse(Response.Status.UNAUTHORIZED, "Missing Authorization header");
+            logger.debug("No authorization header provided, falling back to standard revocation");
+            return super.revoke();
+            // logger.debug("No authorization header provided, returning error for custom revocation");
+            // return createErrorResponse(Response.Status.UNAUTHORIZED, "Missing Authorization header");
         }
 
         String[] authParts = authorizationHeader.trim().split("\\s+", 2);
@@ -122,6 +118,7 @@ public class CredentialRevocationResource implements RealmResourceProvider {
     protected CredentialRevocationService getRevocationService() {
         return revocationService;
     }
+
     /**
      * Checks if the credential revocation service is enabled for the current realm.
      */

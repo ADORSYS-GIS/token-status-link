@@ -74,7 +74,7 @@ class CredentialRevocationResourceTest {
         lenient().when(realm.getName()).thenReturn("test-realm");
 
         // Create a testable version of the resource with dependency injection
-        resource = new TestableCredentialRevocationResource(session, headers, revocationService);
+        resource = new TestableCredentialRevocationResource(session, eventBuilder, headers, revocationService);
     }
 
     /**
@@ -207,12 +207,12 @@ class CredentialRevocationResourceTest {
      * class behavior
      * to avoid complex Keycloak setup requirements.
      */
-    private static class TestableCredentialRevocationResource extends CredentialRevocationResource {
+    private static class TestableCredentialRevocationResource extends CredentialRevocationEndpoint {
         private final KeycloakSession session;
         private final HttpHeaders headers;
 
-        public TestableCredentialRevocationResource(KeycloakSession session, HttpHeaders headers, CredentialRevocationService revocationService) {
-            super(session);
+        public TestableCredentialRevocationResource(KeycloakSession session, EventBuilder eventBuilder, HttpHeaders headers, CredentialRevocationService revocationService) {
+            super(session, eventBuilder, revocationService);
             this.session = session;
             this.headers = headers;
             this.revocationService = revocationService;

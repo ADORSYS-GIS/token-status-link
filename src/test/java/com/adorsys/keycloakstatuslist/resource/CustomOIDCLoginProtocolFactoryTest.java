@@ -31,9 +31,9 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
-class CredentialRevocationResourceProviderFactoryTest {
+class CustomOIDCLoginProtocolFactoryTest {
 
-    private CredentialRevocationResourceProviderFactory factory;
+    private CustomOIDCLoginProtocolFactory factory;
     private KeycloakSessionFactory sessionFactory;
     private KeycloakSession session;
     private KeycloakContext context;
@@ -51,7 +51,7 @@ class CredentialRevocationResourceProviderFactoryTest {
 
     @BeforeEach
     void setUp() {
-        factory = new CredentialRevocationResourceProviderFactory();
+        factory = new CustomOIDCLoginProtocolFactory();
         sessionFactory = mock(KeycloakSessionFactory.class);
         session = mock(KeycloakSession.class);
         context = mock(KeycloakContext.class);
