@@ -7,6 +7,12 @@ import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
 import com.adorsys.keycloakstatuslist.service.RevocationRecordService;
 import com.adorsys.keycloakstatuslist.service.RevocationRecordService.KeyData;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+
 import org.jboss.logging.Logger;
 import org.keycloak.events.EventBuilder;
 import org.keycloak.models.KeycloakSession;
@@ -15,18 +21,15 @@ import org.keycloak.models.RealmModel;
 import org.keycloak.models.utils.PostMigrationEvent;
 import org.keycloak.protocol.oidc.OIDCLoginProtocolFactory;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-
 /**
- * Overrides the OID4VC protocol factory to inject a custom revocation endpoint into the standard /protocol/openid-connect/revoke path.
- * Handles realm issuer registration at startup for status list integration.
+ * Overrides the OID4VC protocol factory to inject a custom revocation endpoint into the standard
+ * /protocol/openid-connect/revoke path. Handles realm issuer registration at startup for status
+ * list integration.
  */
 public class CredentialRevocationResourceProviderFactory extends OIDCLoginProtocolFactory {
 
-    private static final Logger logger = Logger.getLogger(CredentialRevocationResourceProviderFactory.class);
+    private static final Logger logger =
+            Logger.getLogger(CredentialRevocationResourceProviderFactory.class);
     private final Set<String> registeredRealms = ConcurrentHashMap.newKeySet();
     private volatile boolean initialized = false;
 
@@ -46,16 +49,18 @@ public class CredentialRevocationResourceProviderFactory extends OIDCLoginProtoc
     @Override
     public void postInit(KeycloakSessionFactory factory) {
         super.postInit(factory);
-        logger.info("Post-initializing CredentialRevocationResourceProviderFactory for standard revocation endpoint override");
+        logger.info(
+                "Post-initializing CredentialRevocationResourceProviderFactory for standard revocation endpoint override");
 
         // Initialize realms directly since we're already in the postInit phase
         // which means Keycloak's database is ready
         try {
-            factory.register(event -> {
-                if (event instanceof PostMigrationEvent) {
-                    initializeRealms(factory);
-                }
-            });
+            factory.register(
+                    event -> {
+                        if (event instanceof PostMigrationEvent) {
+                            initializeRealms(factory);
+                        }
+                    });
         } catch (Exception e) {
             logger.error("Error during initialization", e);
         }
@@ -90,8 +95,8 @@ public class CredentialRevocationResourceProviderFactory extends OIDCLoginProtoc
                     successfulRegistrations++;
                 } else {
                     // Check if this was due to server unavailability
-                    if (realm.getAttribute("status-list-enabled") != null &&
-                            "true".equals(realm.getAttribute("status-list-enabled"))) {
+                    if (realm.getAttribute("status-list-enabled") != null
+                            && "true".equals(realm.getAttribute("status-list-enabled"))) {
                         skippedRegistrations++;
                         skippedRealmNames.add(realm.getName());
                     } else {
@@ -104,27 +109,46 @@ public class CredentialRevocationResourceProviderFactory extends OIDCLoginProtoc
             session.getTransactionManager().commit();
 
             // Report results based on registration outcomes
-            logger.info("Registration results - Total: " + totalRealms +
-                    ", Successful: " + successfulRegistrations +
-                    ", Failed: " + failedRegistrations +
-                    ", Skipped: " + skippedRegistrations);
+            logger.info(
+                    "Registration results - Total: "
+                            + totalRealms
+                            + ", Successful: "
+                            + successfulRegistrations
+                            + ", Failed: "
+                            + failedRegistrations
+                            + ", Skipped: "
+                            + skippedRegistrations);
 
             if (failedRegistrations == 0 && skippedRegistrations == 0) {
-                logger.info("Successfully completed realm initialization - all " + totalRealms + " realms registered");
+                logger.info(
+                        "Successfully completed realm initialization - all "
+                                + totalRealms
+                                + " realms registered");
                 initialized = true;
             } else if (successfulRegistrations == 0 && failedRegistrations > 0) {
-                logger.error("Realm initialization failed - all " + totalRealms
-                        + " realms failed to register. Failed realms: " + String.join(", ", failedRealmNames));
+                logger.error(
+                        "Realm initialization failed - all "
+                                + totalRealms
+                                + " realms failed to register. Failed realms: "
+                                + String.join(", ", failedRealmNames));
             } else {
                 if (skippedRegistrations > 0) {
-                    logger.warn("Realm initialization completed with some realms skipped due to server unavailability - "
-                            + successfulRegistrations + " successful, " + skippedRegistrations + " skipped. Skipped realms: "
-                            + String.join(", ", skippedRealmNames));
+                    logger.warn(
+                            "Realm initialization completed with some realms skipped due to server unavailability - "
+                                    + successfulRegistrations
+                                    + " successful, "
+                                    + skippedRegistrations
+                                    + " skipped. Skipped realms: "
+                                    + String.join(", ", skippedRealmNames));
                 }
                 if (failedRegistrations > 0) {
-                    logger.warn("Realm initialization completed with some failures - "
-                            + successfulRegistrations + " successful, " + failedRegistrations + " failed. Failed realms: "
-                            + String.join(", ", failedRealmNames));
+                    logger.warn(
+                            "Realm initialization completed with some failures - "
+                                    + successfulRegistrations
+                                    + " successful, "
+                                    + failedRegistrations
+                                    + " failed. Failed realms: "
+                                    + String.join(", ", failedRealmNames));
                 }
                 initialized = true;
             }
@@ -150,16 +174,20 @@ public class CredentialRevocationResourceProviderFactory extends OIDCLoginProtoc
             try {
                 keyData = RevocationRecordService.getRealmKeyData(session, realm);
             } catch (StatusListException e) {
-                logger.warn("Could not retrieve valid signing key for realm: " + realm.getName() + ". " + e.getMessage());
+                logger.warn(
+                        "Could not retrieve valid signing key for realm: "
+                                + realm.getName()
+                                + ". "
+                                + e.getMessage());
                 return false;
             }
 
             CryptoIdentityService cryptoIdentityService = new CryptoIdentityService(session);
-            StatusListService statusListService = new StatusListService(
-                    config.getServerUrl(),
-                    cryptoIdentityService.getJwtToken(config),
-                    CustomHttpClient.getHttpClient()
-            );
+            StatusListService statusListService =
+                    new StatusListService(
+                            config.getServerUrl(),
+                            cryptoIdentityService.getJwtToken(config),
+                            CustomHttpClient.getHttpClient());
 
             // Check if the status list server is reachable
             if (!statusListService.checkServerHealth()) {

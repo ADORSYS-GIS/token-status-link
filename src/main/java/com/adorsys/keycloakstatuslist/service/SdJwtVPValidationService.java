@@ -2,29 +2,30 @@ package com.adorsys.keycloakstatuslist.service;
 
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.fasterxml.jackson.databind.JsonNode;
-import org.jboss.logging.Logger;
-import org.keycloak.crypto.SignatureVerifierContext;
-import org.keycloak.crypto.KeyWrapper;
-import org.keycloak.crypto.KeyStatus;
-import org.keycloak.crypto.AsymmetricSignatureVerifierContext;
-import org.keycloak.sdjwt.vp.SdJwtVP;
-import org.keycloak.sdjwt.IssuerSignedJwtVerificationOpts;
-import org.keycloak.sdjwt.vp.KeyBindingJwtVerificationOpts;
-import org.keycloak.common.VerificationException;
-import org.keycloak.models.KeycloakSession;
 
+import java.math.BigInteger;
 import java.security.KeyFactory;
 import java.security.PublicKey;
-import java.security.spec.RSAPublicKeySpec;
-import java.security.spec.ECPublicKeySpec;
 import java.security.spec.ECPoint;
-import java.math.BigInteger;
+import java.security.spec.ECPublicKeySpec;
+import java.security.spec.RSAPublicKeySpec;
 import java.util.Base64;
 import java.util.List;
 
+import org.jboss.logging.Logger;
+import org.keycloak.common.VerificationException;
+import org.keycloak.crypto.AsymmetricSignatureVerifierContext;
+import org.keycloak.crypto.KeyStatus;
+import org.keycloak.crypto.KeyWrapper;
+import org.keycloak.crypto.SignatureVerifierContext;
+import org.keycloak.models.KeycloakSession;
+import org.keycloak.sdjwt.IssuerSignedJwtVerificationOpts;
+import org.keycloak.sdjwt.vp.KeyBindingJwtVerificationOpts;
+import org.keycloak.sdjwt.vp.SdJwtVP;
+
 /**
- * Service for validating SD-JWT VP tokens.
- * Handles token parsing, signature verification, and credential extraction.
+ * Default implementation of SdJwtVPValidationService. Handles token parsing, signature verification,
+ * and credential extraction using Keycloak's internal key management.
  */
 public class SdJwtVPValidationService {
 
@@ -39,14 +40,18 @@ public class SdJwtVPValidationService {
     }
 
     /**
-     * Parses and validates the SD-JWT VP token.
-     * This validates the token structure, parses it for credential extraction, and performs
-     * cryptographic signature verification using the token's embedded keys.
+     * Convenience constructor used by production code where explicit dependency wiring is not
+     * available (e.g. Keycloak SPI instantiation).
+     *
+     * <p>For tests or advanced usage prefer the constructor that accepts all collaborators
+     * explicitly.
      */
     public SdJwtVP parseAndValidateSdJwtVP(String sdJwtVpString, String requestId)
             throws StatusListException {
 
-        logger.debugf("Parsing SD-JWT VP token using Keycloak's built-in SdJwtVP class. RequestId: %s", requestId);
+        logger.debugf(
+                "Parsing SD-JWT VP token using Keycloak's built-in SdJwtVP class. RequestId: %s",
+                requestId);
 
         try {
             if (sdJwtVpString == null || sdJwtVpString.trim().isEmpty()) {
@@ -64,17 +69,19 @@ public class SdJwtVPValidationService {
             return sdJwtVP;
 
         } catch (IllegalArgumentException e) {
-            logger.errorf("Invalid SD-JWT VP token format. RequestId: %s, Error: %s", requestId, e.getMessage());
+            logger.errorf(
+                    "Invalid SD-JWT VP token format. RequestId: %s, Error: %s", requestId, e.getMessage());
             throw new StatusListException("Invalid SD-JWT VP token format: " + e.getMessage(), e);
         } catch (Exception e) {
-            logger.errorf("Failed to parse SD-JWT VP token. RequestId: %s, Error: %s", requestId, e.getMessage());
+            logger.errorf(
+                    "Failed to parse SD-JWT VP token. RequestId: %s, Error: %s", requestId, e.getMessage());
             throw new StatusListException("Failed to parse SD-JWT VP token: " + e.getMessage(), e);
         }
     }
 
     /**
-     * Verifies the SD-JWT VP token's issuer signature using Keycloak's internal key management.
-     * This ensures the token was properly issued by the claimed issuer.
+     * Verifies the SD-JWT VP token's issuer signature using Keycloak's internal key management. This
+     * ensures the token was properly issued by the claimed issuer.
      */
     public void verifySdJwtVPSignature(SdJwtVP sdJwtVP, String requestId) throws StatusListException {
         try {
@@ -95,7 +102,8 @@ public class SdJwtVPValidationService {
             List<SignatureVerifierContext> verifyingKeys = jwksService.getSignatureVerifierContexts(sdJwtVP, issuer, requestId);
 
             if (verifyingKeys.isEmpty()) {
-                logger.errorf("No valid issuer signature verifier contexts created. RequestId: %s", requestId);
+                logger.errorf(
+                        "No valid issuer signature verifier contexts created. RequestId: %s", requestId);
                 throw new StatusListException("No public keys available for issuer: " + issuer);
             }
 
@@ -161,7 +169,8 @@ public class SdJwtVPValidationService {
      * <p>
      * SECURITY: If holder signature verification fails, the request is rejected immediately.
      */
-    public void verifyHolderSignatureAndKeyBinding(SdJwtVP sdJwtVP, String requestId) throws StatusListException {
+    public void verifyHolderSignatureAndKeyBinding(SdJwtVP sdJwtVP, String requestId)
+            throws StatusListException {
         try {
             logger.debugf("Verifying holder signature and key binding. RequestId: %s", requestId);
 
@@ -190,10 +199,11 @@ public class SdJwtVPValidationService {
     }
 
     /**
-     * Creates a SignatureVerifierContext using the provided PublicKey.
-     * This method provides proper cryptographic signature verification.
+     * Creates a SignatureVerifierContext using the provided PublicKey. This method provides proper
+     * cryptographic signature verification.
      */
-    public SignatureVerifierContext createSignatureVerifierContextFromPublicKey(PublicKey publicKey, String algorithm) throws StatusListException {
+    public SignatureVerifierContext createSignatureVerifierContextFromPublicKey(
+            PublicKey publicKey, String algorithm) throws StatusListException {
         try {
             if (publicKey == null) {
                 throw new IllegalArgumentException("Public key cannot be null");
@@ -243,13 +253,14 @@ public class SdJwtVPValidationService {
 
         } catch (Exception e) {
             logger.error("Failed to create signature verifier context from public key", e);
-            throw new StatusListException("Failed to create signature verifier context from public key: " + e.getMessage(), e);
+            throw new StatusListException(
+                    "Failed to create signature verifier context from public key: " + e.getMessage(), e);
         }
     }
 
     /**
-     * Extracts the credential ID from the SD-JWT VP token.
-     * Searches recursively through the payload for credential ID fields.
+     * Extracts the credential ID from the SD-JWT VP token. Searches recursively through the payload
+     * for credential ID fields.
      */
     public String extractCredentialIdFromSdJwtVP(SdJwtVP sdJwtVP) {
         try {
@@ -337,8 +348,8 @@ public class SdJwtVPValidationService {
     }
 
     /**
-     * Extracts the holder's signing key from the token's cnf.jwk field.
-     * This is the key that the credential holder used to sign the VP token.
+     * Extracts the holder's signing key from the token's cnf.jwk field. This is the key that the
+     * credential holder used to sign the VP token.
      */
     public PublicKey extractSigningKeyFromToken(SdJwtVP sdJwtVP) {
         try {
@@ -402,9 +413,12 @@ public class SdJwtVPValidationService {
                     logger.warn("RSA JWK missing required 'n' or 'e' fields");
                     return null;
                 }
-                BigInteger modulus = new BigInteger(1, Base64.getUrlDecoder().decode(jwkNode.get("n").asText()));
-                BigInteger exponent = new BigInteger(1, Base64.getUrlDecoder().decode(jwkNode.get("e").asText()));
-                return KeyFactory.getInstance("RSA").generatePublic(new RSAPublicKeySpec(modulus, exponent));
+                BigInteger modulus =
+                        new BigInteger(1, Base64.getUrlDecoder().decode(jwkNode.get("n").asText()));
+                BigInteger exponent =
+                        new BigInteger(1, Base64.getUrlDecoder().decode(jwkNode.get("e").asText()));
+                return KeyFactory.getInstance("RSA")
+                        .generatePublic(new RSAPublicKeySpec(modulus, exponent));
             } else if (keyType.equals("EC")) {
                 if (!jwkNode.has("x") || !jwkNode.has("y")) {
                     logger.warn("EC JWK missing required 'x' or 'y' fields");
@@ -439,11 +453,13 @@ public class SdJwtVPValidationService {
                 if (header != null) {
                     String alg = extractAlgorithmFromToken(sdJwtVP);
                     String kid = extractKeyIdFromToken(sdJwtVP);
-                    logger.debugf("Token header - Algorithm: %s, Key ID: %s. RequestId: %s", alg, kid, requestId);
+                    logger.debugf(
+                            "Token header - Algorithm: %s, Key ID: %s. RequestId: %s", alg, kid, requestId);
                 }
             }
         } catch (Exception e) {
-            logger.debugf("Failed to log token structure. RequestId: %s, Error: %s", requestId, e.getMessage());
+            logger.debugf(
+                    "Failed to log token structure. RequestId: %s, Error: %s", requestId, e.getMessage());
         }
     }
 
@@ -492,8 +508,8 @@ public class SdJwtVPValidationService {
     }
 
     /**
-     * Creates issuer signed JWT verification options with appropriate security settings.
-     * These options control how the issuer signature is validated.
+     * Creates issuer signed JWT verification options with appropriate security settings. These
+     * options control how the issuer signature is validated.
      */
     private IssuerSignedJwtVerificationOpts getIssuerSignedJwtVerificationOpts() {
         return IssuerSignedJwtVerificationOpts.builder()
@@ -503,8 +519,8 @@ public class SdJwtVPValidationService {
     }
 
     /**
-     * Creates key binding JWT verification options that enforce presenter verification.
-     * This is critical for ensuring the presenter is actually the credential holder.
+     * Creates key binding JWT verification options that enforce presenter verification. This is
+     * critical for ensuring the presenter is actually the credential holder.
      */
     private KeyBindingJwtVerificationOpts getKeyBindingJwtVerificationOpts(String requestId) {
         try {
@@ -549,4 +565,4 @@ public class SdJwtVPValidationService {
             return null;
         }
     }
-} 
+}

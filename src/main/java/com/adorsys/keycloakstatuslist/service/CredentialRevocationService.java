@@ -5,17 +5,18 @@ import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationResponse;
 import com.adorsys.keycloakstatuslist.model.TokenStatusRecord;
+
+import java.time.Instant;
+import java.util.UUID;
+
 import org.jboss.logging.Logger;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.sdjwt.vp.SdJwtVP;
 
-import java.time.Instant;
-import java.util.UUID;
-
 /**
- * Main service for handling credential revocation requests.
- * Orchestrates the revocation process using specialized service classes.
+ * Main service for handling credential revocation requests. Orchestrates the revocation process
+ * using specialized service classes.
  */
 public class CredentialRevocationService {
 
@@ -42,11 +43,11 @@ public class CredentialRevocationService {
             RealmModel realm = session.getContext().getRealm();
             StatusListConfig config = new StatusListConfig(realm);
             CryptoIdentityService cryptoIdentityService = new CryptoIdentityService(session);
-            this.statusListService = new StatusListService(
-                    config.getServerUrl(),
-                    cryptoIdentityService.getJwtToken(config),
-                    CustomHttpClient.getHttpClient()
-            );
+            this.statusListService =
+                    new StatusListService(
+                            config.getServerUrl(),
+                            cryptoIdentityService.getJwtToken(config),
+                            CustomHttpClient.getHttpClient());
         }
         return statusListService;
     }
@@ -87,7 +88,8 @@ public class CredentialRevocationService {
             );
 
         } catch (StatusListException e) {
-            logger.errorf("Status list operation failed. RequestId: %s, Error: %s", requestId, e.getMessage());
+            logger.errorf(
+                    "Status list operation failed. RequestId: %s, Error: %s", requestId, e.getMessage());
             throw e;
         } catch (Exception e) {
             logger.errorf("Unexpected error during credential revocation. RequestId: %s, Error: %s",

@@ -5,17 +5,19 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import org.keycloak.jose.jwk.JWK;
 
 import java.time.Instant;
+
+import org.keycloak.jose.jwk.JWK;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class TokenStatusRecord {
 
     // Static mapper for toString() to avoid creating it every time
-    private static final ObjectMapper MAPPER = new ObjectMapper()
-            .registerModule(new JavaTimeModule())
-            .setSerializationInclusion(JsonInclude.Include.NON_NULL);
+    private static final ObjectMapper MAPPER =
+            new ObjectMapper()
+                    .registerModule(new JavaTimeModule())
+                    .setSerializationInclusion(JsonInclude.Include.NON_NULL);
 
     @JsonProperty("sub")
     private String credentialId;
@@ -55,15 +57,6 @@ public class TokenStatusRecord {
 
     @JsonProperty("status_list")
     private StatusList statusList;
-
-    public static class StatusList {
-        @JsonProperty("lst")
-        private String lst;
-
-        @JsonProperty("status_size")
-        private int statusSize;
-
-    }
 
     public String getCredentialId() {
         return credentialId;
@@ -162,5 +155,13 @@ public class TokenStatusRecord {
             // Fallback in unlikely event of serialization failure
             return "TokenStatusRecord{credentialId='" + credentialId + "', status=" + status + "}";
         }
+    }
+
+    public static class StatusList {
+        @JsonProperty("lst")
+        private String lst;
+
+        @JsonProperty("status_size")
+        private int statusSize;
     }
 }

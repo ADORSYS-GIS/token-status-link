@@ -5,9 +5,9 @@ import jakarta.persistence.*;
 import java.util.Objects;
 
 @Entity
-@Table(name = "status_list_mapping", indexes = {
-        @Index(name = "idx_status_list_token", columnList = "token_id")
-})
+@Table(
+        name = "status_list_mapping",
+        indexes = {@Index(name = "idx_status_list_token", columnList = "token_id")})
 public class StatusListMappingEntity {
 
     @Id
@@ -19,8 +19,14 @@ public class StatusListMappingEntity {
     // TODO: Fix auto-increment on the field
     // @Column(name = "idx", nullable = false)
     // @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "status_list_seq_gen")
-    // @SequenceGenerator(name = "status_list_seq_gen", sequenceName = "status_list_counter_seq", allocationSize = 1)
-    @Column(name = "idx", nullable = false, updatable = false, insertable = false, columnDefinition = "BIGSERIAL")
+    // @SequenceGenerator(name = "status_list_seq_gen", sequenceName = "status_list_counter_seq",
+    // allocationSize = 1)
+    @Column(
+            name = "idx",
+            nullable = false,
+            updatable = false,
+            insertable = false,
+            columnDefinition = "BIGSERIAL")
     private Long idx;
 
     @Column(name = "status_list_id", nullable = false)
@@ -89,7 +95,12 @@ public class StatusListMappingEntity {
     public final boolean equals(Object o) {
         if (!(o instanceof StatusListMappingEntity that)) return false;
 
-        return Objects.equals(getId(), that.getId()) && Objects.equals(getIdx(), that.getIdx()) && Objects.equals(getStatusListId(), that.getStatusListId()) && Objects.equals(getUserId(), that.getUserId()) && Objects.equals(getTokenId(), that.getTokenId()) && Objects.equals(getRealmId(), that.getRealmId());
+        return Objects.equals(getId(), that.getId())
+                && Objects.equals(getIdx(), that.getIdx())
+                && Objects.equals(getStatusListId(), that.getStatusListId())
+                && Objects.equals(getUserId(), that.getUserId())
+                && Objects.equals(getTokenId(), that.getTokenId())
+                && Objects.equals(getRealmId(), that.getRealmId());
     }
 
     @Override

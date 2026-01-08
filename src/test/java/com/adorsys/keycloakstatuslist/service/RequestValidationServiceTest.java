@@ -1,13 +1,13 @@
 package com.adorsys.keycloakstatuslist.service;
 
+import static org.junit.jupiter.api.Assertions.*;
+
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.junit.jupiter.MockitoExtension;
-
-import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Unit tests for RequestValidationService.
@@ -31,9 +31,10 @@ class RequestValidationServiceTest {
         );
 
         // Act & Assert - should not throw exception
-        assertDoesNotThrow(() -> {
-            service.validateRevocationRequest(request);
-        });
+        assertDoesNotThrow(
+                () -> {
+                    service.validateRevocationRequest(request);
+                });
     }
 
     @Test
@@ -269,4 +270,4 @@ class RequestValidationServiceTest {
             service.validateRevocationRequest(request);
         });
     }
-} 
+}
