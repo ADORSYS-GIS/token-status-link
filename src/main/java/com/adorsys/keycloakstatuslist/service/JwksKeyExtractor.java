@@ -2,22 +2,23 @@ package com.adorsys.keycloakstatuslist.service;
 
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.fasterxml.jackson.databind.JsonNode;
-import org.jboss.logging.Logger;
 
+import java.math.BigInteger;
+import java.security.AlgorithmParameters;
 import java.security.KeyFactory;
 import java.security.PublicKey;
-import java.security.spec.RSAPublicKeySpec;
-import java.security.spec.ECPublicKeySpec;
-import java.security.spec.ECPoint;
-import java.security.spec.ECParameterSpec;
 import java.security.spec.ECGenParameterSpec;
-import java.security.AlgorithmParameters;
-import java.math.BigInteger;
+import java.security.spec.ECParameterSpec;
+import java.security.spec.ECPoint;
+import java.security.spec.ECPublicKeySpec;
+import java.security.spec.RSAPublicKeySpec;
 import java.util.Base64;
 
+import org.jboss.logging.Logger;
+
 /**
- * Service responsible for extracting public keys from JWKS key nodes.
- * Handles RSA and EC key extraction with proper parameter validation.
+ * Service responsible for extracting public keys from JWKS key nodes. Handles RSA and EC key
+ * extraction with proper parameter validation.
  */
 public class JwksKeyExtractor {
 
@@ -40,7 +41,8 @@ public class JwksKeyExtractor {
 
         } catch (Exception e) {
             logger.errorf("Failed to extract public key from JWKS key node. Error: %s", e.getMessage());
-            throw new StatusListException("Failed to extract public key from JWKS key node: " + e.getMessage(), e);
+            throw new StatusListException(
+                    "Failed to extract public key from JWKS key node: " + e.getMessage(), e);
         }
     }
 
@@ -111,4 +113,4 @@ public class JwksKeyExtractor {
             return null;
         }
     }
-} 
+}
