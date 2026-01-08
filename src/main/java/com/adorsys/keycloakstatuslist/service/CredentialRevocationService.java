@@ -5,6 +5,10 @@ import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationResponse;
 import com.adorsys.keycloakstatuslist.model.TokenStatusRecord;
+import com.adorsys.keycloakstatuslist.service.http.CloseableHttpClientAdapter;
+import com.adorsys.keycloakstatuslist.service.http.HttpClient;
+import com.adorsys.keycloakstatuslist.service.validation.RequestValidationService;
+import com.adorsys.keycloakstatuslist.service.validation.SdJwtVPValidationService;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -28,11 +32,38 @@ public class CredentialRevocationService {
     private final RequestValidationService requestValidationService;
     private StatusListService statusListService;
 
-    public CredentialRevocationService(KeycloakSession session) {
+    /**
+     * Primary constructor using dependency injection for all collaborators. This makes the service
+     * easy to unit test and allows alternative implementations of the dependency services to be
+     * provided.
+     */
+    public CredentialRevocationService(
+            KeycloakSession session,
+            StatusListService statusListService,
+            SdJwtVPValidationService sdJwtVPValidationService,
+            RevocationRecordService revocationRecordService,
+            RequestValidationService requestValidationService) {
         this.session = session;
-        this.sdJwtVPValidationService = new SdJwtVPValidationService(session);
-        this.revocationRecordService = new RevocationRecordService(session);
-        this.requestValidationService = new RequestValidationService();
+        this.statusListService = statusListService;
+        this.sdJwtVPValidationService = sdJwtVPValidationService;
+        this.revocationRecordService = revocationRecordService;
+        this.requestValidationService = requestValidationService;
+    }
+
+    /**
+     * Convenience constructor used by production code where explicit dependency wiring is not
+     * available (e.g. Keycloak SPI instantiation).
+     *
+     * <p>For tests or advanced usage prefer the constructor that accepts all collaborators
+     * explicitly.
+     */
+    public CredentialRevocationService(KeycloakSession session) {
+        this(
+                session,
+                null, // lazily initialized when first used
+                new SdJwtVPValidationServiceImpl(session),
+                new RevocationRecordService(session),
+                new RequestValidationServiceImpl());
     }
 
     /**
@@ -43,11 +74,12 @@ public class CredentialRevocationService {
             RealmModel realm = session.getContext().getRealm();
             StatusListConfig config = new StatusListConfig(realm);
             CryptoIdentityService cryptoIdentityService = new CryptoIdentityService(session);
+            HttpClient httpClient = new CloseableHttpClientAdapter(CustomHttpClient.getHttpClient());
             this.statusListService =
                     new StatusListService(
                             config.getServerUrl(),
                             cryptoIdentityService.getJwtToken(config),
-                            CustomHttpClient.getHttpClient());
+                            httpClient);
         }
         return statusListService;
     }

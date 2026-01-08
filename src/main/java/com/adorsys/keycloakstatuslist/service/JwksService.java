@@ -5,6 +5,7 @@ import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import java.security.Key;
 import java.security.PublicKey;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -122,7 +123,7 @@ public class JwksService {
                             return null;
                         }
                     })
-                    .filter(verifier -> verifier != null)
+                    .filter(Objects::nonNull)
                     .collect(Collectors.toList());
 
             logger.infof("Successfully created %d signature verifier contexts. RequestId: %s",
