@@ -25,6 +25,7 @@ import static com.adorsys.keycloakstatuslist.StatusListProtocolMapper.Constants;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
@@ -131,6 +132,37 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         assertThat(logCaptor.getErrorLogs(), hasItems(
                 containsString("Failed to store index mapping")
         ));
+    }
+
+    @Test
+    void shouldContinueIssuance_WhenOptionalAndDbPersistenceFails() {
+        when(realm.getAttribute(StatusListConfig.STATUS_LIST_MANDATORY)).thenReturn("false");
+        doThrow(new PersistenceException("DB Error")).when(entityManager).persist(any());
+
+        mapper.setClaimsForSubject(claims, userSession);
+
+        assertThat("Claims should remain unmapped", claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
+        assertThat(logCaptor.getWarnLogs(), hasItem(containsString("Status list publication failed; proceeding without status claim")));
+    }
+
+    @Test
+    void shouldFailIssuance_WhenMandatoryAndDbPersistenceFails() {
+        when(realm.getAttribute(StatusListConfig.STATUS_LIST_MANDATORY)).thenReturn("true");
+        doThrow(new PersistenceException("DB Error")).when(entityManager).persist(any());
+
+        assertThrows(RuntimeException.class, () -> mapper.setClaimsForSubject(claims, userSession));
+        assertThat(logCaptor.getErrorLogs(), hasItem(containsString("Status list is mandatory and publication failed; failing issuance")));
+    }
+
+    @Test
+    void shouldFailIssuance_WhenMandatoryAndSendingStatusFails() throws Exception {
+        when(realm.getAttribute(StatusListConfig.STATUS_LIST_MANDATORY)).thenReturn("true");
+        mockEntityPersist();
+        doThrow(new StatusListException("Server not reachable"))
+                .when(statusListService).publishOrUpdate(any(StatusListService.StatusListPayload.class));
+
+        assertThrows(RuntimeException.class, () -> mapper.setClaimsForSubject(claims, userSession));
+        assertThat(logCaptor.getErrorLogs(), hasItem(containsString("Status list is mandatory and publication failed; failing issuance")));
     }
 
     private void mockDefaultRealmConfig() {
