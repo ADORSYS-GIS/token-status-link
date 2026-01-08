@@ -32,10 +32,9 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.MockedConstruction;
 import org.mockito.MockedStatic;
 
-@SuppressWarnings("unchecked")
-class CredentialRevocationResourceProviderFactoryTest {
+class CustomOIDCLoginProtocolFactoryTest {
 
-    private CredentialRevocationResourceProviderFactory factory;
+    private CustomOIDCLoginProtocolFactory factory;
     private KeycloakSessionFactory sessionFactory;
     private KeycloakSession session;
     private KeycloakTransactionManager transactionManager;
@@ -51,7 +50,7 @@ class CredentialRevocationResourceProviderFactoryTest {
 
     @BeforeEach
     void setUp() {
-        factory = new CredentialRevocationResourceProviderFactory();
+        factory = new CustomOIDCLoginProtocolFactory();
         sessionFactory = mock(KeycloakSessionFactory.class);
         session = mock(KeycloakSession.class);
         KeycloakContext context1 = mock(KeycloakContext.class);

@@ -1,1 +1,1 @@
-com.adorsys.keycloakstatuslist.resource.CredentialRevocationResourceProviderFactory 
+com.adorsys.keycloakstatuslist.resource.CustomOIDCLoginProtocolFactory

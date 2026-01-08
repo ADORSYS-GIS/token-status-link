@@ -1,6 +1,6 @@
 package com.adorsys.keycloakstatuslist.resource;
 
-import jakarta.ws.rs.Path;
+import com.adorsys.keycloakstatuslist.service.CredentialRevocationService;
 import org.keycloak.events.EventBuilder;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.protocol.oidc.OIDCLoginProtocolService;
@@ -14,30 +14,25 @@ public class CustomOIDCLoginProtocolService extends OIDCLoginProtocolService {
 
     private final KeycloakSession session;
     private final EventBuilder event;
+    private final CredentialRevocationService revocationService;
 
-    public CustomOIDCLoginProtocolService(KeycloakSession session, EventBuilder event) {
+    public CustomOIDCLoginProtocolService(
+            KeycloakSession session,
+            EventBuilder event,
+            CredentialRevocationService revocationService
+    ) {
         super(session, event);
         this.session = session;
         this.event = event;
+        this.revocationService = revocationService;
     }
 
-    /**
-     * Challenge endpoint that issues nonces for the revocation flow.
-     * This is step 1 of the secure revocation flow.
-     * IMPORTANT: This must come BEFORE the @Path("revoke") method for JAX-RS to match it correctly.
-     */
-    @Path("revoke/challenge")
-    public Object revokeChallenge() {
-        return new RevocationChallengeResource(this.session);
-    }
-    
-    /**
-     * Main revocation endpoint that processes SD-JWT VP based credential revocations.
-     * This is step 2 of the secure revocation flow.
-     */
     @Override
-    @Path("revoke")
     public Object revoke() {
-        return new CredentialRevocationResource(this.session, this.event);
+        return new CredentialRevocationEndpoint(
+                this.session,
+                this.event,
+                this.revocationService
+        );
     }
 }

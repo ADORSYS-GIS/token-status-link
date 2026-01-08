@@ -3,6 +3,7 @@ package com.adorsys.keycloakstatuslist.resource;
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.exception.StatusListServerException;
+import com.adorsys.keycloakstatuslist.service.CredentialRevocationService;
 import com.adorsys.keycloakstatuslist.service.CryptoIdentityService;
 import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
 import com.adorsys.keycloakstatuslist.service.RevocationRecordService;
@@ -28,10 +29,9 @@ import org.keycloak.protocol.oidc.OIDCLoginProtocolFactory;
  * /protocol/openid-connect/revoke path. Handles realm issuer registration at startup for status
  * list integration.
  */
-public class CredentialRevocationResourceProviderFactory extends OIDCLoginProtocolFactory {
+public class CustomOIDCLoginProtocolFactory extends OIDCLoginProtocolFactory {
 
-    private static final Logger logger =
-            Logger.getLogger(CredentialRevocationResourceProviderFactory.class);
+    private static final Logger logger = Logger.getLogger(CustomOIDCLoginProtocolFactory.class);
     private final Set<String> registeredRealms = ConcurrentHashMap.newKeySet();
     private volatile boolean initialized = false;
 
@@ -45,14 +45,14 @@ public class CredentialRevocationResourceProviderFactory extends OIDCLoginProtoc
 
     @Override
     public Object createProtocolEndpoint(KeycloakSession session, EventBuilder event) {
-        return new CustomOIDCLoginProtocolService(session, event);
+        CredentialRevocationService revocationService = new CredentialRevocationService(session);
+        return new CustomOIDCLoginProtocolService(session, event, revocationService);
     }
 
     @Override
     public void postInit(KeycloakSessionFactory factory) {
         super.postInit(factory);
-        logger.info(
-                "Post-initializing CredentialRevocationResourceProviderFactory for standard revocation endpoint override");
+        logger.info("Post-initializing CustomOIDCLoginProtocolFactory for standard revocation endpoint override");
 
         // Initialize realms directly since we're already in the postInit phase
         // which means Keycloak's database is ready
@@ -219,7 +219,7 @@ public class CredentialRevocationResourceProviderFactory extends OIDCLoginProtoc
     @Override
     public void close() {
         super.close();
-        logger.info("Closing CredentialRevocationResourceProviderFactory");
+        logger.info("Closing CustomOIDCLoginProtocolFactory");
         registeredRealms.clear();
         initialized = false;
     }
