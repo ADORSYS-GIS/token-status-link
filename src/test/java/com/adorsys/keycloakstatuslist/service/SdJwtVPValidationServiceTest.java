@@ -9,7 +9,6 @@ import java.security.PublicKey;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.keycloak.crypto.AsymmetricSignatureVerifierContext;
 import org.keycloak.crypto.SignatureVerifierContext;
 import org.keycloak.models.KeycloakSession;
 import org.mockito.Mock;
