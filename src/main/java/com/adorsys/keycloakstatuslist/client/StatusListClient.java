@@ -1,23 +1,18 @@
 package com.adorsys.keycloakstatuslist.client;
 
-
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.model.TokenStatusRecord;
 import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.jboss.logging.Logger;
 
 /**
- * Client for interacting with the status list server directly.
- * This can be used for testing or direct integrations.
+ * Client for interacting with the status list server directly. This can be used for testing or
+ * direct integrations.
  */
 public class StatusListClient {
 
     private static final Logger logger = Logger.getLogger(StatusListClient.class);
-    private static final ObjectMapper objectMapper = new ObjectMapper()
-            .registerModule(new JavaTimeModule());
 
     private final StatusListService statusListService;
 
@@ -53,8 +48,8 @@ public class StatusListClient {
     }
 
     /**
-     * Basic validation for backward compatibility with existing tests.
-     * This ensures the tests that expect IllegalArgumentException still work.
+     * Basic validation for backward compatibility with existing tests. This ensures the tests that
+     * expect IllegalArgumentException still work.
      */
     private void validateBasicFields(TokenStatusRecord statusRecord) {
         if (statusRecord.getCredentialId() == null || statusRecord.getCredentialId().isEmpty()) {
@@ -64,5 +59,4 @@ public class StatusListClient {
             throw new IllegalArgumentException("Issuer ID (iss) is required");
         }
     }
-
 }

@@ -3,9 +3,9 @@ package com.adorsys.keycloakstatuslist.model;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
- * Request model for credential revocation.
- * Contains the credential to revoke and optional revocation reason.
- * Note: SD-JWT VP token should be passed as Bearer token in Authorization header.
+ * Request model for credential revocation. Contains the credential to revoke and optional
+ * revocation reason. Note: SD-JWT VP token should be passed as Bearer token in Authorization
+ * header.
  */
 public class CredentialRevocationRequest {
 
@@ -39,4 +39,4 @@ public class CredentialRevocationRequest {
     public void setRevocationReason(String revocationReason) {
         this.revocationReason = revocationReason;
     }
-} 
+}
