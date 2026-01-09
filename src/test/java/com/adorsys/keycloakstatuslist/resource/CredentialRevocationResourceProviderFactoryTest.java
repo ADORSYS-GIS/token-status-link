@@ -220,7 +220,7 @@ class CredentialRevocationResourceProviderFactoryTest {
             fail("Should not throw exception during setup");
         }
 
-        assertDoesNotThrow(() -> triggerInitialization());
+        assertDoesNotThrow(this::triggerInitialization);
     }
 
     private void triggerInitialization() {

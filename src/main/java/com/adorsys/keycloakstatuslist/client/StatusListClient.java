@@ -1,6 +1,7 @@
 package com.adorsys.keycloakstatuslist.client;
 
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
+import com.adorsys.keycloakstatuslist.exception.StatusListServerException;
 import com.adorsys.keycloakstatuslist.model.TokenStatusRecord;
 import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
@@ -41,6 +42,9 @@ public class StatusListClient {
         try {
             statusListService.publishRecord(statusRecord);
             return true;
+        } catch (StatusListServerException e) {
+            logger.errorf("Error publishing record - server returned status code: %d", e.getStatusCode(), e);
+            return false;
         } catch (StatusListException e) {
             logger.error("Error publishing record", e);
             return false;

@@ -1,6 +1,7 @@
 package com.adorsys.keycloakstatuslist.resource;
 
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
+import com.adorsys.keycloakstatuslist.exception.StatusListServerException;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest;
 import com.adorsys.keycloakstatuslist.service.CredentialRevocationService;
 import jakarta.ws.rs.POST;
@@ -20,7 +21,7 @@ public class CredentialRevocationResource extends TokenRevocationEndpoint {
 
     private final KeycloakSession session;
     private final CredentialRevocationService revocationService;
-    private HttpHeaders headers;
+    private final HttpHeaders headers;
 
     /**
      * Constructor with dependency injection for better testability.
@@ -96,6 +97,9 @@ public class CredentialRevocationResource extends TokenRevocationEndpoint {
 
             return Response.ok().build();
 
+        } catch (StatusListServerException e) {
+            logger.errorf(e, "SD-JWT VP based revocation failed for credentialId: %s due to status list server error (status code: %d). Falling back to standard revocation.", credentialId, e.getStatusCode());
+            return super.revoke();
         } catch (StatusListException e) {
             logger.errorf(
                     e,
