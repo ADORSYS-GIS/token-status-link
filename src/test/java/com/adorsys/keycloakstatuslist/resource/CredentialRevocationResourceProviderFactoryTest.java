@@ -9,6 +9,7 @@ import com.adorsys.keycloakstatuslist.service.CryptoIdentityService;
 import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
 import com.adorsys.keycloakstatuslist.service.RevocationRecordService;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
+import jakarta.persistence.EntityManager;
 
 import java.io.IOException;
 import java.util.stream.Stream;
@@ -23,6 +24,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.keycloak.events.EventBuilder;
 import org.keycloak.jose.jwk.JWK;
+import org.keycloak.connections.jpa.JpaConnectionProvider;
 import org.keycloak.models.*;
 import org.keycloak.models.utils.PostMigrationEvent;
 import org.keycloak.provider.ProviderEventListener;
@@ -39,6 +41,8 @@ class CredentialRevocationResourceProviderFactoryTest {
     private KeycloakTransactionManager transactionManager;
     private RealmProvider realmProvider;
     private RealmModel realm;
+    private JpaConnectionProvider jpaConnectionProvider;
+    private EntityManager entityManager;
 
     private MockedStatic<RevocationRecordService> mockedRevocationService;
     private MockedStatic<CustomHttpClient> mockedHttpClient;
@@ -55,6 +59,8 @@ class CredentialRevocationResourceProviderFactoryTest {
         transactionManager = mock(KeycloakTransactionManager.class);
         realmProvider = mock(RealmProvider.class);
         realm = mock(RealmModel.class);
+        jpaConnectionProvider = mock(JpaConnectionProvider.class);
+        entityManager = mock(EntityManager.class);
 
         when(session.getContext()).thenReturn(context);
         lenient().when(context.getRealm()).thenReturn(realm);
@@ -62,6 +68,8 @@ class CredentialRevocationResourceProviderFactoryTest {
         when(sessionFactory.create()).thenReturn(session);
         when(session.getTransactionManager()).thenReturn(transactionManager);
         when(session.realms()).thenReturn(realmProvider);
+        when(session.getProvider(eq(JpaConnectionProvider.class))).thenReturn(jpaConnectionProvider);
+        when(jpaConnectionProvider.getEntityManager()).thenReturn(entityManager);
         when(realmProvider.getRealmsStream()).thenAnswer(i -> Stream.of(realm));
 
         when(realm.getName()).thenReturn("test-realm");

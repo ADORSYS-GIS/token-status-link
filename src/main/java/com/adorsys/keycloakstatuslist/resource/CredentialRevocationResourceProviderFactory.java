@@ -77,7 +77,7 @@ public class CredentialRevocationResourceProviderFactory extends OIDCLoginProtoc
             session.getTransactionManager().begin();
 
             // Get all realms
-            var realms = session.realms().getRealmsStream().toList();
+            List<RealmModel> realms = session.realms().getRealmsStream().toList();
             logger.info("Found " + realms.size() + " realms to register");
 
             // Track registration results

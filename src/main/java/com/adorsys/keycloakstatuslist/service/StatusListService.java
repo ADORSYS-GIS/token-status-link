@@ -215,6 +215,7 @@ public class StatusListService {
         // Create a simple record with just the required fields for issuer registration
         TokenStatusRecord issuerRecord = new TokenStatusRecord();
         issuerRecord.setIssuer(issuerId);
+
         issuerRecord.setPublicKey(publicKey);
 
         try {
@@ -356,6 +357,7 @@ public class StatusListService {
             statusRecord.setExpiresAt(Instant.now().plusSeconds(3600));
         }
     }
+
 
     public boolean checkStatusListExists(String statusListId) throws StatusListException {
         String requestId = UUID.randomUUID().toString();

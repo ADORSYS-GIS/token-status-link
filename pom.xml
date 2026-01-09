@@ -134,6 +134,12 @@
             <version>2.19.2</version>
             <scope>provided</scope>
         </dependency>
+        <!-- Caffeine Cache for nonce management -->
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+            <version>3.1.8</version>
+        </dependency>
     </dependencies>
 
     <repositories>

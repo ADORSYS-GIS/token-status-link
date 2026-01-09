@@ -74,6 +74,7 @@ class RevocationRecordServiceTest {
         when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq("RS256"))).thenReturn(keyWrapper);
         when(keyWrapper.getPublicKey()).thenReturn(rsaPublicKey);
         when(keyWrapper.getAlgorithm()).thenReturn("RS256");
+
         when(keyWrapper.getKid()).thenReturn("test-kid");
 
         TokenStatusRecord result = service.createRevocationRecord(request, requestId);
@@ -81,6 +82,7 @@ class RevocationRecordServiceTest {
         assertNotNull(result);
         assertEquals(credentialId, result.getCredentialId());
         assertEquals("test-realm", result.getIssuer());
+
         assertNotNull(result.getPublicKey());
         assertTrue(result.getPublicKey() instanceof JWK);
         assertEquals("test-kid", result.getPublicKey().getKeyId());
@@ -97,6 +99,7 @@ class RevocationRecordServiceTest {
         when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq("RS256"))).thenReturn(keyWrapper);
         when(keyWrapper.getPublicKey()).thenReturn(rsaPublicKey);
         when(keyWrapper.getAlgorithm()).thenReturn("RS256");
+
         when(keyWrapper.getKid()).thenReturn("test-kid");
 
         TokenStatusRecord result = service.createRevocationRecord(request, requestId);
@@ -113,6 +116,7 @@ class RevocationRecordServiceTest {
         when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq("RS256"))).thenReturn(keyWrapper);
         when(keyWrapper.getPublicKey()).thenReturn(rsaPublicKey);
         when(keyWrapper.getAlgorithm()).thenReturn("RS256");
+
         when(keyWrapper.getKid()).thenReturn("test-kid");
 
         TokenStatusRecord result = service.createRevocationRecord(request, requestId);
@@ -160,6 +164,7 @@ class RevocationRecordServiceTest {
         when(keyWrapper.getPublicKey()).thenReturn(rsaPublicKey);
         when(keyWrapper.getAlgorithm()).thenReturn(null);
 
+        
         TokenStatusRecord result = service.createRevocationRecord(request, requestId);
         assertEquals("RS256", result.getPublicKey().getAlgorithm());
     }
@@ -183,6 +188,7 @@ class RevocationRecordServiceTest {
     @Test
     void testValidateRevocationReason_TooLongReason() {
         String reason = "a".repeat(256);
+
         StatusListException exception =
                 assertThrows(
                         StatusListException.class,

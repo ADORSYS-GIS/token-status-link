@@ -5,6 +5,7 @@ import jakarta.persistence.*;
 import java.util.Objects;
 
 @Entity
+@Access(AccessType.FIELD)
 @Table(
         name = "status_list_mapping",
         indexes = {@Index(name = "idx_status_list_token", columnList = "token_id")})

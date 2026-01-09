@@ -7,6 +7,7 @@ import static org.mockito.Mockito.*;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest;
 import com.adorsys.keycloakstatuslist.service.CredentialRevocationService;
+
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MultivaluedHashMap;
 import jakarta.ws.rs.core.MultivaluedMap;
@@ -15,6 +16,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.keycloak.common.ClientConnection;
+import org.keycloak.events.EventBuilder;
 import org.keycloak.http.HttpRequest;
 import org.keycloak.models.KeycloakContext;
 import org.keycloak.models.KeycloakSession;
@@ -55,6 +57,9 @@ class CredentialRevocationResourceTest {
     // Service-related mocks
     @Mock
     private CredentialRevocationService revocationService;
+
+    @Mock
+    private EventBuilder eventBuilder;
 
     private TestableCredentialRevocationResource resource;
 
@@ -160,6 +165,7 @@ class CredentialRevocationResourceTest {
     void testRevoke_ServiceThrowsException() throws Exception {
         mockRequest("test-credential-123", "Test revocation", "Bearer test-token");
 
+
         doThrow(new StatusListException("Invalid token format"))
                 .when(revocationService)
                 .revokeCredential(any(CredentialRevocationRequest.class), anyString());
@@ -167,7 +173,8 @@ class CredentialRevocationResourceTest {
         Response response = resource.revoke();
 
         assertNotNull(response);
-        assertEquals(200, response.getStatus());
+
+        assertEquals(500, response.getStatus()); // StatusListException defaults to 500
         verify(revocationService)
                 .revokeCredential(any(CredentialRevocationRequest.class), eq("test-token"));
     }
@@ -183,7 +190,8 @@ class CredentialRevocationResourceTest {
         Response response = resource.revoke();
 
         assertNotNull(response);
-        assertEquals(200, response.getStatus());
+
+        assertEquals(500, response.getStatus()); // RuntimeException is caught by Exception handler which returns 500
         verify(revocationService)
                 .revokeCredential(any(CredentialRevocationRequest.class), eq("test-token"));
     }
@@ -206,6 +214,8 @@ class CredentialRevocationResourceTest {
      */
     private static class TestableCredentialRevocationResource extends CredentialRevocationResource {
         private final KeycloakSession session;
+        private final HttpHeaders headers;
+
 
         public TestableCredentialRevocationResource(
                 KeycloakSession session,
@@ -213,6 +223,13 @@ class CredentialRevocationResourceTest {
                 CredentialRevocationService revocationService) {
             super(session, null, headers, revocationService);
             this.session = session;
+            this.headers = headers;
+            this.revocationService = revocationService;
+        }
+
+        @Override
+        protected HttpHeaders getHeaders() {
+            return headers;
         }
 
         @Override
@@ -237,9 +254,12 @@ class CredentialRevocationResourceTest {
                         // Return success response
                         return Response.ok().build();
 
+                    } catch (StatusListException e) {
+                        return Response.status(e.getHttpStatus()).entity(e.getMessage()).build();
+                    } catch (IllegalArgumentException e) {
+                        return Response.status(400).entity("Malformed VP: " + e.getMessage()).build();
                     } catch (Exception e) {
-                        // Fall back to standard success response
-                        return Response.ok().build();
+                        return Response.status(500).entity("Internal error during credential revocation").build();
                     }
                 }
             }
