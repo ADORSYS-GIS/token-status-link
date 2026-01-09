@@ -5,8 +5,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import java.time.Instant;
 
 /**
- * Response model for credential revocation.
- * Contains the result of the revocation operation.
+ * Response model for credential revocation. Contains the result of the revocation operation.
  */
 public class CredentialRevocationResponse {
 
@@ -29,8 +28,12 @@ public class CredentialRevocationResponse {
         // Default constructor for JSON serialization
     }
 
-    public CredentialRevocationResponse(boolean success, String credentialId, Instant revokedAt,
-                                        String revocationReason, String message) {
+    public CredentialRevocationResponse(
+            boolean success,
+            String credentialId,
+            Instant revokedAt,
+            String revocationReason,
+            String message) {
         this.success = success;
         this.credentialId = credentialId;
         this.revokedAt = revokedAt;
@@ -38,9 +41,10 @@ public class CredentialRevocationResponse {
         this.message = message;
     }
 
-    public static CredentialRevocationResponse success(String credentialId, Instant revokedAt, String revocationReason) {
-        return new CredentialRevocationResponse(true, credentialId, revokedAt, revocationReason,
-                "Credential revoked successfully");
+    public static CredentialRevocationResponse success(
+            String credentialId, Instant revokedAt, String revocationReason) {
+        return new CredentialRevocationResponse(
+                true, credentialId, revokedAt, revocationReason, "Credential revoked successfully");
     }
 
     public static CredentialRevocationResponse error(String message) {
@@ -86,4 +90,4 @@ public class CredentialRevocationResponse {
     public void setMessage(String message) {
         this.message = message;
     }
-} 
+}

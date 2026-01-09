@@ -1,5 +1,12 @@
 package com.adorsys.keycloakstatuslist.service;
 
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
+
+import java.security.PublicKey;
+import java.util.List;
+import java.util.stream.Stream;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -7,19 +14,12 @@ import org.keycloak.crypto.KeyUse;
 import org.keycloak.crypto.KeyWrapper;
 import org.keycloak.crypto.SignatureProvider;
 import org.keycloak.crypto.SignatureVerifierContext;
+import org.keycloak.models.KeyManager;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
-import org.keycloak.models.KeyManager;
 import org.keycloak.sdjwt.vp.SdJwtVP;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-
-import java.security.PublicKey;
-import java.util.List;
-import java.util.stream.Stream;
-
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class JwksServiceTest {
@@ -83,7 +83,8 @@ class JwksServiceTest {
     @Test
     void testGetSignatureVerifierContexts_NoKeys() throws Exception {
         when(keyManager.getKeysStream(realm)).thenReturn(Stream.empty());
-        List<SignatureVerifierContext> result = service.getSignatureVerifierContexts(sdJwtVP, "issuer", "req");
+        List<SignatureVerifierContext> result =
+                service.getSignatureVerifierContexts(sdJwtVP, "issuer", "req");
         assertNotNull(result);
         assertTrue(result.isEmpty());
     }
@@ -98,9 +99,10 @@ class JwksServiceTest {
         when(session.getProvider(SignatureProvider.class, "RS256")).thenReturn(signatureProvider);
         when(signatureProvider.verifier(key)).thenReturn(verifierContext);
 
-        List<SignatureVerifierContext> result = service.getSignatureVerifierContexts(sdJwtVP, "issuer", "req");
+        List<SignatureVerifierContext> result =
+                service.getSignatureVerifierContexts(sdJwtVP, "issuer", "req");
         assertNotNull(result);
         assertEquals(1, result.size());
         assertSame(verifierContext, result.get(0));
     }
-} 
+}

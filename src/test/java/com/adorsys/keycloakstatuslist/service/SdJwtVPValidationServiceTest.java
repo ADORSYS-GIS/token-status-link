@@ -12,24 +12,21 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.keycloak.crypto.SignatureVerifierContext;
 import org.keycloak.models.KeycloakSession;
-import org.keycloak.sdjwt.vp.SdJwtVP;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import org.keycloak.sdjwt.IssuerSignedJWT;
 import org.keycloak.sdjwt.vp.KeyBindingJWT;
+import org.keycloak.sdjwt.vp.SdJwtVP;
 
-import java.security.PublicKey;
 import java.util.Collections;
 import java.util.Optional;
 
-import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.lenient;
-
 
 /**
  * Unit tests for SdJwtVPValidationService.
@@ -41,19 +38,19 @@ class SdJwtVPValidationServiceTest {
     private KeycloakSession session;
 
     @Mock
-    private JwksService jwksService;
-
-    @Mock
     private org.keycloak.models.KeycloakContext context;
 
     @Mock
-    private SdJwtVP sdJwtVP;
+    private JwksService jwksService;
 
     @Mock
     private PublicKey publicKey;
 
     @Mock
     private SignatureVerifierContext verifierContext;
+
+    @Mock
+    private SdJwtVP sdJwtVP;
 
     private SdJwtVPValidationService service;
 

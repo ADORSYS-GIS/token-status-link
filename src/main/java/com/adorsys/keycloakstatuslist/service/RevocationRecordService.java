@@ -2,23 +2,24 @@ package com.adorsys.keycloakstatuslist.service;
 
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest;
-import com.adorsys.keycloakstatuslist.model.TokenStatusRecord;
 import com.adorsys.keycloakstatuslist.model.TokenStatus;
-import org.jboss.logging.Logger;
-import org.keycloak.crypto.Algorithm;
-import org.keycloak.crypto.KeyUse;
-import org.keycloak.crypto.KeyWrapper;
-import org.keycloak.jose.jwk.JWK;
-import org.keycloak.jose.jwk.JWKBuilder;
-import org.keycloak.models.KeycloakSession;
-import org.keycloak.models.RealmModel;
-import org.keycloak.models.KeyManager;
+import com.adorsys.keycloakstatuslist.model.TokenStatusRecord;
 
 import java.security.PublicKey;
 import java.security.interfaces.ECPublicKey;
 import java.security.interfaces.RSAPublicKey;
 import java.time.Instant;
 import java.util.Optional;
+
+import org.jboss.logging.Logger;
+import org.keycloak.crypto.Algorithm;
+import org.keycloak.crypto.KeyUse;
+import org.keycloak.crypto.KeyWrapper;
+import org.keycloak.jose.jwk.JWK;
+import org.keycloak.jose.jwk.JWKBuilder;
+import org.keycloak.models.KeyManager;
+import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.RealmModel;
 
 public class RevocationRecordService {
 
@@ -31,11 +32,11 @@ public class RevocationRecordService {
     }
 
     /**
-     * Gets the realm's active signing key and converts it to JWK.
-     * Supports RSA and EC.
-     * accessible by CredentialRevocationResourceProviderFactory.
+     * Gets the realm's active signing key and converts it to JWK. Supports RSA and EC. accessible by
+     * CredentialRevocationResourceProviderFactory.
      */
-    public static KeyData getRealmKeyData(KeycloakSession session, RealmModel realm) throws StatusListException {
+    public static KeyData getRealmKeyData(KeycloakSession session, RealmModel realm)
+            throws StatusListException {
         try {
             KeyManager keyManager = session.keys();
 
@@ -69,7 +70,11 @@ public class RevocationRecordService {
             } else if (pubKey instanceof ECPublicKey) {
                 jwk = builder.ec(pubKey);
             } else {
-                throw new StatusListException("Unsupported key type for realm " + realm.getName() + ": " + pubKey.getClass().getName());
+                throw new StatusListException(
+                        "Unsupported key type for realm "
+                                + realm.getName()
+                                + ": "
+                                + pubKey.getClass().getName());
             }
 
             logger.debugf("Retrieved JWK and algorithm for realm %s: %s", realm.getName(), finalAlg);

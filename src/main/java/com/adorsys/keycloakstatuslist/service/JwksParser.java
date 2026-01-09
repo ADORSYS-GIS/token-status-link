@@ -3,8 +3,8 @@ package com.adorsys.keycloakstatuslist.service;
 import com.fasterxml.jackson.databind.JsonNode;
 
 /**
- * Service responsible for parsing JWKS JSON and finding keys by kid.
- * Handles JWKS structure validation and key searching.
+ * Service responsible for parsing JWKS JSON and finding keys by kid. Handles JWKS structure
+ * validation and key searching.
  */
 public class JwksParser {
 
@@ -58,4 +58,4 @@ public class JwksParser {
     public String getKeyId(JsonNode jwk) {
         return jwk.has("kid") ? jwk.get("kid").asText() : "unknown";
     }
-} 
+}

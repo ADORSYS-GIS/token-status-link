@@ -2,27 +2,29 @@ package com.adorsys.keycloakstatuslist.service;
 
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.fasterxml.jackson.databind.JsonNode;
-import org.jboss.logging.Logger;
-import org.keycloak.crypto.SignatureVerifierContext;
-import org.keycloak.crypto.KeyWrapper;
-import org.keycloak.crypto.KeyStatus;
-import org.keycloak.crypto.AsymmetricSignatureVerifierContext;
-import org.keycloak.sdjwt.vp.SdJwtVP;
-import org.keycloak.sdjwt.IssuerSignedJwtVerificationOpts;
-import org.keycloak.sdjwt.vp.KeyBindingJwtVerificationOpts;
-import org.keycloak.common.VerificationException;
-import org.keycloak.models.KeycloakSession;
-import org.keycloak.models.RealmModel;
-import org.keycloak.services.Urls;
+
 
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.security.PublicKey;
 import java.util.List;
 
+import org.jboss.logging.Logger;
+import org.keycloak.common.VerificationException;
+import org.keycloak.crypto.AsymmetricSignatureVerifierContext;
+import org.keycloak.crypto.KeyStatus;
+import org.keycloak.crypto.KeyWrapper;
+import org.keycloak.crypto.SignatureVerifierContext;
+import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.RealmModel;
+import org.keycloak.services.Urls;
+import org.keycloak.sdjwt.IssuerSignedJwtVerificationOpts;
+import org.keycloak.sdjwt.vp.KeyBindingJwtVerificationOpts;
+import org.keycloak.sdjwt.vp.SdJwtVP;
+
 /**
- * Service for validating SD-JWT VP tokens.
- * Handles token parsing, signature verification, and credential extraction.
+ * Default implementation of SdJwtVPValidationService. Handles token parsing, signature verification,
+ * and credential extraction using Keycloak's internal key management.
  */
 public class SdJwtVPValidationService {
 
@@ -37,14 +39,20 @@ public class SdJwtVPValidationService {
     }
 
     /**
-     * Parses the SD-JWT VP token WITHOUT cryptographic verification.
-     * This allows extraction of claims (like credential ID and nonce) before full verification.
-     * 
-     * Use this when you need to extract data before validating nonces or other server-side checks.
+
+     * Convenience constructor used by production code where explicit dependency wiring is not
+     * available (e.g. Keycloak SPI instantiation).
+     *
+     * <p>For tests or advanced usage prefer the constructor that accepts all collaborators
+     * explicitly.
      */
     public SdJwtVP parseSdJwtVP(String sdJwtVpString, String requestId) 
             throws StatusListException {
-        
+
+        logger.debugf(
+                "Parsing SD-JWT VP token using Keycloak's built-in SdJwtVP class. RequestId: %s",
+                requestId);
+
         try {
             if (sdJwtVpString == null || sdJwtVpString.trim().isEmpty()) {
                 throw new StatusListException("SD-JWT VP token is empty or null");
@@ -57,22 +65,20 @@ public class SdJwtVPValidationService {
             return sdJwtVP;
 
         } catch (IllegalArgumentException e) {
-            logger.errorf("Invalid SD-JWT VP token format. RequestId: %s, Error: %s", requestId, e.getMessage());
-            throw new StatusListException("Malformed VP: Invalid SD-JWT VP token format: " + e.getMessage(), e, 400);
+
+            logger.errorf(
+                    "Invalid SD-JWT VP token format. RequestId: %s, Error: %s", requestId, e.getMessage());
+            throw new StatusListException("Invalid SD-JWT VP token format: " + e.getMessage(), e);
         } catch (Exception e) {
-            logger.errorf("Failed to parse SD-JWT VP token. RequestId: %s, Error: %s", requestId, e.getMessage());
-            throw new StatusListException("Malformed VP: Failed to parse SD-JWT VP token: " + e.getMessage(), e, 400);
+            logger.errorf(
+                    "Failed to parse SD-JWT VP token. RequestId: %s, Error: %s", requestId, e.getMessage());
+            throw new StatusListException("Failed to parse SD-JWT VP token: " + e.getMessage(), e);
         }
     }
 
     /**
-     * Verifies the SD-JWT VP token's issuer signature and Key Binding JWT using Keycloak's internal key management.
-     * This ensures the token was properly issued by the claimed issuer and signed by the holder.
-     *      * 
-     * @param sdJwtVP the parsed SD-JWT VP token
-     * @param requestId the request ID for logging
-     * @param credentialId the credential ID being revoked
-     * @param expectedNonce the server-generated nonce from the challenge (NOT from client's JWT)
+     * Verifies the SD-JWT VP token's issuer signature using Keycloak's internal key management. This
+     * ensures the token was properly issued by the claimed issuer.
      */
     public void verifySdJwtVPSignature(SdJwtVP sdJwtVP, String requestId, String credentialId, String expectedNonce) throws StatusListException {
         try {
@@ -87,7 +93,8 @@ public class SdJwtVPValidationService {
             List<SignatureVerifierContext> verifyingKeys = jwksService.getSignatureVerifierContexts(sdJwtVP, issuer, requestId);
 
             if (verifyingKeys.isEmpty()) {
-                logger.errorf("No valid issuer signature verifier contexts created. RequestId: %s", requestId);
+                logger.errorf(
+                        "No valid issuer signature verifier contexts created. RequestId: %s", requestId);
                 throw new StatusListException("No public keys available for issuer: " + issuer);
             }
             
@@ -133,14 +140,55 @@ public class SdJwtVPValidationService {
             throw new StatusListException("SD-JWT VP token does not prove ownership of the specified credential");
         }
 
-        logger.infof("Credential ownership verified successfully (credential ID match). RequestId: %s", requestId);
+
+        verifyHolderSignatureAndKeyBinding(sdJwtVP, requestId);
+
+        logger.infof("Credential ownership verified successfully with holder signature. RequestId: %s", requestId);
     }
 
     /**
-     * Creates a SignatureVerifierContext using the provided PublicKey.
-     * This method provides proper cryptographic signature verification.
+     * Verifies the holder's signature and key binding to ensure true ownership.
+     * This is the critical security check that proves the credential holder actually signed the VP token.
+     * <p>
+     * SECURITY: If holder signature verification fails, the request is rejected immediately.
      */
-    public SignatureVerifierContext createSignatureVerifierContextFromPublicKey(PublicKey publicKey, String algorithm) throws StatusListException {
+    public void verifyHolderSignatureAndKeyBinding(SdJwtVP sdJwtVP, String requestId)
+            throws StatusListException {
+        try {
+            logger.debugf("Verifying holder signature and key binding. RequestId: %s", requestId);
+
+            logger.infof("Attempting holder signature verification with key binding required. RequestId: %s", requestId);
+
+            // The SD-JWT library automatically handles key binding verification when enabled
+            // No need to manually extract and verify the holder's key
+            // Extract credentialId for verification options (may be null for holder verification)
+            String credentialId = extractCredentialIdFromSdJwtVP(sdJwtVP);
+            sdJwtVP.verify(
+                    List.of(), // Empty list - no additional verifiers needed for key binding
+                    getIssuerSignedJwtVerificationOpts(),
+                    getKeyBindingJwtVerificationOpts(sdJwtVP, requestId, getRevocationEndpointUrl(), credentialId, null)
+            );
+
+            logger.infof("Holder signature verification completed successfully. RequestId: %s", requestId);
+
+        } catch (VerificationException e) {
+            logger.errorf("Holder signature verification failed - REJECTING REQUEST. RequestId: %s, Error: %s",
+                    requestId, e.getMessage());
+            throw new StatusListException("Invalid holder signature: " + e.getMessage(), e);
+
+        } catch (Exception e) {
+            logger.errorf("Holder signature verification failed - REJECTING REQUEST. RequestId: %s, Error: %s",
+                    requestId, e.getMessage());
+            throw new StatusListException("Holder signature verification failed: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Creates a SignatureVerifierContext using the provided PublicKey. This method provides proper
+     * cryptographic signature verification.
+     */
+    public SignatureVerifierContext createSignatureVerifierContextFromPublicKey(
+            PublicKey publicKey, String algorithm) throws StatusListException {
         try {
             if (publicKey == null) {
                 throw new IllegalArgumentException("Public key cannot be null");
@@ -190,13 +238,14 @@ public class SdJwtVPValidationService {
 
         } catch (Exception e) {
             logger.error("Failed to create signature verifier context from public key", e);
-            throw new StatusListException("Failed to create signature verifier context from public key: " + e.getMessage(), e);
+            throw new StatusListException(
+                    "Failed to create signature verifier context from public key: " + e.getMessage(), e);
         }
     }
 
     /**
-     * Extracts the credential ID from the SD-JWT VP token.
-     * Searches recursively through the payload for credential ID fields.
+     * Extracts the credential ID from the SD-JWT VP token. Searches recursively through the payload
+     * for credential ID fields.
      */
     public String extractCredentialIdFromSdJwtVP(SdJwtVP sdJwtVP) {
         try {
@@ -235,11 +284,58 @@ public class SdJwtVPValidationService {
     }
 
     /**
-     * Extracts the nonce from the Key Binding JWT.
-     * This is used for replay attack prevention.
-     * 
-     * @param sdJwtVP the SD-JWT VP token
-     * @return the nonce string from the Key Binding JWT, or null if not present
+
+     * Extracts the JWT ID from the SD-JWT VP token.
+     */
+    public String extractJwtIdFromToken(SdJwtVP sdJwtVP) {
+        try {
+            return extractPayloadField(sdJwtVP, "jti");
+        } catch (Exception e) {
+            logger.warn("Failed to extract JWT ID from SD-JWT VP token", e);
+            return null;
+        }
+    }
+
+    /**
+     * Extracts the key ID from the SD-JWT VP token header.
+     */
+    public String extractKeyIdFromToken(SdJwtVP sdJwtVP) {
+        try {
+            return extractHeaderParam(sdJwtVP, "kid");
+        } catch (Exception e) {
+            logger.warn("Failed to extract key ID from SD-JWT VP token", e);
+            return null;
+        }
+    }
+
+    /**
+     * Extracts the algorithm from the SD-JWT VP token header.
+     */
+    public String extractAlgorithmFromToken(SdJwtVP sdJwtVP) {
+        try {
+            return extractHeaderParam(sdJwtVP, "alg");
+        } catch (Exception e) {
+            logger.warn("Failed to extract algorithm from SD-JWT VP token", e);
+            return null;
+        }
+    }
+
+    private String extractHeaderParam(SdJwtVP sdJwtVP, String paramName) {
+        var jwt = sdJwtVP.getIssuerSignedJWT();
+        var header = jwt.getHeader();
+        if ("kid".equals(paramName)) {
+            return header != null ? header.getKeyId() : null;
+        }
+        if ("alg".equals(paramName)) {
+            var algorithm = header != null ? header.getAlgorithm() : null;
+            return algorithm != null ? algorithm.name() : null;
+        }
+        return null;
+    }
+
+    /**
+     * Extracts the holder's signing key from the token's cnf.jwk field. This is the key that the
+     * credential holder used to sign the VP token.
      */
     public String extractNonceFromKeyBindingJWT(SdJwtVP sdJwtVP) {
         try {
@@ -266,6 +362,8 @@ public class SdJwtVPValidationService {
             return null;
         }
     }
+
+    
 
     private String findCredentialIdRecursively(JsonNode node) {
         if (node == null) return null;
@@ -312,8 +410,8 @@ public class SdJwtVPValidationService {
     }
 
     /**
-     * Creates issuer signed JWT verification options with appropriate security settings.
-     * These options control how the issuer signature is validated.
+     * Creates issuer signed JWT verification options with appropriate security settings. These
+     * options control how the issuer signature is validated.
      */
     private IssuerSignedJwtVerificationOpts getIssuerSignedJwtVerificationOpts() {
 
@@ -325,9 +423,9 @@ public class SdJwtVPValidationService {
     }
 
     /**
-     * Creates key binding JWT verification options that enforce presenter verification.
-     * This is critical for ensuring the presenter is actually the credential holder.
-     * The key binding JWT signature itself provides proof of possession.
+
+     * Creates key binding JWT verification options that enforce presenter verification. This is
+     * critical for ensuring the presenter is actually the credential holder.
      */
     private KeyBindingJwtVerificationOpts getKeyBindingJwtVerificationOpts(
             SdJwtVP sdJwtVP, 

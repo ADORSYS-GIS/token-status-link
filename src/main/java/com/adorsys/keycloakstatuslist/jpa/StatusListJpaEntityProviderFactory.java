@@ -1,11 +1,11 @@
 package com.adorsys.keycloakstatuslist.jpa;
 
+import org.jboss.logging.Logger;
 import org.keycloak.Config;
 import org.keycloak.connections.jpa.entityprovider.JpaEntityProvider;
 import org.keycloak.connections.jpa.entityprovider.JpaEntityProviderFactory;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
-import org.jboss.logging.Logger;
 
 public final class StatusListJpaEntityProviderFactory implements JpaEntityProviderFactory {
 

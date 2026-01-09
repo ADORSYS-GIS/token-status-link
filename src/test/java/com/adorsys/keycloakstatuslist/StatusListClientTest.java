@@ -6,15 +6,14 @@ import static org.mockito.Mockito.*;
 
 import com.adorsys.keycloakstatuslist.client.StatusListClient;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
+import com.adorsys.keycloakstatuslist.model.TokenStatus;
+import com.adorsys.keycloakstatuslist.model.TokenStatusRecord;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-
-import com.adorsys.keycloakstatuslist.model.TokenStatus;
-import com.adorsys.keycloakstatuslist.model.TokenStatusRecord;
 
 @ExtendWith(MockitoExtension.class)
 public class StatusListClientTest {
@@ -36,7 +35,9 @@ public class StatusListClientTest {
         TokenStatusRecord record = new TokenStatusRecord();
         record.setCredentialId("token123");
         record.setIssuerId("test-issuer");
-        doThrow(new StatusListException("Server Error")).when(statusListService).publishRecord(any(TokenStatusRecord.class));
+        doThrow(new StatusListException("Server Error"))
+                .when(statusListService)
+                .publishRecord(any(TokenStatusRecord.class));
 
         // When
         boolean result = client.publishRecord(record);
@@ -52,7 +53,9 @@ public class StatusListClientTest {
         TokenStatusRecord record = new TokenStatusRecord();
         record.setCredentialId("token123");
         record.setIssuerId("test-issuer");
-        doThrow(new StatusListException("Network error")).when(statusListService).publishRecord(any(TokenStatusRecord.class));
+        doThrow(new StatusListException("Network error"))
+                .when(statusListService)
+                .publishRecord(any(TokenStatusRecord.class));
 
         // When
         boolean result = client.publishRecord(record);
@@ -68,16 +71,22 @@ public class StatusListClientTest {
         TokenStatusRecord record = new TokenStatusRecord();
 
         // Test missing credentialId
-        Exception exception = assertThrows(IllegalArgumentException.class, () -> {
-            client.publishRecord(record);
-        });
+        Exception exception =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> {
+                            client.publishRecord(record);
+                        });
         assertTrue(exception.getMessage().contains("Credential ID (sub) is required"));
 
         // Test missing issuerId
         record.setCredentialId("token123");
-        exception = assertThrows(IllegalArgumentException.class, () -> {
-            client.publishRecord(record);
-        });
+        exception =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> {
+                            client.publishRecord(record);
+                        });
         assertTrue(exception.getMessage().contains("Issuer ID (iss) is required"));
     }
 

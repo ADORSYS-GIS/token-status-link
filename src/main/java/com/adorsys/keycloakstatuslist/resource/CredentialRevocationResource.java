@@ -11,6 +11,7 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.MultivaluedMap;
 import jakarta.ws.rs.core.Response;
 import org.jboss.logging.Logger;
+import org.keycloak.events.EventBuilder;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.services.resource.RealmResourceProvider;
@@ -21,6 +22,7 @@ public class CredentialRevocationResource implements RealmResourceProvider {
     private static final String BEARER_PREFIX = "bearer";
 
     private final KeycloakSession session;
+    private HttpHeaders headers;
     protected CredentialRevocationService revocationService;
 
     /**
@@ -31,8 +33,24 @@ public class CredentialRevocationResource implements RealmResourceProvider {
      * @param headers           HTTP headers (can be injected via @Context)
      * @param revocationService Credential revocation service (can be injected for testing)
      */
-    public CredentialRevocationResource(KeycloakSession session) {
+
+    public CredentialRevocationResource(
+            KeycloakSession session,
+            EventBuilder event,
+            HttpHeaders headers,
+            CredentialRevocationService revocationService) {
         this.session = session;
+        this.headers = headers;
+        this.revocationService = revocationService;
+    }
+
+    /**
+     * Default constructor for Keycloak resource instantiation. Uses field injection for HttpHeaders
+     * and creates default service.
+     */
+    public CredentialRevocationResource(KeycloakSession session, EventBuilder event) {
+        this.session = session;
+        this.headers = null; // Will be injected via @Context
         this.revocationService = new CredentialRevocationService(session);
     }
 
@@ -48,7 +66,8 @@ public class CredentialRevocationResource implements RealmResourceProvider {
 
     @POST
     public Response revoke() {
-        MultivaluedMap<String, String> form = session.getContext().getHttpRequest().getDecodedFormParameters();
+        MultivaluedMap<String, String> form =
+                session.getContext().getHttpRequest().getDecodedFormParameters();
         String authorizationHeader = getHeaders().getHeaderString(HttpHeaders.AUTHORIZATION);
 
         if (!isServiceEnabled()) {
@@ -70,19 +89,28 @@ public class CredentialRevocationResource implements RealmResourceProvider {
 
         String[] authParts = authorizationHeader.trim().split("\\s+", 2);
         if (authParts.length != 2 || !BEARER_PREFIX.equalsIgnoreCase(authParts[0])) {
-            logger.debugf("Invalid authorization header format: %s, returning error for custom revocation", authorizationHeader);
-            return createErrorResponse(Response.Status.BAD_REQUEST, "Invalid Authorization header format");
+
+            logger.debugf(
+                    "Invalid authorization header format: %s, returning error",
+                    authorizationHeader);
+            return createErrorResponse(Response.Status.BAD_REQUEST, "Invalid authorization header format");
         }
 
         String token = authParts[1].trim();
         String credentialId = form.getFirst("token");
 
         if (credentialId == null || credentialId.trim().isEmpty()) {
-            logger.warn("Valid Bearer provided but no credential ID in form; returning error for custom revocation");
-            return createErrorResponse(Response.Status.BAD_REQUEST, "Missing credential ID");
+
+            logger.warn(
+                    "Valid Bearer provided but no credential ID in form; returning error for custom revocation");
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("{\"error\":\"invalid_request\",\"error_description\":\"Missing credential ID\"}")
+                    .type(MediaType.APPLICATION_JSON_TYPE)
+                    .build();
         }
 
-        logger.infof("Attempting credential revocation via SD-JWT VP for credentialId: %s", credentialId);
+        logger.infof(
+                "Attempting credential revocation via SD-JWT VP for credentialId: %s", credentialId);
         try {
             CredentialRevocationRequest request = new CredentialRevocationRequest();
             request.setCredentialId(credentialId);
@@ -96,32 +124,55 @@ public class CredentialRevocationResource implements RealmResourceProvider {
                     .build();
 
         } catch (StatusListException e) {
-            logger.errorf(e, "SD-JWT VP based revocation failed for credentialId: %s due to status list error.", credentialId);
-            return createErrorResponse(Response.Status.fromStatusCode(e.getHttpStatus()), e.getMessage());
+
+            logger.errorf(
+                    e,
+                    "SD-JWT VP based revocation failed for credentialId: %s due to status list error.",
+                    credentialId);
+            int statusCode = e.getHttpStatus();
+            return Response.status(statusCode)
+                    .entity(CredentialRevocationResponse.error(e.getMessage()))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
         } catch (IllegalArgumentException e) {
-            logger.errorf(e, "SD-JWT VP based revocation failed for credentialId: %s due to invalid input.", credentialId);
-            return createErrorResponse(Response.Status.BAD_REQUEST, "Malformed VP: " + e.getMessage());
+            logger.errorf(
+                    e,
+                    "SD-JWT VP based revocation failed for credentialId: %s due to invalid input.",
+                    credentialId);
+            return createErrorResponse(Response.Status.BAD_REQUEST, e.getMessage());
         } catch (Exception e) {
-            logger.errorf(e, "SD-JWT VP based revocation failed for credentialId: %s due to unexpected error.", credentialId);
-            return createErrorResponse(Response.Status.INTERNAL_SERVER_ERROR, "Internal error during credential revocation");
+            logger.errorf(
+                    e,
+                    "SD-JWT VP based revocation failed for credentialId: %s due to unexpected error.",
+                    credentialId);
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity(
+                            "{\"error\":\"server_error\",\"error_description\":\"Internal error during credential revocation\"}")
+                    .type(MediaType.APPLICATION_JSON_TYPE)
+                    .build();
         }
     }
 
     /**
-     * Gets the HTTP headers from the Keycloak session's HTTP request.
-     * Made protected for testability.
+     * Gets the HTTP headers, handling both injected and constructor-provided headers. Made protected
+     * for testability.
      */
     protected HttpHeaders getHeaders() {
-        return session.getContext().getHttpRequest().getHttpHeaders();
+        if (headers == null) {
+            throw new IllegalStateException(
+                    "HttpHeaders not properly injected via @Context for standard revocation endpoint");
+        }
+        return headers;
     }
 
     /**
-     * Gets the revocation service, handling both injected and constructor-provided services.
-     * Made protected for testability.
+     * Gets the revocation service, handling both injected and constructor-provided services. Made
+     * protected for testability.
      */
     protected CredentialRevocationService getRevocationService() {
         return revocationService;
     }
+  
     /**
      * Checks if the credential revocation service is enabled for the current realm.
      */
