@@ -1,27 +1,28 @@
 package com.adorsys.keycloakstatuslist.service;
 
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest;
 import com.adorsys.keycloakstatuslist.model.TokenStatusRecord;
+
+import java.security.KeyPairGenerator;
+import java.security.PublicKey;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.keycloak.crypto.KeyUse;
 import org.keycloak.crypto.KeyWrapper;
 import org.keycloak.jose.jwk.JWK;
-import org.keycloak.models.KeycloakSession;
-import org.keycloak.models.RealmModel;
 import org.keycloak.models.KeyManager;
 import org.keycloak.models.KeycloakContext;
+import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.RealmModel;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-
-import java.security.KeyPairGenerator;
-import java.security.PublicKey;
-
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class RevocationRecordServiceTest {
@@ -187,10 +188,13 @@ class RevocationRecordServiceTest {
     @Test
     void testValidateRevocationReason_TooLongReason() {
         String reason = "a".repeat(256);
-        StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.validateRevocationReason(reason);
-        });
 
+        StatusListException exception =
+                assertThrows(
+                        StatusListException.class,
+                        () -> {
+                            service.validateRevocationReason(reason);
+                        });
         assertTrue(exception.getMessage().contains("Revocation reason exceeds maximum length"));
     }
 
@@ -211,5 +215,4 @@ class RevocationRecordServiceTest {
 
         assertEquals(realmName, result.getIssuer());
     }
-
 }

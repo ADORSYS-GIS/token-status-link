@@ -1,6 +1,10 @@
 package com.adorsys.keycloakstatuslist.service;
 
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
+
+import java.util.HashMap;
+import java.util.Map;
+
 import org.keycloak.common.util.Time;
 import org.keycloak.crypto.AsymmetricSignatureSignerContext;
 import org.keycloak.crypto.KeyUse;
@@ -8,9 +12,6 @@ import org.keycloak.crypto.KeyWrapper;
 import org.keycloak.jose.jws.JWSBuilder;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
-
-import java.util.HashMap;
-import java.util.Map;
 
 /**
  * Service for retrieving active keys and generating JWT tokens.

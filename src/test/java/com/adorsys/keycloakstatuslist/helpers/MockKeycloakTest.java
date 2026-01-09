@@ -1,17 +1,29 @@
 package com.adorsys.keycloakstatuslist.helpers;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mockStatic;
+
 import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
 import jakarta.persistence.EntityManager;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.lang.reflect.Field;
+import java.security.NoSuchAlgorithmException;
+import java.security.spec.InvalidKeySpecException;
+
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpResponse;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.keycloak.common.ClientConnection;
 import org.keycloak.connections.jpa.JpaConnectionProvider;
 import org.keycloak.crypto.Algorithm;
 import org.keycloak.crypto.KeyWrapper;
 import org.keycloak.jose.jwk.JWK;
-import org.keycloak.common.ClientConnection;
 import org.keycloak.models.ClientModel;
 import org.keycloak.models.KeyManager;
 import org.keycloak.models.KeycloakContext;
@@ -24,17 +36,6 @@ import org.keycloak.util.JsonSerialization;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
-
-import java.io.IOException;
-import java.io.InputStream;
-import java.lang.reflect.Field;
-import java.security.NoSuchAlgorithmException;
-import java.security.spec.InvalidKeySpecException;
-
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.lenient;
-import static org.mockito.Mockito.mockStatic;
 
 @ExtendWith(MockitoExtension.class)
 public class MockKeycloakTest {
@@ -67,48 +68,11 @@ public class MockKeycloakTest {
     protected UserSessionModel userSession;
     @Mock
     protected ClientConnection clientConnection;
-
-    private MockedStatic<CustomHttpClient> mocked;
-
     @Mock
     protected CloseableHttpClient httpClient;
     @Mock
     protected CloseableHttpResponse httpResponse;
-
-    @BeforeEach
-    protected void rootSetup() {
-        lenient().when(session.keys()).thenReturn(keyManager);
-        lenient().when(keyManager.getActiveKey(any(), any(), eq(Algorithm.RS256))).thenReturn(getActiveRsaKey());
-
-        lenient().when(session.getKeycloakSessionFactory()).thenReturn(sessionFactory);
-        lenient().when(sessionFactory.create()).thenReturn(session);
-        lenient().when(session.getTransactionManager()).thenReturn(transactionManager);
-        lenient().doNothing().when(transactionManager).begin();
-
-        lenient().when(session.getProvider(JpaConnectionProvider.class)).thenReturn(jpaConnectionProvider);
-        lenient().when(jpaConnectionProvider.getEntityManager()).thenReturn(entityManager);
-
-        lenient().when(session.getContext()).thenReturn(context);
-        lenient().when(context.getRealm()).thenReturn(realm);
-        lenient().when(context.getClient()).thenReturn(client);
-        lenient().when(context.getConnection()).thenReturn(clientConnection);
-        lenient().when(clientConnection.getRemoteHost()).thenReturn("127.0.0.1");
-        lenient().when(realm.getName()).thenReturn(TEST_REALM_NAME);
-        lenient().when(realm.getId()).thenReturn(TEST_REALM_ID);
-        lenient().when(client.getClientId()).thenReturn(TEST_CLIENT_ID);
-    }
-
-    @BeforeEach
-    void httpSetUp() {
-        mocked = mockStatic(CustomHttpClient.class);
-        mocked.when(CustomHttpClient::getHttpClient)
-                .thenReturn(httpClient);
-    }
-
-    @AfterEach
-    void httpTearDown() {
-        mocked.close();
-    }
+    private MockedStatic<CustomHttpClient> mocked;
 
     static KeyWrapper getActiveRsaKey() {
         try {
@@ -143,5 +107,43 @@ public class MockKeycloakTest {
                 throw new RuntimeException(e);
             }
         }
+    }
+
+    @BeforeEach
+    protected void rootSetup() {
+        lenient().when(session.keys()).thenReturn(keyManager);
+        lenient()
+                .when(keyManager.getActiveKey(any(), any(), eq(Algorithm.RS256)))
+                .thenReturn(getActiveRsaKey());
+
+        lenient().when(session.getKeycloakSessionFactory()).thenReturn(sessionFactory);
+        lenient().when(sessionFactory.create()).thenReturn(session);
+        lenient().when(session.getTransactionManager()).thenReturn(transactionManager);
+        lenient().doNothing().when(transactionManager).begin();
+
+        lenient()
+                .when(session.getProvider(JpaConnectionProvider.class))
+                .thenReturn(jpaConnectionProvider);
+        lenient().when(jpaConnectionProvider.getEntityManager()).thenReturn(entityManager);
+
+        lenient().when(session.getContext()).thenReturn(context);
+        lenient().when(context.getRealm()).thenReturn(realm);
+        lenient().when(context.getClient()).thenReturn(client);
+        lenient().when(context.getConnection()).thenReturn(clientConnection);
+        lenient().when(clientConnection.getRemoteHost()).thenReturn("127.0.0.1");
+        lenient().when(realm.getName()).thenReturn(TEST_REALM_NAME);
+        lenient().when(realm.getId()).thenReturn(TEST_REALM_ID);
+        lenient().when(client.getClientId()).thenReturn(TEST_CLIENT_ID);
+    }
+
+    @BeforeEach
+    void httpSetUp() {
+        mocked = mockStatic(CustomHttpClient.class);
+        mocked.when(CustomHttpClient::getHttpClient).thenReturn(httpClient);
+    }
+
+    @AfterEach
+    void httpTearDown() {
+        mocked.close();
     }
 }

@@ -1,35 +1,35 @@
 package com.adorsys.keycloakstatuslist.service;
 
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationResponse;
 import com.adorsys.keycloakstatuslist.model.RevocationChallenge;
 import com.adorsys.keycloakstatuslist.model.TokenStatusRecord;
+
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.security.interfaces.RSAPublicKey;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.keycloak.crypto.KeyUse;
 import org.keycloak.crypto.KeyWrapper;
-import org.keycloak.models.KeycloakSession;
-import org.keycloak.models.RealmModel;
 import org.keycloak.models.KeyManager;
 import org.keycloak.models.KeycloakContext;
+import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.RealmModel;
+import org.keycloak.sdjwt.vp.SdJwtVP;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.keycloak.sdjwt.vp.SdJwtVP;
-
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
-import java.security.interfaces.RSAPublicKey;
-import java.time.Instant;
-
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
 
 /**
- * Unit tests for CredentialRevocationService.
- * Tests ONLY the main service's orchestration logic, not individual service implementations.
+ * Unit tests for CredentialRevocationService. Tests ONLY the main service's orchestration logic,
+ * not individual service implementations.
  */
 @ExtendWith(MockitoExtension.class)
 class CredentialRevocationServiceTest {
@@ -65,7 +65,6 @@ class CredentialRevocationServiceTest {
     
     @Mock
     private RequestValidationService requestValidationService;
-    
     @Mock
     private TokenStatusRecord mockRevocationRecord;
     
@@ -93,7 +92,9 @@ class CredentialRevocationServiceTest {
         lenient().when(realm.getAttribute(anyString())).thenReturn(null);
 
         // Setup key management
-        lenient().when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq("RS256"))).thenReturn(keyWrapper);
+        lenient()
+                .when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq("RS256")))
+                .thenReturn(keyWrapper);
         lenient().when(keyWrapper.getPublicKey()).thenReturn(publicKey);
         lenient().when(keyWrapper.getAlgorithm()).thenReturn("RS256");
         
@@ -143,11 +144,12 @@ class CredentialRevocationServiceTest {
         );
         
         // Mock all dependencies to return success
-        when(sdJwtVPValidationService.parseSdJwtVP(anyString(), anyString())).thenReturn(sdJwtVP);
-        when(sdJwtVPValidationService.extractNonceFromKeyBindingJWT(any(SdJwtVP.class))).thenReturn(testNonce);
-        when(nonceCacheService.consumeNonce(testNonce)).thenReturn(validChallenge);
-        doNothing().when(sdJwtVPValidationService).verifySdJwtVPSignature(any(SdJwtVP.class), anyString(), anyString(), anyString());
-        doNothing().when(sdJwtVPValidationService).verifyCredentialOwnership(any(SdJwtVP.class), anyString(), anyString());
+
+        when(sdJwtVPValidationService.parseAndValidateSdJwtVP(anyString(), anyString()))
+                .thenReturn(sdJwtVP);
+        doNothing()
+                .when(sdJwtVPValidationService)
+                .verifyCredentialOwnership(any(SdJwtVP.class), anyString(), anyString());
         doNothing().when(statusListService).publishRecord(any(TokenStatusRecord.class));
 
         // Act
@@ -160,11 +162,10 @@ class CredentialRevocationServiceTest {
         assertEquals(request.getRevocationReason(), response.getRevocationReason());
 
         // Verify the orchestration flow - services called in correct order
-        verify(sdJwtVPValidationService).parseSdJwtVP(anyString(), anyString());
-        verify(sdJwtVPValidationService).extractNonceFromKeyBindingJWT(any(SdJwtVP.class));
-        verify(nonceCacheService).consumeNonce(testNonce);
-        verify(sdJwtVPValidationService).verifySdJwtVPSignature(any(SdJwtVP.class), anyString(), anyString(), anyString());
-        verify(sdJwtVPValidationService).verifyCredentialOwnership(any(SdJwtVP.class), anyString(), anyString());
+
+        verify(sdJwtVPValidationService).parseAndValidateSdJwtVP(anyString(), anyString());
+        verify(sdJwtVPValidationService)
+                .verifyCredentialOwnership(any(SdJwtVP.class), anyString(), anyString());
         verify(statusListService).publishRecord(any(TokenStatusRecord.class));
     }
 
@@ -228,11 +229,12 @@ class CredentialRevocationServiceTest {
         );
         
         // Mock all dependencies to succeed until status list publication
-        when(sdJwtVPValidationService.parseSdJwtVP(anyString(), anyString())).thenReturn(sdJwtVP);
-        when(sdJwtVPValidationService.extractNonceFromKeyBindingJWT(any(SdJwtVP.class))).thenReturn(testNonce);
-        when(nonceCacheService.consumeNonce(testNonce)).thenReturn(validChallenge);
-        doNothing().when(sdJwtVPValidationService).verifySdJwtVPSignature(any(SdJwtVP.class), anyString(), anyString(), anyString());
-        doNothing().when(sdJwtVPValidationService).verifyCredentialOwnership(any(SdJwtVP.class), anyString(), anyString());
+
+        when(sdJwtVPValidationService.parseAndValidateSdJwtVP(anyString(), anyString()))
+                .thenReturn(sdJwtVP);
+        doNothing()
+                .when(sdJwtVPValidationService)
+                .verifyCredentialOwnership(any(SdJwtVP.class), anyString(), anyString());
         doThrow(new StatusListException("Status list publication failed"))
                 .when(statusListService).publishRecord(any(TokenStatusRecord.class));
 
@@ -245,10 +247,10 @@ class CredentialRevocationServiceTest {
         assertTrue(exception.getMessage().contains("Status list publication failed"));
 
         // Verify the complete flow was executed
-        verify(sdJwtVPValidationService).parseSdJwtVP(anyString(), anyString());
-        verify(sdJwtVPValidationService).extractNonceFromKeyBindingJWT(any(SdJwtVP.class));
-        verify(nonceCacheService).consumeNonce(testNonce);
-        verify(sdJwtVPValidationService).verifyCredentialOwnership(any(SdJwtVP.class), anyString(), anyString());
+
+        verify(sdJwtVPValidationService).parseAndValidateSdJwtVP(anyString(), anyString());
+        verify(sdJwtVPValidationService)
+                .verifyCredentialOwnership(any(SdJwtVP.class), anyString(), anyString());
         verify(statusListService).publishRecord(any(TokenStatusRecord.class));
     }
 
@@ -275,13 +277,12 @@ class CredentialRevocationServiceTest {
         );
       
         // Mock all dependencies to succeed
-        when(sdJwtVPValidationService.parseSdJwtVP(anyString(), anyString())).thenReturn(sdJwtVP);
-        when(sdJwtVPValidationService.extractNonceFromKeyBindingJWT(any(SdJwtVP.class)))
-            .thenReturn(testNonce1, testNonce2);
-        when(nonceCacheService.consumeNonce(testNonce1)).thenReturn(validChallenge1);
-        when(nonceCacheService.consumeNonce(testNonce2)).thenReturn(validChallenge2);
-        doNothing().when(sdJwtVPValidationService).verifySdJwtVPSignature(any(SdJwtVP.class), anyString(), anyString(), anyString());
-        doNothing().when(sdJwtVPValidationService).verifyCredentialOwnership(any(SdJwtVP.class), anyString(), anyString());
+
+        when(sdJwtVPValidationService.parseAndValidateSdJwtVP(anyString(), anyString()))
+                .thenReturn(sdJwtVP);
+        doNothing()
+                .when(sdJwtVPValidationService)
+                .verifyCredentialOwnership(any(SdJwtVP.class), anyString(), anyString());
         doNothing().when(statusListService).publishRecord(any(TokenStatusRecord.class));
 
         // Act
@@ -407,9 +408,6 @@ class CredentialRevocationServiceTest {
     }
 
     private CredentialRevocationRequest createValidRequest() {
-        return new CredentialRevocationRequest(
-                "test-credential-123",
-                "Test revocation"
-        );
+        return new CredentialRevocationRequest("test-credential-123", "Test revocation");
     }
-} 
+}

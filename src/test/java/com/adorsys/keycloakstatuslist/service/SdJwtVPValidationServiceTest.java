@@ -1,13 +1,17 @@
 package com.adorsys.keycloakstatuslist.service;
 
+import static org.junit.jupiter.api.Assertions.*;
+
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.fasterxml.jackson.databind.JsonNode;
+
+import java.security.PublicKey;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.keycloak.crypto.SignatureVerifierContext;
 import org.keycloak.models.KeycloakSession;
-import org.keycloak.sdjwt.vp.SdJwtVP;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -25,7 +29,6 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.lenient;
 
-
 /**
  * Unit tests for SdJwtVPValidationService.
  */
@@ -37,12 +40,6 @@ class SdJwtVPValidationServiceTest {
 
     @Mock
     private JwksService jwksService;
-
-    @Mock
-    private org.keycloak.models.KeycloakContext context;
-
-    @Mock
-    private SdJwtVP sdJwtVP;
 
     @Mock
     private PublicKey publicKey;

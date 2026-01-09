@@ -1,11 +1,19 @@
 package com.adorsys.keycloakstatuslist.resource;
 
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
+
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.service.CryptoIdentityService;
 import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
 import com.adorsys.keycloakstatuslist.service.RevocationRecordService;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
 import jakarta.persistence.EntityManager;
+
+import java.io.IOException;
+import java.util.stream.Stream;
+
 import org.apache.hc.client5.http.classic.methods.HttpGet;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpResponse;
@@ -23,13 +31,6 @@ import org.keycloak.provider.ProviderEventListener;
 import org.mockito.ArgumentCaptor;
 import org.mockito.MockedConstruction;
 import org.mockito.MockedStatic;
-
-import java.io.IOException;
-import java.util.stream.Stream;
-
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
 
 class CredentialRevocationResourceProviderFactoryTest {
 
@@ -78,10 +79,14 @@ class CredentialRevocationResourceProviderFactoryTest {
         mockedRevocationService = mockStatic(RevocationRecordService.class);
         mockedHttpClient = mockStatic(CustomHttpClient.class);
 
-        mockedStatusListServiceConstruction = mockConstruction(StatusListService.class,
-                (mock, context) -> when(mock.checkServerHealth()).thenReturn(true));
-        mockedCryptoServiceConstruction = mockConstruction(CryptoIdentityService.class,
-                (mock, context) -> when(mock.getJwtToken(any())).thenReturn("mock-token"));
+        mockedStatusListServiceConstruction =
+                mockConstruction(
+                        StatusListService.class,
+                        (mock, context) -> when(mock.checkServerHealth()).thenReturn(true));
+        mockedCryptoServiceConstruction =
+                mockConstruction(
+                        CryptoIdentityService.class,
+                        (mock, context) -> when(mock.getJwtToken(any())).thenReturn("mock-token"));
     }
 
     @AfterEach
@@ -108,19 +113,23 @@ class CredentialRevocationResourceProviderFactoryTest {
 
         mockedHttpClient.when(CustomHttpClient::getHttpClient).thenReturn(httpClient);
 
-        when(httpClient.execute(any(HttpGet.class), any(HttpClientResponseHandler.class))).thenAnswer(invocation -> {
-            HttpClientResponseHandler<?> handler = invocation.getArgument(1);
-            when(httpResponse.getCode()).thenReturn(200);
-            when(httpResponse.getEntity()).thenReturn(new StringEntity("OK"));
-            return handler.handleResponse(httpResponse);
-        });
+        when(httpClient.execute(any(HttpGet.class), any(HttpClientResponseHandler.class)))
+                .thenAnswer(
+                        invocation -> {
+                            HttpClientResponseHandler<?> handler = invocation.getArgument(1);
+                            when(httpResponse.getCode()).thenReturn(200);
+                            when(httpResponse.getEntity()).thenReturn(new StringEntity("OK"));
+                            return handler.handleResponse(httpResponse);
+                        });
 
         JWK mockJwk = mock(JWK.class);
         RevocationRecordService.KeyData keyData = new RevocationRecordService.KeyData(mockJwk, "RS256");
-        mockedRevocationService.when(() -> RevocationRecordService.getRealmKeyData(session, realm))
+        mockedRevocationService
+                .when(() -> RevocationRecordService.getRealmKeyData(session, realm))
                 .thenReturn(keyData);
 
-        ArgumentCaptor<ProviderEventListener> listenerCaptor = ArgumentCaptor.forClass(ProviderEventListener.class);
+        ArgumentCaptor<ProviderEventListener> listenerCaptor =
+                ArgumentCaptor.forClass(ProviderEventListener.class);
         factory.postInit(sessionFactory);
 
         verify(sessionFactory, atLeastOnce()).register(listenerCaptor.capture());
@@ -154,8 +163,10 @@ class CredentialRevocationResourceProviderFactoryTest {
     void testInitializeRealms_SkippedWhenHealthCheckFails() throws IOException {
         // We need to override the default mock behavior for this test
         mockedStatusListServiceConstruction.close();
-        mockedStatusListServiceConstruction = mockConstruction(StatusListService.class,
-                (mock, context) -> when(mock.checkServerHealth()).thenReturn(false));
+        mockedStatusListServiceConstruction =
+                mockConstruction(
+                        StatusListService.class,
+                        (mock, context) -> when(mock.checkServerHealth()).thenReturn(false));
 
         triggerInitialization();
 
@@ -174,8 +185,10 @@ class CredentialRevocationResourceProviderFactoryTest {
     void testInitializeRealms_SkippedWhenKeyExtractionFails() throws Exception {
         setupSuccessfulHealthCheck();
 
-        mockedRevocationService.when(() -> RevocationRecordService.getRealmKeyData(session, realm))
-                .thenThrow(new com.adorsys.keycloakstatuslist.exception.StatusListException("Key not found"));
+        mockedRevocationService
+                .when(() -> RevocationRecordService.getRealmKeyData(session, realm))
+                .thenThrow(
+                        new com.adorsys.keycloakstatuslist.exception.StatusListException("Key not found"));
 
         triggerInitialization();
 
@@ -185,8 +198,10 @@ class CredentialRevocationResourceProviderFactoryTest {
     @Test
     void testInitializeRealms_HandlesAlreadyRegisteredMap() {
         setupSuccessfulHealthCheck();
-        RevocationRecordService.KeyData keyData = new RevocationRecordService.KeyData(mock(JWK.class), "RS256");
-        mockedRevocationService.when(() -> RevocationRecordService.getRealmKeyData(session, realm))
+        RevocationRecordService.KeyData keyData =
+                new RevocationRecordService.KeyData(mock(JWK.class), "RS256");
+        mockedRevocationService
+                .when(() -> RevocationRecordService.getRealmKeyData(session, realm))
                 .thenReturn(keyData);
 
         triggerInitialization();
@@ -217,7 +232,8 @@ class CredentialRevocationResourceProviderFactoryTest {
     }
 
     private void triggerInitialization() {
-        ArgumentCaptor<ProviderEventListener> listenerCaptor = ArgumentCaptor.forClass(ProviderEventListener.class);
+        ArgumentCaptor<ProviderEventListener> listenerCaptor =
+                ArgumentCaptor.forClass(ProviderEventListener.class);
         factory.postInit(sessionFactory);
 
         verify(sessionFactory, atLeastOnce()).register(listenerCaptor.capture());
