@@ -1,7 +1,12 @@
 package com.adorsys.keycloakstatuslist.service;
 
+import static org.junit.jupiter.api.Assertions.*;
+
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.fasterxml.jackson.databind.JsonNode;
+
+import java.security.PublicKey;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

@@ -5,6 +5,7 @@ import jakarta.persistence.*;
 import java.util.Objects;
 
 @Entity
+@Access(AccessType.FIELD)
 @Table(name = "status_list_mapping", indexes = {
         @Index(name = "idx_status_list_token", columnList = "token_id")
 })
@@ -21,6 +22,7 @@ public class StatusListMappingEntity {
     // @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "status_list_seq_gen")
     // @SequenceGenerator(name = "status_list_seq_gen", sequenceName = "status_list_counter_seq", allocationSize = 1)
     @Column(name = "idx", nullable = false, updatable = false, insertable = false, columnDefinition = "BIGSERIAL")
+
     private Long idx;
 
     @Column(name = "status_list_id", nullable = false)

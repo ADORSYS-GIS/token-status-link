@@ -1,19 +1,29 @@
 package com.adorsys.keycloakstatuslist.service;
 
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationResponse;
 import com.adorsys.keycloakstatuslist.model.RevocationChallenge;
 import com.adorsys.keycloakstatuslist.model.TokenStatusRecord;
+
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.security.interfaces.RSAPublicKey;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.keycloak.crypto.KeyUse;
 import org.keycloak.crypto.KeyWrapper;
-import org.keycloak.models.KeycloakSession;
-import org.keycloak.models.RealmModel;
 import org.keycloak.models.KeyManager;
 import org.keycloak.models.KeycloakContext;
+import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.RealmModel;
+import org.keycloak.sdjwt.vp.SdJwtVP;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.keycloak.sdjwt.vp.SdJwtVP;
@@ -28,8 +38,8 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 /**
- * Unit tests for CredentialRevocationService.
- * Tests ONLY the main service's orchestration logic, not individual service implementations.
+ * Unit tests for CredentialRevocationService. Tests ONLY the main service's orchestration logic,
+ * not individual service implementations.
  */
 @ExtendWith(MockitoExtension.class)
 class CredentialRevocationServiceTest {
@@ -407,9 +417,6 @@ class CredentialRevocationServiceTest {
     }
 
     private CredentialRevocationRequest createValidRequest() {
-        return new CredentialRevocationRequest(
-                "test-credential-123",
-                "Test revocation"
-        );
+        return new CredentialRevocationRequest("test-credential-123", "Test revocation");
     }
-} 
+}
