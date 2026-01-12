@@ -9,6 +9,8 @@ import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
 import com.adorsys.keycloakstatuslist.service.http.CloseableHttpClientAdapter;
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
+import jakarta.persistence.TypedQuery;
 import jakarta.ws.rs.core.UriBuilder;
 
 import java.io.IOException;
@@ -192,36 +194,51 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         });
     }
 
+    /**
+     * Get the next available index for the given status list ID, using a pessimistic lock to
+     * prevent race conditions. Must be run within a transaction.
+     */
+    private Long getNextIndex(EntityManager em, String statusListId) {
+        String q = "SELECT MAX(m.idx) FROM StatusListMappingEntity m WHERE m.statusListId = :listId";
+        TypedQuery<Long> query = em.createQuery(q, Long.class);
+        query.setLockMode(LockModeType.PESSIMISTIC_WRITE);
+
+        query.setParameter("listId", statusListId);
+        Long maxIdx = query.getSingleResult();
+
+        return (maxIdx == null) ? 0 : maxIdx + 1;
+    }
+
     private Status storeIndexMapping(String statusListId, String uri, String userId, String tokenId,
                                      KeycloakSession session) {
         logger.debugf("Storing index mapping: status_list_id=%s, userId=%s, tokenId=%s",
                 statusListId, userId, tokenId);
         AtomicReference<Status> status = new AtomicReference<>();
 
-        withEntityManagerInTransaction(
-                session,
-                em -> {
-                    try {
-                        StatusListMappingEntity mapping = new StatusListMappingEntity();
-                        mapping.setStatusListId(statusListId);
-                        mapping.setUserId(userId);
-                        mapping.setTokenId(tokenId);
-                        mapping.setRealmId(session.getContext().getRealm().getId());
+        withEntityManagerInTransaction(session, em -> {
+            try {
+                long idx = getNextIndex(em, statusListId);
 
-                        em.persist(mapping);
-                        em.flush();
+                StatusListMappingEntity mapping = new StatusListMappingEntity();
+                mapping.setIdx(idx);
+                mapping.setStatusListId(statusListId);
+                mapping.setUserId(userId);
+                mapping.setTokenId(tokenId);
+                mapping.setRealmId(session.getContext().getRealm().getId());
 
-                        Long generatedIdx = mapping.getIdx();
-                        logger.debugf("Stored mapping with generated index: %d", generatedIdx);
+                em.persist(mapping);
+                em.flush();
 
-                        sendStatusToServer(generatedIdx, statusListId);
-                        StatusListClaim statusList = new StatusListClaim(generatedIdx, uri);
-                        status.set(new Status(statusList));
-                    } catch (Exception e) {
-                        logger.error("Failed to store index mapping", e);
-                        session.getTransactionManager().setRollbackOnly();
-                    }
-                });
+                logger.debugf("Stored mapping with generated index: %d", mapping.getIdx());
+
+                sendStatusToServer(idx, statusListId);
+                StatusListClaim statusList = new StatusListClaim(idx, uri);
+                status.set(new Status(statusList));
+            } catch (Exception e) {
+                logger.error("Failed to store index mapping", e);
+                session.getTransactionManager().setRollbackOnly();
+            }
+        });
 
         return status.get();
     }
