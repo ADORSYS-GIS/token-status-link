@@ -321,7 +321,7 @@ public class DefaultSdJwtVPValidationService implements SdJwtVPValidationService
 
     private String extractHeaderParam(SdJwtVP sdJwtVP, String paramName) {
         var jwt = sdJwtVP.getIssuerSignedJWT();
-        var header = jwt.getHeader();
+        var header = jwt.getJwsHeader();
         if ("kid".equals(paramName)) {
             return header != null ? header.getKeyId() : null;
         }
