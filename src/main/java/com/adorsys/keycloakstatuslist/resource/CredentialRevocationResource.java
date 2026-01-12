@@ -30,7 +30,11 @@ public class CredentialRevocationResource extends TokenRevocationEndpoint {
      * @param headers           HTTP headers (can be injected via @Context)
      * @param revocationService Credential revocation service (can be injected for testing)
      */
-    public CredentialRevocationResource(KeycloakSession session, EventBuilder event, HttpHeaders headers, CredentialRevocationService revocationService) {
+    public CredentialRevocationResource(
+            KeycloakSession session,
+            EventBuilder event,
+            HttpHeaders headers,
+            CredentialRevocationService revocationService) {
         super(session, event);
         this.session = session;
         this.headers = headers;
@@ -38,8 +42,8 @@ public class CredentialRevocationResource extends TokenRevocationEndpoint {
     }
 
     /**
-     * Default constructor for Keycloak resource instantiation.
-     * Uses field injection for HttpHeaders and creates default service.
+     * Default constructor for Keycloak resource instantiation. Uses field injection for HttpHeaders
+     * and creates default service.
      */
     public CredentialRevocationResource(KeycloakSession session, EventBuilder event) {
         super(session, event);
@@ -51,7 +55,8 @@ public class CredentialRevocationResource extends TokenRevocationEndpoint {
     @POST
     @Override
     public Response revoke() {
-        MultivaluedMap<String, String> form = session.getContext().getHttpRequest().getDecodedFormParameters();
+        MultivaluedMap<String, String> form =
+                session.getContext().getHttpRequest().getDecodedFormParameters();
         String authorizationHeader = getHeaders().getHeaderString(HttpHeaders.AUTHORIZATION);
 
         if (authorizationHeader == null || authorizationHeader.trim().isEmpty()) {
@@ -61,7 +66,9 @@ public class CredentialRevocationResource extends TokenRevocationEndpoint {
 
         String[] authParts = authorizationHeader.trim().split("\\s+", 2);
         if (authParts.length != 2 || !BEARER_PREFIX.equalsIgnoreCase(authParts[0])) {
-            logger.debugf("Invalid authorization header format: %s, falling back to standard revocation", authorizationHeader);
+            logger.debugf(
+                    "Invalid authorization header format: %s, falling back to standard revocation",
+                    authorizationHeader);
             return super.revoke();
         }
 
@@ -69,14 +76,16 @@ public class CredentialRevocationResource extends TokenRevocationEndpoint {
         String credentialId = form.getFirst("token");
 
         if (credentialId == null || credentialId.trim().isEmpty()) {
-            logger.warn("Valid Bearer provided but no credential ID in form; returning error for custom revocation");
+            logger.warn(
+                    "Valid Bearer provided but no credential ID in form; returning error for custom revocation");
             return Response.status(Response.Status.BAD_REQUEST)
                     .entity("{\"error\":\"invalid_request\",\"error_description\":\"Missing credential ID\"}")
                     .type(MediaType.APPLICATION_JSON_TYPE)
                     .build();
         }
 
-        logger.infof("Attempting credential revocation via SD-JWT VP for credentialId: %s", credentialId);
+        logger.infof(
+                "Attempting credential revocation via SD-JWT VP for credentialId: %s", credentialId);
         try {
             CredentialRevocationRequest request = new CredentialRevocationRequest();
             request.setCredentialId(credentialId);
@@ -88,34 +97,45 @@ public class CredentialRevocationResource extends TokenRevocationEndpoint {
             return Response.ok().build();
 
         } catch (StatusListException e) {
-            logger.errorf(e, "SD-JWT VP based revocation failed for credentialId: %s due to status list error. Falling back to standard revocation.", credentialId);
+            logger.errorf(
+                    e,
+                    "SD-JWT VP based revocation failed for credentialId: %s due to status list error. Falling back to standard revocation.",
+                    credentialId);
             return super.revoke();
         } catch (IllegalArgumentException e) {
-            logger.errorf(e, "SD-JWT VP based revocation failed for credentialId: %s due to invalid input. Falling back to standard revocation.", credentialId);
+            logger.errorf(
+                    e,
+                    "SD-JWT VP based revocation failed for credentialId: %s due to invalid input. Falling back to standard revocation.",
+                    credentialId);
             return super.revoke();
         } catch (Exception e) {
-            logger.errorf(e, "SD-JWT VP based revocation failed for credentialId: %s due to unexpected error.", credentialId);
+            logger.errorf(
+                    e,
+                    "SD-JWT VP based revocation failed for credentialId: %s due to unexpected error.",
+                    credentialId);
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
-                    .entity("{\"error\":\"server_error\",\"error_description\":\"Internal error during credential revocation\"}")
+                    .entity(
+                            "{\"error\":\"server_error\",\"error_description\":\"Internal error during credential revocation\"}")
                     .type(MediaType.APPLICATION_JSON_TYPE)
                     .build();
         }
     }
 
     /**
-     * Gets the HTTP headers, handling both injected and constructor-provided headers.
-     * Made protected for testability.
+     * Gets the HTTP headers, handling both injected and constructor-provided headers. Made protected
+     * for testability.
      */
     protected HttpHeaders getHeaders() {
         if (headers == null) {
-            throw new IllegalStateException("HttpHeaders not properly injected via @Context for standard revocation endpoint");
+            throw new IllegalStateException(
+                    "HttpHeaders not properly injected via @Context for standard revocation endpoint");
         }
         return headers;
     }
 
     /**
-     * Gets the revocation service, handling both injected and constructor-provided services.
-     * Made protected for testability.
+     * Gets the revocation service, handling both injected and constructor-provided services. Made
+     * protected for testability.
      */
     protected CredentialRevocationService getRevocationService() {
         return revocationService;

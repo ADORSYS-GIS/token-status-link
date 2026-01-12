@@ -1,18 +1,18 @@
 package com.adorsys.keycloakstatuslist.service;
 
+import static org.junit.jupiter.api.Assertions.*;
+
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
+
+import java.security.PublicKey;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.keycloak.crypto.SignatureVerifierContext;
 import org.keycloak.models.KeycloakSession;
-import org.keycloak.sdjwt.vp.SdJwtVP;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-
-import java.security.PublicKey;
-
-import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Unit tests for SdJwtVPValidationService.
@@ -25,12 +25,6 @@ class SdJwtVPValidationServiceTest {
 
     @Mock
     private JwksService jwksService;
-
-    @Mock
-    private org.keycloak.models.KeycloakContext context;
-
-    @Mock
-    private SdJwtVP sdJwtVP;
 
     @Mock
     private PublicKey publicKey;
@@ -143,4 +137,4 @@ class SdJwtVPValidationServiceTest {
 
         assertTrue(exception.getMessage().contains("Failed to create signature verifier context from public key"));
     }
-} 
+}
