@@ -198,13 +198,18 @@ public class StatusListProtocolMapper extends OID4VCMapper {
      * prevent race conditions. Must be run within a transaction.
      */
     private Long getNextIndex(EntityManager em, String statusListId) {
-        String q = "SELECT MAX(m.idx) FROM StatusListMappingEntity m WHERE m.statusListId = :listId";
-        TypedQuery<Long> query = em.createQuery(q, Long.class);
+        String q = """                
+                SELECT m FROM StatusListMappingEntity m
+                WHERE m.statusListId = :listId ORDER BY m.idx DESC
+                """;
+
+        TypedQuery<StatusListMappingEntity> query = em.createQuery(q, StatusListMappingEntity.class);
         query.setParameter("listId", statusListId);
+        query.setMaxResults(1);
         query.setLockMode(LockModeType.PESSIMISTIC_WRITE);
 
-        Long maxIdx = query.getSingleResult();
-        return (maxIdx == null) ? 0 : maxIdx + 1;
+        StatusListMappingEntity max = query.getSingleResult();
+        return (max == null) ? 0 : max.getIdx() + 1;
     }
 
     /**
