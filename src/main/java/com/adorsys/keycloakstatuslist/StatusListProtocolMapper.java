@@ -12,17 +12,6 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import jakarta.persistence.TypedQuery;
 import jakarta.ws.rs.core.UriBuilder;
-
-import java.io.IOException;
-import java.net.URI;
-import java.net.URISyntaxException;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Consumer;
-
 import org.jboss.logging.Logger;
 import org.keycloak.connections.jpa.JpaConnectionProvider;
 import org.keycloak.models.KeycloakSession;
@@ -33,6 +22,16 @@ import org.keycloak.protocol.ProtocolMapper;
 import org.keycloak.protocol.oid4vc.issuance.mappers.OID4VCMapper;
 import org.keycloak.protocol.oid4vc.model.VerifiableCredential;
 import org.keycloak.provider.ProviderConfigProperty;
+
+import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.function.Consumer;
+
+import static com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity.MappingStatus;
 
 /**
  * Protocol mapper for adding `status_list` claims to issued Verifiable Credentials, as per the <a
@@ -159,7 +158,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         UserSessionModel userSession = session.getContext().getUserSession();
         String userId = userSession != null ? userSession.getUser().getId() : null;
 
-        Status status = storeIndexMapping(listId, uri.toString(), userId, tokenId, session);
+        Status status = sendStatusAndStoreIndexMapping(listId, uri.toString(), userId, tokenId);
 
         if (status == null) {
             logger.error("Failed to send status to server. Status claim not mapped");
@@ -201,51 +200,63 @@ public class StatusListProtocolMapper extends OID4VCMapper {
     private Long getNextIndex(EntityManager em, String statusListId) {
         String q = "SELECT MAX(m.idx) FROM StatusListMappingEntity m WHERE m.statusListId = :listId";
         TypedQuery<Long> query = em.createQuery(q, Long.class);
+        query.setParameter("listId", statusListId);
         query.setLockMode(LockModeType.PESSIMISTIC_WRITE);
 
-        query.setParameter("listId", statusListId);
         Long maxIdx = query.getSingleResult();
-
         return (maxIdx == null) ? 0 : maxIdx + 1;
     }
 
-    private Status storeIndexMapping(String statusListId, String uri, String userId, String tokenId,
-                                     KeycloakSession session) {
-        logger.debugf("Storing index mapping: status_list_id=%s, userId=%s, tokenId=%s",
+    /**
+     * Send status to server to create status list entry and store index mapping in database.
+     */
+    public Status sendStatusAndStoreIndexMapping(
+            String statusListId, String uri, String userId, String tokenId
+    ) {
+        logger.debugf("Initiating index mapping: status_list_id=%s, userId=%s, tokenId=%s",
                 statusListId, userId, tokenId);
-        AtomicReference<Status> status = new AtomicReference<>();
+
+        StatusListMappingEntity mapping = new StatusListMappingEntity();
+        mapping.setStatusListId(statusListId);
+        mapping.setUserId(userId);
+        mapping.setTokenId(tokenId);
+        mapping.setRealmId(session.getContext().getRealm().getId());
 
         withEntityManagerInTransaction(session, em -> {
-            try {
-                long idx = getNextIndex(em, statusListId);
+            logger.debugf("Booking next index in status list: %s", statusListId);
+            Long idx = getNextIndex(em, statusListId);
+            logger.debugf("Next available index is: %d", idx);
 
-                StatusListMappingEntity mapping = new StatusListMappingEntity();
-                mapping.setIdx(idx);
-                mapping.setStatusListId(statusListId);
-                mapping.setUserId(userId);
-                mapping.setTokenId(tokenId);
-                mapping.setRealmId(session.getContext().getRealm().getId());
+            mapping.setIdx(getNextIndex(em, statusListId));
+            mapping.setStatus(MappingStatus.INIT);
 
-                em.persist(mapping);
-                em.flush();
-
-                logger.debugf("Stored mapping with generated index: %d", mapping.getIdx());
-
-                sendStatusToServer(idx, statusListId);
-                StatusListClaim statusList = new StatusListClaim(idx, uri);
-                status.set(new Status(statusList));
-            } catch (Exception e) {
-                logger.error("Failed to store index mapping", e);
-                session.getTransactionManager().setRollbackOnly();
-            }
+            em.persist(mapping);
+            em.flush();
         });
 
-        return status.get();
+        Status status = null;
+
+        try {
+            logger.debugf("Sending token status for generated index: %d", mapping.getIdx());
+
+            sendStatusToServer(mapping.getIdx(), statusListId);
+            mapping.setStatus(MappingStatus.SUCCESS);
+
+            status = new Status(new StatusListClaim(mapping.getIdx(), uri));
+        } catch (IOException e) {
+            logger.error("Failed to send token status", e);
+            mapping.setStatus(MappingStatus.FAILURE);
+        }
+
+        withEntityManagerInTransaction(session, em -> {
+            logger.debugf("Persisting completion mapping status: %s", mapping.getStatus());
+            em.merge(mapping);
+        });
+
+        return status;
     }
 
     private void sendStatusToServer(long idx, String statusListId) throws IOException {
-        Objects.requireNonNull(cryptoIdentityService);
-
         // Prepare payload
         StatusListService.StatusListPayload payload =
                 new StatusListService.StatusListPayload(
@@ -271,8 +282,5 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         String TOKEN_STATUS_VALID = "VALID";
 
         String HTTP_ENDPOINT_RETRIEVE_PATH = "/statuslists/%s";
-        String HTTP_ENDPOINT_PUBLISH_PATH = "/statuslists/publish";
-        String HTTP_ENDPOINT_UPDATE_PATH = "/statuslists/update";
-        String BEARER_PREFIX = "Bearer ";
     }
 }
