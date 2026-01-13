@@ -4,7 +4,7 @@ import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.exception.StatusListServerException;
 import com.adorsys.keycloakstatuslist.model.TokenStatus;
 import com.adorsys.keycloakstatuslist.model.TokenStatusRecord;
-import com.adorsys.keycloakstatuslist.util.HttpStatusConstants;
+import com.adorsys.keycloakstatuslist.util.HttpStatusCode;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -68,12 +68,12 @@ public class StatusListService {
             httpClient.execute(httpPost, response -> {
                 int statusCode = response.getCode();
                 String responseBody = EntityUtils.toString(response.getEntity());
-                if (statusCode >= HttpStatusConstants.OK && statusCode < 300 || statusCode == HttpStatusConstants.CONFLICT) {
+                if (statusCode >= HttpStatusCode.OK.getCode() && statusCode < 300 || statusCode == HttpStatusCode.CONFLICT.getCode()) {
                     logger.infof(
                             "Request ID: %s, Successfully published record for credentialId: %s%s",
                             requestId,
                             credentialId,
-                            statusCode == HttpStatusConstants.CONFLICT ? " (already registered)" : "");
+                            statusCode == HttpStatusCode.CONFLICT.getCode() ? " (already registered)" : "");
                     return null; // Success, handler returns null
                 } else {
                     logger.errorf(
@@ -125,7 +125,7 @@ public class StatusListService {
             httpClient.execute(httpPatch, response -> {
                 int statusCode = response.getCode();
                 String responseBody = EntityUtils.toString(response.getEntity());
-                if (statusCode >= HttpStatusConstants.OK && statusCode < 300) {
+                if (statusCode >= HttpStatusCode.OK.getCode() && statusCode < 300) {
                     logger.infof(
                             "Request ID: %s, Successfully updated record for credentialId: %s",
                             requestId,
@@ -192,12 +192,12 @@ public class StatusListService {
                         responseHeaders,
                         responseBody);
 
-                if (statusCode >= HttpStatusConstants.OK && statusCode < 300 || statusCode == HttpStatusConstants.CONFLICT) {
+                if (statusCode >= HttpStatusCode.OK.getCode() && statusCode < 300 || statusCode == HttpStatusCode.CONFLICT.getCode()) {
                     logger.infof(
                             "Request ID: %s, Successfully registered issuer: %s%s",
                             requestId,
                             issuerId,
-                            statusCode == HttpStatusConstants.CONFLICT ? " (already registered)" : "");
+                            statusCode == HttpStatusCode.CONFLICT.getCode() ? " (already registered)" : "");
                     return Boolean.TRUE; // Success
                 } else {
                     throw new StatusListServerException(
@@ -290,10 +290,10 @@ public class StatusListService {
         try {
             return httpClient.execute(httpGet, response -> {
                 int statusCode = response.getCode();
-                if (statusCode == HttpStatusConstants.OK) {
+                if (statusCode == HttpStatusCode.OK.getCode()) {
                     logger.infof("Request ID: %s, Status list %s exists.", requestId, statusListId);
                     return true;
-                } else if (statusCode == HttpStatusConstants.NOT_FOUND) {
+                } else if (statusCode == HttpStatusCode.NOT_FOUND.getCode()) {
                     logger.infof("Request ID: %s, Status list %s does not exist.", requestId, statusListId);
                     return false;
                 } else {
@@ -362,7 +362,7 @@ public class StatusListService {
 
             httpClient.execute(httpPost, response -> {
                 int statusCode = response.getCode();
-                if (statusCode >= HttpStatusConstants.OK && statusCode < 300) {
+                if (statusCode >= HttpStatusCode.OK.getCode() && statusCode < 300) {
                     logger.infof("Request ID: %s, Successfully published status list: %s", requestId, listId);
                     return null;
                 } else {
@@ -409,7 +409,7 @@ public class StatusListService {
 
             httpClient.execute(httpPatch, response -> {
                 int statusCode = response.getCode();
-                if (statusCode >= HttpStatusConstants.OK && statusCode < 300) {
+                if (statusCode >= HttpStatusCode.OK.getCode() && statusCode < 300) {
                     logger.infof("Request ID: %s, Successfully updated status list: %s", requestId, listId);
                     return null;
                 } else {
@@ -455,7 +455,7 @@ public class StatusListService {
                     httpGet,
                     response -> {
                         int statusCode = response.getCode();
-                        if (statusCode >= HttpStatusConstants.OK && statusCode < 300) {
+                        if (statusCode >= HttpStatusCode.OK.getCode() && statusCode < 300) {
                             logger.infof("Request ID: %s, Server health check successful.", requestId);
                             return true;
                         }
