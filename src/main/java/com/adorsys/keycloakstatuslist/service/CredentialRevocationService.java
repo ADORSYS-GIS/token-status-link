@@ -2,6 +2,7 @@ package com.adorsys.keycloakstatuslist.service;
 
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
+import com.adorsys.keycloakstatuslist.exception.StatusListServerException;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationResponse;
 import com.adorsys.keycloakstatuslist.model.TokenStatusRecord;
@@ -107,6 +108,10 @@ public class CredentialRevocationService {
                     request.getRevocationReason()
             );
 
+        } catch (StatusListServerException e) {
+            logger.errorf("Status list server error. RequestId: %s, StatusCode: %d, Error: %s",
+                    requestId, e.getStatusCode(), e.getMessage());
+            throw e;
         } catch (StatusListException e) {
             logger.errorf(
                     "Status list operation failed. RequestId: %s, Error: %s", requestId, e.getMessage());

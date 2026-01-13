@@ -2,6 +2,7 @@ package com.adorsys.keycloakstatuslist.resource;
 
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
+import com.adorsys.keycloakstatuslist.exception.StatusListServerException;
 import com.adorsys.keycloakstatuslist.service.CryptoIdentityService;
 import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
 import com.adorsys.keycloakstatuslist.service.RevocationRecordService;
@@ -201,6 +202,14 @@ public class CredentialRevocationResourceProviderFactory extends OIDCLoginProtoc
             registeredRealms.add(realm.getName());
             logger.info("Successfully registered realm as issuer: " + realm.getName());
             return true;
+        } catch (StatusListServerException e) {
+            logger.errorf(
+                    "Failed to register realm as issuer: %s. Server returned status code: %d, message: %s",
+                    realm.getName(),
+                    e.getStatusCode(),
+                    e.getMessage(),
+                    e);
+            return false;
         } catch (StatusListException e) {
             logger.error("Failed to register realm as issuer: " + realm.getName(), e);
             return false;

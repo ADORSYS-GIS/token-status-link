@@ -1,6 +1,11 @@
 package com.adorsys.keycloakstatuslist.exception;
 
-public class StatusListServerException extends StatusListException {
+/**
+ * Exception thrown when the status list server returns an error response.
+ * This is an unchecked exception to allow direct propagation from HTTP response handlers
+ * without unnecessary wrapping.
+ */
+public class StatusListServerException extends RuntimeException {
     private final int statusCode;
 
     public StatusListServerException(String message, int statusCode) {
