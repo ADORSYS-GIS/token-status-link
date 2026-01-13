@@ -20,7 +20,7 @@ class RequestValidationServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new RequestValidationServiceImpl();
+        service = new DefaultRequestValidationService();
     }
 
     @Test

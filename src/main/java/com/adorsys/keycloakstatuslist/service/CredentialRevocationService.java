@@ -32,11 +32,6 @@ public class CredentialRevocationService {
     private final RequestValidationService requestValidationService;
     private StatusListService statusListService;
 
-    /**
-     * Primary constructor using dependency injection for all collaborators. This makes the service
-     * easy to unit test and allows alternative implementations of the dependency services to be
-     * provided.
-     */
     public CredentialRevocationService(
             KeycloakSession session,
             StatusListService statusListService,
@@ -50,20 +45,13 @@ public class CredentialRevocationService {
         this.requestValidationService = requestValidationService;
     }
 
-    /**
-     * Convenience constructor used by production code where explicit dependency wiring is not
-     * available (e.g. Keycloak SPI instantiation).
-     *
-     * <p>For tests or advanced usage prefer the constructor that accepts all collaborators
-     * explicitly.
-     */
     public CredentialRevocationService(KeycloakSession session) {
         this(
                 session,
                 null, // lazily initialized when first used
-                new SdJwtVPValidationServiceImpl(session),
+                new DefaultSdJwtVPValidationService(session),
                 new RevocationRecordService(session),
-                new RequestValidationServiceImpl());
+                new DefaultRequestValidationService());
     }
 
     /**

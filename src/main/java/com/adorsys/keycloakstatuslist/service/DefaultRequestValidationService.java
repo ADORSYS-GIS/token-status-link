@@ -8,7 +8,7 @@ import com.adorsys.keycloakstatuslist.service.validation.RequestValidationServic
  * Default implementation of RequestValidationService. Performs basic validation on request
  * parameters.
  */
-public class RequestValidationServiceImpl implements RequestValidationService {
+public class DefaultRequestValidationService implements RequestValidationService {
 
     /**
      * Validates a credential revocation request.

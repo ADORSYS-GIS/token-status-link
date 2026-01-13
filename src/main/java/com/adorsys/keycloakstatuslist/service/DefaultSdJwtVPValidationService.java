@@ -28,30 +28,19 @@ import org.keycloak.sdjwt.vp.SdJwtVP;
  * Default implementation of SdJwtVPValidationService. Handles token parsing, signature verification,
  * and credential extraction using Keycloak's internal key management.
  */
-public class SdJwtVPValidationServiceImpl implements SdJwtVPValidationService {
+public class DefaultSdJwtVPValidationService implements SdJwtVPValidationService {
 
     private static final Logger logger = Logger.getLogger(SdJwtVPValidationService.class);
 
     private final KeycloakSession session;
     private final JwksService jwksService;
 
-    /**
-     * Primary constructor using dependency injection for the JwksService collaborator. This improves
-     * testability by allowing callers to provide custom implementations.
-     */
-    public SdJwtVPValidationServiceImpl(KeycloakSession session, JwksService jwksService) {
+    public DefaultSdJwtVPValidationService(KeycloakSession session, JwksService jwksService) {
         this.session = session;
         this.jwksService = jwksService;
     }
 
-    /**
-     * Convenience constructor used by production code where explicit dependency wiring is not
-     * available (e.g. Keycloak SPI instantiation).
-     *
-     * <p>For tests or advanced usage prefer the constructor that accepts all collaborators
-     * explicitly.
-     */
-    public SdJwtVPValidationServiceImpl(KeycloakSession session) {
+    public DefaultSdJwtVPValidationService(KeycloakSession session) {
         this(session, new JwksService(session));
     }
 

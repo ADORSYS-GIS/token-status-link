@@ -97,7 +97,7 @@ class CredentialRevocationServiceTest {
                         statusListService,
                         sdJwtVPValidationService,
                         new RevocationRecordService(session),
-                        new RequestValidationServiceImpl());
+                        new DefaultRequestValidationService());
     }
 
     @Test
