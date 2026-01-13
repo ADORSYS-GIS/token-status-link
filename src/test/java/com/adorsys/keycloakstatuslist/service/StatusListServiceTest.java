@@ -75,9 +75,8 @@ class StatusListServiceTest {
         setupResponse(statusCode);
     }
 
-    private void verifyHttpClientCall(int expectedCalls) throws IOException {
-        verify(httpClient, times(expectedCalls))
-                .execute(any(HttpPost.class), any(HttpClientResponseHandler.class));
+    private void verifyHttpClientCall() throws IOException {
+        verify(httpClient, times(1)).execute(any(HttpPost.class), any(HttpClientResponseHandler.class));
     }
 
     @Test
@@ -86,17 +85,16 @@ class StatusListServiceTest {
         setupSuccessfulResponse();
         // Updated to pass JWK object
         assertDoesNotThrow(() -> statusListService.registerIssuer(ISSUER_ID, mockJwk));
-        verifyHttpClientCall(1);
+        verifyHttpClientCall();
 
         // Test publish record success
-        assertDoesNotThrow(
-                () -> {
-                    reset(httpClient);
-                    final TokenStatusRecord record = createTestRecord();
-                    setupSuccessfulResponse();
-                    statusListService.publishRecord(record);
-                    verifyHttpClientCall(1);
-                });
+        assertDoesNotThrow(() -> {
+            reset(httpClient);
+            final TokenStatusRecord record = createTestRecord();
+            setupSuccessfulResponse();
+            statusListService.publishRecord(record);
+            verifyHttpClientCall();
+        });
 
         // Test publish record with auth token
         final TokenStatusRecord record = createTestRecord();
@@ -104,7 +102,7 @@ class StatusListServiceTest {
         statusListService = new StatusListService(SERVER_URL, "test-token", httpClient);
         setupSuccessfulResponse();
         assertDoesNotThrow(() -> statusListService.publishRecord(record));
-        verifyHttpClientCall(1);
+        verifyHttpClientCall();
     }
 
     @Test
@@ -114,19 +112,19 @@ class StatusListServiceTest {
         // Test empty response body
         setupResponse(200, "");
         assertDoesNotThrow(() -> statusListService.publishRecord(record));
-        verifyHttpClientCall(1);
+        verifyHttpClientCall();
 
         // Test non-empty response body
         reset(httpClient);
         setupResponse(200, "{\"status\":\"success\"}");
         assertDoesNotThrow(() -> statusListService.publishRecord(record));
-        verifyHttpClientCall(1);
+        verifyHttpClientCall();
 
         // Test malformed JSON response
         reset(httpClient);
         setupResponse(200, "{invalid json}");
         assertDoesNotThrow(() -> statusListService.publishRecord(record));
-        verifyHttpClientCall(1);
+        verifyHttpClientCall();
     }
 
     @Test
@@ -136,10 +134,10 @@ class StatusListServiceTest {
                 () -> {
                     setupResponseWithStatus(409);
 
-                    // Act & Assert
-                    statusListService.registerIssuer(ISSUER_ID, mockJwk);
-                    verifyHttpClientCall(1);
-                });
+            // Act & Assert
+            statusListService.registerIssuer(ISSUER_ID, mockJwk);
+            verifyHttpClientCall();
+        });
     }
 
     @Test
@@ -153,7 +151,7 @@ class StatusListServiceTest {
                         StatusListServerException.class,
                         () -> statusListService.registerIssuer(ISSUER_ID, mockJwk));
         assertEquals(500, exception.getStatusCode());
-        assertDoesNotThrow(() -> verifyHttpClientCall(1));
+        assertDoesNotThrow(this::verifyHttpClientCall);
     }
 
     @Test
@@ -183,27 +181,25 @@ class StatusListServiceTest {
     @Test
     void publishRecord_DefaultValues() throws IOException {
         // Test default status
-        assertDoesNotThrow(
-                () -> {
-                    final TokenStatusRecord record1 = createTestRecord();
-                    record1.setStatus(TokenStatus.REVOKED);
-                    setupSuccessfulResponse();
-                    statusListService.publishRecord(record1);
-                    assertEquals(TokenStatus.REVOKED.getValue(), record1.getStatus());
-                    verifyHttpClientCall(1);
-                });
+        assertDoesNotThrow(() -> {
+            final TokenStatusRecord record1 = createTestRecord();
+            record1.setStatus(TokenStatus.REVOKED);
+            setupSuccessfulResponse();
+            statusListService.publishRecord(record1);
+            assertEquals(TokenStatus.REVOKED.getValue(), record1.getStatus());
+            verifyHttpClientCall();
+        });
 
         // Test default credential type
-        assertDoesNotThrow(
-                () -> {
-                    reset(httpClient);
-                    final TokenStatusRecord record2 = createTestRecord();
-                    record2.setCredentialType(null);
-                    setupSuccessfulResponse();
-                    statusListService.publishRecord(record2);
-                    assertEquals("oauth2", record2.getCredentialType());
-                    verifyHttpClientCall(1);
-                });
+        assertDoesNotThrow(() -> {
+            reset(httpClient);
+            final TokenStatusRecord record2 = createTestRecord();
+            record2.setCredentialType(null);
+            setupSuccessfulResponse();
+            statusListService.publishRecord(record2);
+            assertEquals("oauth2", record2.getCredentialType());
+            verifyHttpClientCall();
+        });
     }
 
     @Test
@@ -211,90 +207,81 @@ class StatusListServiceTest {
         TokenStatusRecord record = createTestRecord();
 
         // Test 200 OK
-        assertDoesNotThrow(
-                () -> {
-                    setupResponseWithStatus(200);
-                    statusListService.publishRecord(record);
-                    verifyHttpClientCall(1);
-                });
+        assertDoesNotThrow(() -> {
+            setupResponseWithStatus(200);
+            statusListService.publishRecord(record);
+            verifyHttpClientCall();
+        });
 
         // Test 201 Created
-        assertDoesNotThrow(
-                () -> {
-                    reset(httpClient);
-                    setupResponseWithStatus(201);
-                    statusListService.publishRecord(record);
-                    verifyHttpClientCall(1);
-                });
+        assertDoesNotThrow(() -> {
+            reset(httpClient);
+            setupResponseWithStatus(201);
+            statusListService.publishRecord(record);
+            verifyHttpClientCall();
+        });
 
         // Test 204 No Content
-        assertDoesNotThrow(
-                () -> {
-                    reset(httpClient);
-                    setupResponseWithStatus(204);
-                    statusListService.publishRecord(record);
-                    verifyHttpClientCall(1);
-                });
+        assertDoesNotThrow(() -> {
+            reset(httpClient);
+            setupResponseWithStatus(204);
+            statusListService.publishRecord(record);
+            verifyHttpClientCall();
+        });
 
         // Test 409 Conflict (already registered)
-        assertDoesNotThrow(
-                () -> {
-                    reset(httpClient);
-                    setupResponseWithStatus(409);
-                    statusListService.publishRecord(record);
-                    verifyHttpClientCall(1);
-                });
+        assertDoesNotThrow(() -> {
+            reset(httpClient);
+            setupResponseWithStatus(409);
+            statusListService.publishRecord(record);
+            verifyHttpClientCall();
+        });
 
         // Test 400 Bad Request
-        assertDoesNotThrow(
-                () -> {
-                    reset(httpClient);
-                    setupResponseWithStatus(400);
-                    StatusListServerException exception =
-                            assertThrows(
-                                    StatusListServerException.class, () -> statusListService.publishRecord(record));
-                    assertEquals(400, exception.getStatusCode());
-                    verifyHttpClientCall(1);
-                });
+        assertDoesNotThrow(() -> {
+            reset(httpClient);
+            setupResponseWithStatus(400);
+            StatusListServerException exception = assertThrows(StatusListServerException.class,
+                    () -> statusListService.publishRecord(record));
+            assertEquals(400, exception.getStatusCode());
+            verifyHttpClientCall();
+        });
     }
 
     @Test
     void publishRecord_RecordFieldHandling() throws IOException {
         // Test issuer field is set from issuerId
-        assertDoesNotThrow(
-                () -> {
-                    final TokenStatusRecord record1 = createTestRecord();
-                    record1.setIssuer(null);
-                    record1.setIssuerId(ISSUER_ID);
-                    setupSuccessfulResponse();
-                    statusListService.publishRecord(record1);
-                    assertEquals(ISSUER_ID, record1.getIssuer());
-                    verifyHttpClientCall(1);
-                });
+        assertDoesNotThrow(() -> {
+            final TokenStatusRecord record1 = createTestRecord();
+            record1.setIssuer(null);
+            record1.setIssuerId(ISSUER_ID);
+            setupSuccessfulResponse();
+            statusListService.publishRecord(record1);
+            assertEquals(ISSUER_ID, record1.getIssuer());
+            verifyHttpClientCall();
+        });
 
         // Test index field is set to null when 0
-        assertDoesNotThrow(
-                () -> {
-                    reset(httpClient);
-                    final TokenStatusRecord record2 = createTestRecord();
-                    record2.setIndex(0L);
-                    setupSuccessfulResponse();
-                    statusListService.publishRecord(record2);
-                    assertNull(record2.getIndex());
-                    verifyHttpClientCall(1);
-                });
+        assertDoesNotThrow(() -> {
+            reset(httpClient);
+            final TokenStatusRecord record2 = createTestRecord();
+            record2.setIndex(0L);
+            setupSuccessfulResponse();
+            statusListService.publishRecord(record2);
+            assertNull(record2.getIndex());
+            verifyHttpClientCall();
+        });
 
         // Test status field default value
-        assertDoesNotThrow(
-                () -> {
-                    reset(httpClient);
-                    final TokenStatusRecord record3 = createTestRecord();
-                    record3.setStatus(TokenStatus.REVOKED);
-                    setupSuccessfulResponse();
-                    statusListService.publishRecord(record3);
-                    assertEquals(TokenStatus.REVOKED.getValue(), record3.getStatus());
-                    verifyHttpClientCall(1);
-                });
+        assertDoesNotThrow(() -> {
+            reset(httpClient);
+            final TokenStatusRecord record3 = createTestRecord();
+            record3.setStatus(TokenStatus.REVOKED);
+            setupSuccessfulResponse();
+            statusListService.publishRecord(record3);
+            assertEquals(TokenStatus.REVOKED.getValue(), record3.getStatus());
+            verifyHttpClientCall();
+        });
     }
 
     private TokenStatusRecord createTestRecord() {
