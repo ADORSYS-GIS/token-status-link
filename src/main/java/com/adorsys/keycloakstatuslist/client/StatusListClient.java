@@ -43,7 +43,11 @@ public class StatusListClient {
             statusListService.publishRecord(statusRecord);
             return true;
         } catch (StatusListServerException e) {
-            logger.errorf("Error publishing record - server returned status code: %d", e.getStatusCode(), e);
+            logger.errorf(
+                    "Error publishing record - server returned status code: %d, message: %s",
+                    e.getStatusCode(),
+                    e.getMessage(),
+                    e);
             return false;
         } catch (StatusListException e) {
             logger.error("Error publishing record", e);

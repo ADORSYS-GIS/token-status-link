@@ -202,8 +202,12 @@ public class CredentialRevocationResourceProviderFactory extends OIDCLoginProtoc
             logger.info("Successfully registered realm as issuer: " + realm.getName());
             return true;
         } catch (StatusListServerException e) {
-            logger.error("Failed to register realm as issuer: " + realm.getName() +
-                    ". Server returned status code: " + e.getStatusCode(), e);
+            logger.errorf(
+                    "Failed to register realm as issuer: %s. Server returned status code: %d, message: %s",
+                    realm.getName(),
+                    e.getStatusCode(),
+                    e.getMessage(),
+                    e);
             return false;
         } catch (StatusListException e) {
             logger.error("Failed to register realm as issuer: " + realm.getName(), e);
