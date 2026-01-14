@@ -39,6 +39,7 @@ public class CredentialRevocationEndpoint extends TokenRevocationEndpoint {
         super(session, event);
         this.session = session;
         this.revocationService = revocationService;
+        this.headers = session.getContext().getRequestHeaders();
     }
 
     @Override
