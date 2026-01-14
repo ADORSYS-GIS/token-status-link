@@ -2,7 +2,6 @@ package com.adorsys.keycloakstatuslist.resource;
 
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
-import com.adorsys.keycloakstatuslist.exception.StatusListServerException;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationResponse;
 import com.adorsys.keycloakstatuslist.service.CredentialRevocationService;
