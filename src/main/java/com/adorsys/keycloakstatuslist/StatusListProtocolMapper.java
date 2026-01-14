@@ -20,7 +20,6 @@ import org.keycloak.protocol.oid4vc.issuance.mappers.OID4VCMapper;
 import org.keycloak.protocol.oid4vc.model.VerifiableCredential;
 import org.keycloak.provider.ProviderConfigProperty;
 
-import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
@@ -224,16 +223,13 @@ public class StatusListProtocolMapper extends OID4VCMapper {
                 Long generatedIdx = mapping.getIdx();
                 logger.debugf("Stored mapping with generated index: %d", generatedIdx);
 
-                try {
-                    sendStatusToServer(generatedIdx, statusListId, realmConfig);
-                } catch (IOException io) {
-                    throw new RuntimeException("Failed to publish status to server", io);
-                }
+                sendStatusToServer(generatedIdx, statusListId, realmConfig);
                 StatusListClaim statusList = new StatusListClaim(generatedIdx, uri);
                 status.set(new Status(statusList));
             });
         } catch (Exception e) {
             logger.error("Failed to store index mapping", e);
+            session.getTransactionManager().setRollbackOnly();
             if (realmConfig.isMandatory()) {
                     logger.error("Status list is mandatory and publication failed; failing issuance");
                 throw new RuntimeException("Status list publication failed and is mandatory", e);
@@ -244,7 +240,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         return status.get();
     }
 
-    private void sendStatusToServer(long idx, String statusListId, StatusListConfig realmConfig) throws IOException {
+    private void sendStatusToServer(long idx, String statusListId, StatusListConfig realmConfig) {
         Objects.requireNonNull(cryptoIdentityService);
 
         // Prepare payload
@@ -257,7 +253,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         try {
             statusListService.publishOrUpdate(payload);
         } catch (Exception e) {
-            throw new IOException(e);
+            throw new RuntimeException(e);
         }
     }
 

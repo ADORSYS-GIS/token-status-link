@@ -120,6 +120,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
     @Test
     void shouldNotMap_WhenSendingStatusFails() throws Exception {
+        when(realm.getAttribute(StatusListConfig.STATUS_LIST_MANDATORY)).thenReturn("false");
         mockEntityPersist();
         doThrow(new StatusListException("Server not reachable"))
                 .when(statusListService).publishOrUpdate(any(StatusListService.StatusListPayload.class));
@@ -132,6 +133,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         assertThat(logCaptor.getErrorLogs(), hasItems(
                 containsString("Failed to store index mapping")
         ));
+        assertThat(logCaptor.getWarnLogs(), hasItem(containsString("Status list publication failed; proceeding without status claim")));
     }
 
     @Test
