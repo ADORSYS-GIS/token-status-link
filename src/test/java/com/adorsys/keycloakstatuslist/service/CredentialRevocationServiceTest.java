@@ -64,9 +64,7 @@ class CredentialRevocationServiceTest {
     
     @Mock
     private RevocationRecordService revocationRecordService;
-    
-    @Mock
-    private RequestValidationService requestValidationService;
+
     @Mock
     private TokenStatusRecord mockRevocationRecord;
     
@@ -100,6 +98,12 @@ class CredentialRevocationServiceTest {
         lenient().when(keyWrapper.getPublicKey()).thenReturn(publicKey);
         lenient().when(keyWrapper.getAlgorithm()).thenReturn("RS256");
 
+        // Mock NonceCacheProvider (accessed via RealmResourceProvider)
+        lenient().when(session.getProvider(
+                org.keycloak.services.resource.RealmResourceProvider.class,
+                "nonce-cache"
+        )).thenReturn(nonceCacheService);
+
         // Create service with mocked dependencies using dependency injection
         service =
                 new CredentialRevocationService(
@@ -125,7 +129,7 @@ class CredentialRevocationServiceTest {
         );
         
         // Mock all dependencies to return success
-        when(sdJwtVPValidationService.parseSdJwtVP(anyString(), anyString()))
+        when(sdJwtVPValidationService.parseAndValidateSdJwtVP(anyString(), anyString()))
                 .thenReturn(sdJwtVP);
         when(sdJwtVPValidationService.extractNonceFromKeyBindingJWT(any(SdJwtVP.class)))
                 .thenReturn(testNonce);
@@ -149,7 +153,7 @@ class CredentialRevocationServiceTest {
         assertEquals(request.getRevocationReason(), response.getRevocationReason());
 
         // Verify the orchestration flow - services called in correct order
-        verify(sdJwtVPValidationService).parseSdJwtVP(anyString(), anyString());
+        verify(sdJwtVPValidationService).parseAndValidateSdJwtVP(anyString(), anyString());
         verify(sdJwtVPValidationService).extractNonceFromKeyBindingJWT(any(SdJwtVP.class));
         verify(nonceCacheService).consumeNonce(testNonce);
         verify(sdJwtVPValidationService).verifySdJwtVPSignature(any(SdJwtVP.class), anyString(), anyString(), anyString());
@@ -164,7 +168,7 @@ class CredentialRevocationServiceTest {
         CredentialRevocationRequest request = createValidRequest();
         
         // Mock parsing to fail
-        when(sdJwtVPValidationService.parseSdJwtVP(anyString(), anyString()))
+        when(sdJwtVPValidationService.parseAndValidateSdJwtVP(anyString(), anyString()))
             .thenThrow(new StatusListException("Validation failed"));
         
         // Act & Assert
@@ -176,7 +180,7 @@ class CredentialRevocationServiceTest {
         assertTrue(exception.getMessage().contains("Validation failed"));
 
         // Verify no other services were called
-        verify(sdJwtVPValidationService).parseSdJwtVP(anyString(), anyString());
+        verify(sdJwtVPValidationService).parseAndValidateSdJwtVP(anyString(), anyString());
         verify(statusListService, never()).publishRecord(any());
         verify(statusListService, never()).publishRecord(any());
     }
@@ -187,7 +191,7 @@ class CredentialRevocationServiceTest {
         CredentialRevocationRequest request = createValidRequest();
 
         // Mock request validation to succeed, but SD-JWT validation to fail
-        when(sdJwtVPValidationService.parseSdJwtVP(anyString(), anyString()))
+        when(sdJwtVPValidationService.parseAndValidateSdJwtVP(anyString(), anyString()))
             .thenThrow(new StatusListException("SD-JWT validation failed"));
         
         // Act & Assert
@@ -199,7 +203,7 @@ class CredentialRevocationServiceTest {
         assertTrue(exception.getMessage().contains("SD-JWT validation failed"));
 
         // Verify the flow stopped at SD-JWT validation
-        verify(sdJwtVPValidationService).parseSdJwtVP(anyString(), anyString());
+        verify(sdJwtVPValidationService).parseAndValidateSdJwtVP(anyString(), anyString());
         verify(statusListService, never()).publishRecord(any());
     }
 
@@ -218,7 +222,7 @@ class CredentialRevocationServiceTest {
         );
         
         // Mock all dependencies to succeed until status list publication
-        when(sdJwtVPValidationService.parseSdJwtVP(anyString(), anyString()))
+        when(sdJwtVPValidationService.parseAndValidateSdJwtVP(anyString(), anyString()))
                 .thenReturn(sdJwtVP);
         when(sdJwtVPValidationService.extractNonceFromKeyBindingJWT(any(SdJwtVP.class)))
                 .thenReturn(testNonce);
@@ -242,7 +246,7 @@ class CredentialRevocationServiceTest {
         assertTrue(exception.getMessage().contains("Status list publication failed"));
 
         // Verify the complete flow was executed
-        verify(sdJwtVPValidationService).parseSdJwtVP(anyString(), anyString());
+        verify(sdJwtVPValidationService).parseAndValidateSdJwtVP(anyString(), anyString());
         verify(sdJwtVPValidationService).extractNonceFromKeyBindingJWT(any(SdJwtVP.class));
         verify(nonceCacheService).consumeNonce(testNonce);
         verify(sdJwtVPValidationService).verifySdJwtVPSignature(any(SdJwtVP.class), anyString(), anyString(), anyString());
@@ -274,7 +278,7 @@ class CredentialRevocationServiceTest {
         );
       
         // Mock all dependencies to succeed
-        when(sdJwtVPValidationService.parseSdJwtVP(anyString(), anyString()))
+        when(sdJwtVPValidationService.parseAndValidateSdJwtVP(anyString(), anyString()))
                 .thenReturn(sdJwtVP);
         when(sdJwtVPValidationService.extractNonceFromKeyBindingJWT(any(SdJwtVP.class)))
                 .thenReturn(testNonce1, testNonce2);
@@ -295,7 +299,7 @@ class CredentialRevocationServiceTest {
         service.revokeCredential(request2, "valid-sd-jwt-vp-token");
 
         // Assert - Verify that different request IDs were generated
-        verify(sdJwtVPValidationService, times(2)).parseSdJwtVP(anyString(), anyString());
+        verify(sdJwtVPValidationService, times(2)).parseAndValidateSdJwtVP(anyString(), anyString());
         verify(sdJwtVPValidationService, times(2)).extractNonceFromKeyBindingJWT(any(SdJwtVP.class));
         verify(nonceCacheService).consumeNonce(testNonce1);
         verify(nonceCacheService).consumeNonce(testNonce2);
@@ -308,7 +312,7 @@ class CredentialRevocationServiceTest {
         CredentialRevocationRequest request = createValidRequest();
 
         // Mock an unexpected exception
-        when(sdJwtVPValidationService.parseSdJwtVP(anyString(), anyString()))
+        when(sdJwtVPValidationService.parseAndValidateSdJwtVP(anyString(), anyString()))
             .thenThrow(new RuntimeException("Unexpected error"));
         
         // Act & Assert
@@ -334,7 +338,7 @@ class CredentialRevocationServiceTest {
         CredentialRevocationRequest request = createValidRequest();
         
         // Mock SD-JWT VP parsing but no nonce in Key Binding JWT
-        when(sdJwtVPValidationService.parseSdJwtVP(anyString(), anyString())).thenReturn(sdJwtVP);
+        when(sdJwtVPValidationService.parseAndValidateSdJwtVP(anyString(), anyString())).thenReturn(sdJwtVP);
         when(sdJwtVPValidationService.extractNonceFromKeyBindingJWT(any(SdJwtVP.class))).thenReturn(null);
         
         // Act & Assert
@@ -346,7 +350,7 @@ class CredentialRevocationServiceTest {
         assertTrue(exception.getMessage().contains("Invalid or missing nonce"));
         
         // Verify flow stopped at nonce validation
-        verify(sdJwtVPValidationService).parseSdJwtVP(anyString(), anyString());
+        verify(sdJwtVPValidationService).parseAndValidateSdJwtVP(anyString(), anyString());
         verify(sdJwtVPValidationService).extractNonceFromKeyBindingJWT(any(SdJwtVP.class));
         verify(nonceCacheService, never()).consumeNonce(anyString());
         verify(statusListService, never()).publishRecord(any());
@@ -359,7 +363,7 @@ class CredentialRevocationServiceTest {
         String invalidNonce = "invalid-nonce";
         
         // Mock SD-JWT VP parsing with invalid nonce (not in cache)
-        when(sdJwtVPValidationService.parseSdJwtVP(anyString(), anyString())).thenReturn(sdJwtVP);
+        when(sdJwtVPValidationService.parseAndValidateSdJwtVP(anyString(), anyString())).thenReturn(sdJwtVP);
         when(sdJwtVPValidationService.extractNonceFromKeyBindingJWT(any(SdJwtVP.class))).thenReturn(invalidNonce);
         when(nonceCacheService.consumeNonce(invalidNonce)).thenReturn(null);  // Nonce not found
         
@@ -372,7 +376,7 @@ class CredentialRevocationServiceTest {
         assertTrue(exception.getMessage().contains("Invalid, expired, or replayed nonce"));
         
         // Verify flow stopped at nonce validation
-        verify(sdJwtVPValidationService).parseSdJwtVP(anyString(), anyString());
+        verify(sdJwtVPValidationService).parseAndValidateSdJwtVP(anyString(), anyString());
         verify(sdJwtVPValidationService).extractNonceFromKeyBindingJWT(any(SdJwtVP.class));
         verify(nonceCacheService).consumeNonce(invalidNonce);
         verify(statusListService, never()).publishRecord(any());
@@ -393,7 +397,7 @@ class CredentialRevocationServiceTest {
         );
         
         // Mock SD-JWT VP parsing
-        when(sdJwtVPValidationService.parseSdJwtVP(anyString(), anyString())).thenReturn(sdJwtVP);
+        when(sdJwtVPValidationService.parseAndValidateSdJwtVP(anyString(), anyString())).thenReturn(sdJwtVP);
         when(sdJwtVPValidationService.extractNonceFromKeyBindingJWT(any(SdJwtVP.class))).thenReturn(testNonce);
         when(nonceCacheService.consumeNonce(testNonce)).thenReturn(mismatchedChallenge);
         
@@ -406,7 +410,7 @@ class CredentialRevocationServiceTest {
         assertTrue(exception.getMessage().contains("Nonce was issued for a different credential"));
         
         // Verify flow stopped at nonce validation
-        verify(sdJwtVPValidationService).parseSdJwtVP(anyString(), anyString());
+        verify(sdJwtVPValidationService).parseAndValidateSdJwtVP(anyString(), anyString());
         verify(sdJwtVPValidationService).extractNonceFromKeyBindingJWT(any(SdJwtVP.class));
         verify(nonceCacheService).consumeNonce(testNonce);
         verify(statusListService, never()).publishRecord(any());

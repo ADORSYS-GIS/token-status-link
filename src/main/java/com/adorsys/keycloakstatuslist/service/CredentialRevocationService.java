@@ -94,7 +94,7 @@ public class CredentialRevocationService {
 
         try {
             // Step 1: Parse the SD-JWT VP (without full verification yet)
-            SdJwtVP sdJwtVP = sdJwtVPValidationService.parseSdJwtVP(sdJwtVpToken, requestId);
+            SdJwtVP sdJwtVP = sdJwtVPValidationService.parseAndValidateSdJwtVP(sdJwtVpToken, requestId);
             
             // Step 2: SECURITY - Validate nonce to prevent replay attacks
             RevocationChallenge challenge = validateNonce(sdJwtVP, request.getCredentialId(), requestId);

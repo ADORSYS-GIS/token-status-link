@@ -123,15 +123,6 @@ public class CredentialRevocationResource implements RealmResourceProvider {
             return Response.ok(revocationResponse)
                     .type(MediaType.APPLICATION_JSON)
                     .build();
-
-        } catch (StatusListServerException e) {
-            logger.errorf(
-                    "SD-JWT VP based revocation failed for credentialId: %s due to status list server error (status code: %d, message: %s). Falling back to standard revocation.",
-                    credentialId,
-                    e.getStatusCode(),
-                    e.getMessage(),
-                    e);
-            return super.revoke();
         } catch (StatusListException e) {
 
             logger.errorf(

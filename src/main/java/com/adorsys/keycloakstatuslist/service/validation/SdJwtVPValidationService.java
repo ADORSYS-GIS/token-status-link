@@ -31,5 +31,18 @@ public interface SdJwtVPValidationService {
      */
     void verifyCredentialOwnership(SdJwtVP sdJwtVP, String credentialId, String requestId)
             throws StatusListException;
+
+    /**
+     * Extracts the holder's signing key from the token's cnf.jwk field. This is the key that the
+     * credential holder used to sign the VP token.
+     */
+    String extractNonceFromKeyBindingJWT(SdJwtVP sdJwtVP);
+
+    /**
+     * Verifies the SD-JWT VP token's issuer signature using Keycloak's internal key management. This
+     * ensures the token was properly issued by the claimed issuer.
+     */
+    void verifySdJwtVPSignature(SdJwtVP sdJwtVP, String requestId, String credentialId, String expectedNonce)
+            throws StatusListException;
 }
 

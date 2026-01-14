@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.keycloak.crypto.AsymmetricSignatureVerifierContext;
 import org.keycloak.crypto.SignatureVerifierContext;
+import org.keycloak.models.KeycloakContext;
 import org.keycloak.models.KeycloakSession;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -39,7 +40,7 @@ class SdJwtVPValidationServiceTest {
     private KeycloakSession session;
 
     @Mock
-    private org.keycloak.models.KeycloakContext context;
+    private KeycloakContext context;
 
     @Mock
     private JwksService jwksService;
@@ -47,17 +48,24 @@ class SdJwtVPValidationServiceTest {
     @Mock
     private PublicKey publicKey;
 
+    @Mock
+    private SignatureVerifierContext verifierContext;
+
+    @Mock
+    private SdJwtVP sdJwtVP;
+
     private DefaultSdJwtVPValidationService service;
 
     @BeforeEach
     void setUp() {
         service = new DefaultSdJwtVPValidationService(session, jwksService);
+        lenient().when(session.getContext()).thenReturn(context);
     }
 
     @Test
     void testParseSdJwtVP_NullToken() {
         StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.parseSdJwtVP(null, "test-request-id");
+            service.parseAndValidateSdJwtVP(null, "test-request-id");
         });
 
         assertTrue(exception.getMessage().contains("SD-JWT VP token is empty or null"));
@@ -66,7 +74,7 @@ class SdJwtVPValidationServiceTest {
     @Test
     void testParseSdJwtVP_EmptyToken() {
         StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.parseSdJwtVP("", "test-request-id");
+            service.parseAndValidateSdJwtVP("", "test-request-id");
         });
 
         assertTrue(exception.getMessage().contains("SD-JWT VP token is empty or null"));
@@ -75,7 +83,7 @@ class SdJwtVPValidationServiceTest {
     @Test
     void testParseSdJwtVP_WhitespaceToken() {
         StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.parseSdJwtVP("   ", "test-request-id");
+            service.parseAndValidateSdJwtVP("   ", "test-request-id");
         });
 
         assertTrue(exception.getMessage().contains("SD-JWT VP token is empty or null"));
@@ -84,7 +92,7 @@ class SdJwtVPValidationServiceTest {
     @Test
     void testParseSdJwtVP_InvalidFormat() {
         StatusListException exception = assertThrows(StatusListException.class, () -> {
-            service.parseSdJwtVP("invalid.token.format", "test-request-id");
+            service.parseAndValidateSdJwtVP("invalid.token.format", "test-request-id");
         });
 
         assertTrue(exception.getMessage().contains("Invalid SD-JWT VP token format"));

@@ -224,7 +224,6 @@ class CredentialRevocationResourceTest {
             super(session, null, headers, revocationService);
             this.session = session;
             this.headers = headers;
-            this.revocationService = revocationService;
         }
 
         @Override
