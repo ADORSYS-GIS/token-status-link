@@ -2,11 +2,13 @@ package com.adorsys.keycloakstatuslist.resource;
 
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
+import com.adorsys.keycloakstatuslist.exception.StatusListServerException;
 import com.adorsys.keycloakstatuslist.service.CryptoIdentityService;
 import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
 import com.adorsys.keycloakstatuslist.service.RevocationRecordService;
 import com.adorsys.keycloakstatuslist.service.RevocationRecordService.KeyData;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
+import com.adorsys.keycloakstatuslist.service.http.CloseableHttpClientAdapter;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -187,7 +189,7 @@ public class CredentialRevocationResourceProviderFactory extends OIDCLoginProtoc
                     new StatusListService(
                             config.getServerUrl(),
                             cryptoIdentityService.getJwtToken(config),
-                            CustomHttpClient.getHttpClient());
+                            new CloseableHttpClientAdapter(CustomHttpClient.getHttpClient()));
 
             // Check if the status list server is reachable
             if (!statusListService.checkServerHealth()) {
@@ -200,6 +202,14 @@ public class CredentialRevocationResourceProviderFactory extends OIDCLoginProtoc
             registeredRealms.add(realm.getName());
             logger.info("Successfully registered realm as issuer: " + realm.getName());
             return true;
+        } catch (StatusListServerException e) {
+            logger.errorf(
+                    "Failed to register realm as issuer: %s. Server returned status code: %d, message: %s",
+                    realm.getName(),
+                    e.getStatusCode(),
+                    e.getMessage(),
+                    e);
+            return false;
         } catch (StatusListException e) {
             logger.error("Failed to register realm as issuer: " + realm.getName(), e);
             return false;

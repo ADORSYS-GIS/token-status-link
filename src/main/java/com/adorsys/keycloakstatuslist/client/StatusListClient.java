@@ -1,9 +1,11 @@
 package com.adorsys.keycloakstatuslist.client;
 
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
+import com.adorsys.keycloakstatuslist.exception.StatusListServerException;
 import com.adorsys.keycloakstatuslist.model.TokenStatusRecord;
 import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
+import com.adorsys.keycloakstatuslist.service.http.CloseableHttpClientAdapter;
 import org.jboss.logging.Logger;
 
 /**
@@ -20,8 +22,7 @@ public class StatusListClient {
         this(new StatusListService(
                 serverUrl,
                 authToken,
-                CustomHttpClient.getHttpClient()
-        ));
+                new CloseableHttpClientAdapter(CustomHttpClient.getHttpClient())));
     }
 
     public StatusListClient(StatusListService statusListService) {
@@ -41,6 +42,13 @@ public class StatusListClient {
         try {
             statusListService.publishRecord(statusRecord);
             return true;
+        } catch (StatusListServerException e) {
+            logger.errorf(
+                    "Error publishing record - server returned status code: %d, message: %s",
+                    e.getStatusCode(),
+                    e.getMessage(),
+                    e);
+            return false;
         } catch (StatusListException e) {
             logger.error("Error publishing record", e);
             return false;

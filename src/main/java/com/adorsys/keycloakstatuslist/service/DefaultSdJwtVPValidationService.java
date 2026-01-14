@@ -1,8 +1,8 @@
 package com.adorsys.keycloakstatuslist.service;
 
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
+import com.adorsys.keycloakstatuslist.service.validation.SdJwtVPValidationService;
 import com.fasterxml.jackson.databind.JsonNode;
-
 
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -26,27 +26,24 @@ import org.keycloak.sdjwt.vp.SdJwtVP;
  * Default implementation of SdJwtVPValidationService. Handles token parsing, signature verification,
  * and credential extraction using Keycloak's internal key management.
  */
-public class SdJwtVPValidationService {
+public class DefaultSdJwtVPValidationService implements SdJwtVPValidationService {
 
     private static final Logger logger = Logger.getLogger(SdJwtVPValidationService.class);
 
     private final KeycloakSession session;
     private final JwksService jwksService;
 
-    public SdJwtVPValidationService(KeycloakSession session) {
+    public DefaultSdJwtVPValidationService(KeycloakSession session, JwksService jwksService) {
         this.session = session;
-        this.jwksService = new JwksService(session);
+        this.jwksService = jwksService;
     }
 
-    /**
+    public DefaultSdJwtVPValidationService(KeycloakSession session) {
+        this(session, new JwksService(session));
+    }
 
-     * Convenience constructor used by production code where explicit dependency wiring is not
-     * available (e.g. Keycloak SPI instantiation).
-     *
-     * <p>For tests or advanced usage prefer the constructor that accepts all collaborators
-     * explicitly.
-     */
-    public SdJwtVP parseSdJwtVP(String sdJwtVpString, String requestId) 
+    @Override
+    public SdJwtVP parseAndValidateSdJwtVP(String sdJwtVpString, String requestId)
             throws StatusListException {
 
         logger.debugf(
@@ -125,6 +122,7 @@ public class SdJwtVPValidationService {
      * SECURITY: This method ensures that only the actual credential holder can revoke their credential
      * by verifying the credential ID match. The cryptographic proof is verified separately.
      */
+    @Override
     public void verifyCredentialOwnership(SdJwtVP sdJwtVP, String credentialId, String requestId)
             throws StatusListException {
 

@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest;
+import com.adorsys.keycloakstatuslist.service.validation.RequestValidationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -19,7 +20,7 @@ class RequestValidationServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new RequestValidationService();
+        service = new DefaultRequestValidationService();
     }
 
     @Test

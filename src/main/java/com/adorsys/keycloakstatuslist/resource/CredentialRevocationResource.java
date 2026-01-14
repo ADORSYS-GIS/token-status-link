@@ -2,6 +2,7 @@ package com.adorsys.keycloakstatuslist.resource;
 
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
+import com.adorsys.keycloakstatuslist.exception.StatusListServerException;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationResponse;
 import com.adorsys.keycloakstatuslist.service.CredentialRevocationService;
@@ -22,8 +23,8 @@ public class CredentialRevocationResource implements RealmResourceProvider {
     private static final String BEARER_PREFIX = "bearer";
 
     private final KeycloakSession session;
-    private HttpHeaders headers;
-    protected CredentialRevocationService revocationService;
+    private final CredentialRevocationService revocationService;
+    private final HttpHeaders headers;
 
     /**
      * Constructor with dependency injection for better testability.
@@ -123,6 +124,14 @@ public class CredentialRevocationResource implements RealmResourceProvider {
                     .type(MediaType.APPLICATION_JSON)
                     .build();
 
+        } catch (StatusListServerException e) {
+            logger.errorf(
+                    "SD-JWT VP based revocation failed for credentialId: %s due to status list server error (status code: %d, message: %s). Falling back to standard revocation.",
+                    credentialId,
+                    e.getStatusCode(),
+                    e.getMessage(),
+                    e);
+            return super.revoke();
         } catch (StatusListException e) {
 
             logger.errorf(

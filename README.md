@@ -69,12 +69,11 @@ OAuth 2.0 Status List specification:
     ```bash
     ./mvnw clean package
     ```
-2. Copy the resulting JAR file from `target/keycloak-token-status-plugin-1.0.0-SNAPSHOT.jar` to Keycloak's `providers`
-   directory.
+2. Copy the resulting JAR file `target/keycloak-token-status-plugin-1.0.0-SNAPSHOT.jar` to Keycloak's `providers` directory.
 
 3. Restart Keycloak to load the plugin.
 
-4. Configure the plugin using the realm attributes described in the Configuration Properties section above.
+4. Configure the plugin using the realm attributes described in the [Configuration Properties Section](README.md#configuration-properties)
 
 ### Configuring Keycloak's credential issuance to use the Status List protocol mapper
 
@@ -131,7 +130,7 @@ To check code formatting (Spotless), use:
 ./mvnw spotless:check
 ```
 
-To automatically format the code according to the configured rules, use:
+To automatically remove unused imports, use:
 
 ```bash
 ./mvnw spotless:apply

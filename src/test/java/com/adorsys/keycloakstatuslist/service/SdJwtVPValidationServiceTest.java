@@ -10,6 +10,7 @@ import java.security.PublicKey;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.keycloak.crypto.AsymmetricSignatureVerifierContext;
 import org.keycloak.crypto.SignatureVerifierContext;
 import org.keycloak.models.KeycloakSession;
 import org.mockito.Mock;
@@ -46,39 +47,11 @@ class SdJwtVPValidationServiceTest {
     @Mock
     private PublicKey publicKey;
 
-    @Mock
-    private SignatureVerifierContext verifierContext;
-
-    @Mock
-    private SdJwtVP sdJwtVP;
-
-    private SdJwtVPValidationService service;
+    private DefaultSdJwtVPValidationService service;
 
     @BeforeEach
     void setUp() {
-        service = new SdJwtVPValidationService(session);
-
-        try {
-            // Inject mocked JwksService
-            java.lang.reflect.Field jwksField = SdJwtVPValidationService.class.getDeclaredField("jwksService");
-            jwksField.setAccessible(true);
-            jwksField.set(service, jwksService);
-
-            // Inject mocked session
-            java.lang.reflect.Field sessionField = SdJwtVPValidationService.class.getDeclaredField("session");
-            sessionField.setAccessible(true);
-            sessionField.set(service, session);
-
-            // Mock KeycloakContext and its dependencies
-            lenient().when(session.getContext()).thenReturn(context);
-            lenient().when(context.getUri()).thenReturn(mock(org.keycloak.models.KeycloakUriInfo.class));
-            lenient().when(context.getUri().getBaseUri()).thenReturn(java.net.URI.create("http://localhost:8080/auth/"));
-            lenient().when(context.getRealm()).thenReturn(mock(org.keycloak.models.RealmModel.class));
-            lenient().when(context.getRealm().getName()).thenReturn("test-realm");
-
-        } catch (Exception e) {
-            fail("Failed to inject mocked dependencies: " + e.getMessage());
-        }
+        service = new DefaultSdJwtVPValidationService(session, jwksService);
     }
 
     @Test
@@ -124,7 +97,7 @@ class SdJwtVPValidationServiceTest {
 
         assertNotNull(result);
         // Verify it's the correct type
-        assertTrue(result instanceof org.keycloak.crypto.AsymmetricSignatureVerifierContext);
+        assertInstanceOf(AsymmetricSignatureVerifierContext.class, result);
     }
 
     @Test
@@ -133,7 +106,7 @@ class SdJwtVPValidationServiceTest {
         SignatureVerifierContext result = service.createSignatureVerifierContextFromPublicKey(publicKey, "ES256");
 
         assertNotNull(result);
-        assertTrue(result instanceof org.keycloak.crypto.AsymmetricSignatureVerifierContext);
+        assertInstanceOf(AsymmetricSignatureVerifierContext.class, result);
     }
 
     @Test
