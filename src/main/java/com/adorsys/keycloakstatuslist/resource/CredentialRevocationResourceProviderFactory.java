@@ -8,6 +8,7 @@ import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
 import com.adorsys.keycloakstatuslist.service.RevocationRecordService;
 import com.adorsys.keycloakstatuslist.service.RevocationRecordService.KeyData;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
+import com.adorsys.keycloakstatuslist.service.http.CloseableHttpClientAdapter;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -188,7 +189,7 @@ public class CredentialRevocationResourceProviderFactory extends OIDCLoginProtoc
                     new StatusListService(
                             config.getServerUrl(),
                             cryptoIdentityService.getJwtToken(config),
-                            CustomHttpClient.getHttpClient());
+                            new CloseableHttpClientAdapter(CustomHttpClient.getHttpClient()));
 
             // Check if the status list server is reachable
             if (!statusListService.checkServerHealth()) {

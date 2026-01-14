@@ -6,6 +6,10 @@ import com.adorsys.keycloakstatuslist.exception.StatusListServerException;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationResponse;
 import com.adorsys.keycloakstatuslist.model.TokenStatusRecord;
+import com.adorsys.keycloakstatuslist.service.http.CloseableHttpClientAdapter;
+import com.adorsys.keycloakstatuslist.service.http.HttpClient;
+import com.adorsys.keycloakstatuslist.service.validation.RequestValidationService;
+import com.adorsys.keycloakstatuslist.service.validation.SdJwtVPValidationService;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -29,11 +33,26 @@ public class CredentialRevocationService {
     private final RequestValidationService requestValidationService;
     private StatusListService statusListService;
 
-    public CredentialRevocationService(KeycloakSession session) {
+    public CredentialRevocationService(
+            KeycloakSession session,
+            StatusListService statusListService,
+            SdJwtVPValidationService sdJwtVPValidationService,
+            RevocationRecordService revocationRecordService,
+            RequestValidationService requestValidationService) {
         this.session = session;
-        this.sdJwtVPValidationService = new SdJwtVPValidationService(session);
-        this.revocationRecordService = new RevocationRecordService(session);
-        this.requestValidationService = new RequestValidationService();
+        this.statusListService = statusListService;
+        this.sdJwtVPValidationService = sdJwtVPValidationService;
+        this.revocationRecordService = revocationRecordService;
+        this.requestValidationService = requestValidationService;
+    }
+
+    public CredentialRevocationService(KeycloakSession session) {
+        this(
+                session,
+                null, // lazily initialized when first used
+                new DefaultSdJwtVPValidationService(session),
+                new RevocationRecordService(session),
+                new DefaultRequestValidationService());
     }
 
     /**
@@ -44,11 +63,12 @@ public class CredentialRevocationService {
             RealmModel realm = session.getContext().getRealm();
             StatusListConfig config = new StatusListConfig(realm);
             CryptoIdentityService cryptoIdentityService = new CryptoIdentityService(session);
+            HttpClient httpClient = new CloseableHttpClientAdapter(CustomHttpClient.getHttpClient());
             this.statusListService =
                     new StatusListService(
                             config.getServerUrl(),
                             cryptoIdentityService.getJwtToken(config),
-                            CustomHttpClient.getHttpClient());
+                            httpClient);
         }
         return statusListService;
     }

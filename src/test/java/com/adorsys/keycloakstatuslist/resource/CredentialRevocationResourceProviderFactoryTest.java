@@ -30,14 +30,13 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.MockedConstruction;
 import org.mockito.MockedStatic;
 
+@SuppressWarnings("unchecked")
 class CredentialRevocationResourceProviderFactoryTest {
 
     private CredentialRevocationResourceProviderFactory factory;
     private KeycloakSessionFactory sessionFactory;
     private KeycloakSession session;
-    private KeycloakContext context;
     private KeycloakTransactionManager transactionManager;
-    private RealmProvider realmProvider;
     private RealmModel realm;
 
     private MockedStatic<RevocationRecordService> mockedRevocationService;
@@ -51,13 +50,13 @@ class CredentialRevocationResourceProviderFactoryTest {
         factory = new CredentialRevocationResourceProviderFactory();
         sessionFactory = mock(KeycloakSessionFactory.class);
         session = mock(KeycloakSession.class);
-        context = mock(KeycloakContext.class);
+        KeycloakContext context1 = mock(KeycloakContext.class);
         transactionManager = mock(KeycloakTransactionManager.class);
-        realmProvider = mock(RealmProvider.class);
+        RealmProvider realmProvider = mock(RealmProvider.class);
         realm = mock(RealmModel.class);
 
-        when(session.getContext()).thenReturn(context);
-        lenient().when(context.getRealm()).thenReturn(realm);
+        when(session.getContext()).thenReturn(context1);
+        lenient().when(context1.getRealm()).thenReturn(realm);
 
         when(sessionFactory.create()).thenReturn(session);
         when(session.getTransactionManager()).thenReturn(transactionManager);
@@ -95,7 +94,7 @@ class CredentialRevocationResourceProviderFactoryTest {
     void testProtocolEndpointCreation() {
         Object endpoint = factory.createProtocolEndpoint(session, mock(EventBuilder.class));
         assertNotNull(endpoint);
-        assertTrue(endpoint instanceof CustomOIDCLoginProtocolService);
+        assertInstanceOf(CustomOIDCLoginProtocolService.class, endpoint);
     }
 
     @Test

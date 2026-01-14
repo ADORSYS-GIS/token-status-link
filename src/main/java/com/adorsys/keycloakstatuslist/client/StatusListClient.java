@@ -5,6 +5,7 @@ import com.adorsys.keycloakstatuslist.exception.StatusListServerException;
 import com.adorsys.keycloakstatuslist.model.TokenStatusRecord;
 import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
+import com.adorsys.keycloakstatuslist.service.http.CloseableHttpClientAdapter;
 import org.jboss.logging.Logger;
 
 /**
@@ -21,8 +22,7 @@ public class StatusListClient {
         this(new StatusListService(
                 serverUrl,
                 authToken,
-                CustomHttpClient.getHttpClient()
-        ));
+                new CloseableHttpClientAdapter(CustomHttpClient.getHttpClient())));
     }
 
     public StatusListClient(StatusListService statusListService) {
