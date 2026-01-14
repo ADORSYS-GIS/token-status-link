@@ -10,6 +10,7 @@ import com.adorsys.keycloakstatuslist.service.StatusListService;
 import com.adorsys.keycloakstatuslist.service.http.CloseableHttpClientAdapter;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
+import jakarta.persistence.PersistenceException;
 import jakarta.persistence.TypedQuery;
 import jakarta.ws.rs.core.UriBuilder;
 import org.jboss.logging.Logger;
@@ -218,26 +219,30 @@ public class StatusListProtocolMapper extends OID4VCMapper {
     public Status sendStatusAndStoreIndexMapping(
             String statusListId, String uri, String userId, String tokenId
     ) {
-        logger.debugf("Initiating index mapping: status_list_id=%s, userId=%s, tokenId=%s",
-                statusListId, userId, tokenId);
-
         StatusListMappingEntity mapping = new StatusListMappingEntity();
         mapping.setStatusListId(statusListId);
         mapping.setUserId(userId);
         mapping.setTokenId(tokenId);
         mapping.setRealmId(session.getContext().getRealm().getId());
 
-        withEntityManagerInTransaction(session, em -> {
-            logger.debugf("Booking next index in status list: %s", statusListId);
-            Long idx = getNextIndex(em, statusListId);
-            logger.debugf("Next available index is: %d", idx);
+        try {
+            logger.debugf("Booking next index for status list mapping: status_list_id=%s, userId=%s, tokenId=%s",
+                    statusListId, userId, tokenId);
 
-            mapping.setIdx(getNextIndex(em, statusListId));
-            mapping.setStatus(MappingStatus.INIT);
+            withEntityManagerInTransaction(session, em -> {
+                Long idx = getNextIndex(em, statusListId);
+                logger.debugf("Next available index is: %d", idx);
 
-            em.persist(mapping);
-            em.flush();
-        });
+                mapping.setIdx(getNextIndex(em, statusListId));
+                mapping.setStatus(MappingStatus.INIT);
+
+                em.persist(mapping);
+                em.flush();
+            });
+        } catch (PersistenceException e) {
+            logger.error("Failed to initiate index mapping", e);
+            return null;
+        }
 
         Status status = null;
 
@@ -253,10 +258,12 @@ public class StatusListProtocolMapper extends OID4VCMapper {
             mapping.setStatus(MappingStatus.FAILURE);
         }
 
-        withEntityManagerInTransaction(session, em -> {
+        try {
             logger.debugf("Persisting completion mapping status: %s", mapping.getStatus());
-            em.merge(mapping);
-        });
+            withEntityManagerInTransaction(session, em -> em.merge(mapping));
+        } catch (PersistenceException e) {
+            logger.error("Failed to persist completion mapping status. Will proceed because non-fatal", e);
+        }
 
         return status;
     }

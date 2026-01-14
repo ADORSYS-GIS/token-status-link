@@ -3,9 +3,11 @@ package com.adorsys.keycloakstatuslist;
 import static com.adorsys.keycloakstatuslist.StatusListProtocolMapper.Constants;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
+import static com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity.MappingStatus;
 
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
@@ -15,12 +17,12 @@ import com.adorsys.keycloakstatuslist.model.Status;
 import com.adorsys.keycloakstatuslist.model.StatusListClaim;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
 import jakarta.persistence.PersistenceException;
+import jakarta.persistence.TypedQuery;
 import jakarta.ws.rs.core.UriBuilder;
 
 import java.net.URI;
 import java.util.HashMap;
-import java.util.Random;
-import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
 
 import nl.altindag.log.LogCaptor;
 import org.junit.jupiter.api.BeforeEach;
@@ -64,7 +66,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
     @Test
     void shouldMapSuccessfully_WhenStatusIsSent() throws Exception {
-        long idx = mockEntityPersist();
+        long idx = mockGetNextIndex();
 
         // Act
         mapper.setClaim(claims, userSession);
@@ -84,6 +86,14 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         assertThat(capturedPayload.status().size(), equalTo(1));
         assertThat(capturedPayload.status().get(0).index(), equalTo((int) idx));
         assertThat(capturedPayload.status().get(0).status(), equalTo(Constants.TOKEN_STATUS_VALID));
+
+        // 3. Verify DB persist was called
+        var entityCaptor = ArgumentCaptor.forClass(StatusListMappingEntity.class);
+        verify(entityManager).persist(entityCaptor.capture());
+        StatusListMappingEntity capturedEntity = entityCaptor.getValue();
+        assertEquals(idx, capturedEntity.getIdx());
+        assertEquals(TEST_REALM_ID, capturedEntity.getRealmId());
+        assertEquals(MappingStatus.SUCCESS, capturedEntity.getStatus());
     }
 
     @Test
@@ -110,18 +120,32 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
     @Test
     void shouldNotMap_IfDbPersistenceFails() {
+        mockGetNextIndex();
         doThrow(new PersistenceException("DB Error")).when(entityManager).persist(any());
 
         mapper.setClaim(claims, userSession);
 
         assertThat(
                 "Claims should remain unmapped", claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
-        assertThat(logCaptor.getErrorLogs(), hasItem(containsString("Failed to store index mapping")));
+        assertThat(logCaptor.getErrorLogs(), hasItem(containsString("Failed to initiate index mapping")));
+    }
+
+    @Test
+    void shouldStillMap_IfDbPersistenceFailsAfterPublishingStatus() {
+        mockGetNextIndex();
+        doThrow(new PersistenceException("DB Error")).when(entityManager).merge(any());
+
+        mapper.setClaim(claims, userSession);
+
+        assertThat("Claims should be mapped regardless", claims.keySet(),
+                hasItem(Constants.STATUS_CLAIM_KEY));
+        assertThat(logCaptor.getErrorLogs(),
+                hasItem(containsString("Failed to persist completion mapping status")));
     }
 
     @Test
     void shouldNotMap_WhenSendingStatusFails() throws Exception {
-        mockEntityPersist();
+        mockGetNextIndex();
         doThrow(new StatusListException("Server not reachable"))
                 .when(statusListService)
                 .publishOrUpdate(any(StatusListService.StatusListPayload.class));
@@ -130,9 +154,12 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         mapper.setClaim(claims, userSession);
 
         // Assert
-        assertThat(
-                "Claims should remain unmapped", claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
-        assertThat(logCaptor.getErrorLogs(), hasItems(containsString("Failed to store index mapping")));
+        assertThat("Claims should remain unmapped", claims.keySet(),
+                not(hasItem(Constants.STATUS_CLAIM_KEY)));
+        assertThat(logCaptor.getErrorLogs(),
+                hasItems(containsString("Failed to send token status")));
+        assertThat(logCaptor.getDebugLogs(),
+                hasItems(containsString("Persisting completion mapping status: FAILURE")));
     }
 
     private void mockDefaultRealmConfig() {
@@ -142,26 +169,19 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
                 .thenReturn(TEST_SERVER_URL);
     }
 
-    /**
-     * Mocks the EntityManager.persist() method. Generates a random index and UUID to simulate
-     * database behavior.
-     *
-     * @return the simulated index that will be assigned to the entity
-     */
-    private long mockEntityPersist() {
-        long simulatedIndex = new Random().nextInt(100000);
+    @SuppressWarnings("unchecked")
+    private long mockGetNextIndex() {
+        long nextIndex = ThreadLocalRandom.current().nextLong(Long.MAX_VALUE);
+        var query = mock(TypedQuery.class);
 
-        doAnswer(
-                invocation -> {
-                    StatusListMappingEntity entity = invocation.getArgument(0);
-                    entity.setIdx(simulatedIndex); // Simulate sequence generation
-                    entity.setId(UUID.randomUUID().toString()); // Simulate UUID generation
-                    return null;
-                })
-                .when(entityManager)
-                .persist(any(StatusListMappingEntity.class));
+        when(entityManager.createQuery(anyString(), eq(StatusListMappingEntity.class))).thenReturn(query);
+        when(query.getSingleResult()).thenAnswer(invocation -> {
+            var entity = new StatusListMappingEntity();
+            entity.setIdx(nextIndex - 1);
+            return entity;
+        });
 
-        return simulatedIndex;
+        return nextIndex;
     }
 
     @SuppressWarnings("SameParameterValue")
