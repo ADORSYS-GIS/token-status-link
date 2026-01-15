@@ -10,17 +10,6 @@ import com.adorsys.keycloakstatuslist.service.StatusListService;
 import com.adorsys.keycloakstatuslist.service.http.CloseableHttpClientAdapter;
 import jakarta.persistence.EntityManager;
 import jakarta.ws.rs.core.UriBuilder;
-
-import java.io.IOException;
-import java.net.URI;
-import java.net.URISyntaxException;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Consumer;
-
 import org.jboss.logging.Logger;
 import org.keycloak.connections.jpa.JpaConnectionProvider;
 import org.keycloak.models.KeycloakSession;
@@ -32,9 +21,19 @@ import org.keycloak.protocol.oid4vc.issuance.mappers.OID4VCMapper;
 import org.keycloak.protocol.oid4vc.model.VerifiableCredential;
 import org.keycloak.provider.ProviderConfigProperty;
 
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
+
 /**
- * Protocol mapper for adding `status_list` claims to issued Verifiable Credentials, as per the <a
- * href=
+ * Protocol mapper for adding `status_list` claims to issued Verifiable
+ * Credentials, as per the
+ * <a href=
  * "https://www.ietf.org/archive/id/draft-ietf-oauth-status-list-11.html#name-referenced-token">
  * Token Status List </a> specification.
  */
@@ -47,6 +46,20 @@ public class StatusListProtocolMapper extends OID4VCMapper {
     private final CryptoIdentityService cryptoIdentityService;
     private final StatusListService statusListService;
 
+    protected interface Constants {
+        String MAPPER_ID = "oid4vc-status-list-claim-mapper";
+        String CONFIG_LIST_ID_PROPERTY = "status.list.list_id";
+
+        String ID_CLAIM_KEY = "id";
+        String STATUS_CLAIM_KEY = "status";
+        String TOKEN_STATUS_VALID = "VALID";
+
+        String HTTP_ENDPOINT_RETRIEVE_PATH = "/statuslists/%s";
+        String HTTP_ENDPOINT_PUBLISH_PATH = "/statuslists/publish";
+        String HTTP_ENDPOINT_UPDATE_PATH = "/statuslists/update";
+        String BEARER_PREFIX = "Bearer ";
+    }
+
     public StatusListProtocolMapper() {
         // An empty mapper constructor is required by Keycloak
         this.session = null;
@@ -58,11 +71,11 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         this.session = session;
         this.cryptoIdentityService = new CryptoIdentityService(session);
         StatusListConfig config = new StatusListConfig(session.getContext().getRealm());
-        this.statusListService =
-                new StatusListService(
-                        config.getServerUrl(),
-                        cryptoIdentityService.getJwtToken(config),
-                        new CloseableHttpClientAdapter(CustomHttpClient.getHttpClient()));
+        this.statusListService = new StatusListService(
+                config.getServerUrl(),
+                cryptoIdentityService.getJwtToken(config),
+                new CloseableHttpClientAdapter(CustomHttpClient.getHttpClient())
+        );
     }
 
     @Override
@@ -108,8 +121,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
     }
 
     @Override
-    public void setClaimsForCredential(
-            VerifiableCredential verifiableCredential, UserSessionModel userSessionModel) {
+    public void setClaimsForCredential(VerifiableCredential verifiableCredential, UserSessionModel userSessionModel) {
         // No-op. W3C Verifiable Credentials are not supported by this mapper.
     }
 
@@ -143,11 +155,11 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         // Build URI for status list
         Map<String, String> mapperConfig = mapperModel.getConfig();
         String listId = mapperConfig.getOrDefault(Constants.CONFIG_LIST_ID_PROPERTY, realmId);
-        URI uri =
-                UriBuilder.fromUri(serverUrl)
-                        .path(String.format(Constants.HTTP_ENDPOINT_RETRIEVE_PATH, listId))
-                        .build();
+        URI uri = UriBuilder.fromUri(serverUrl)
+                .path(String.format(Constants.HTTP_ENDPOINT_RETRIEVE_PATH, listId))
+                .build();
         logger.debugf("Configuration: listId=%s, uri=%s", listId, uri);
+
 
         // Get credential ID
         String tokenId = null;
@@ -161,7 +173,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         Status status = storeIndexMapping(listId, uri.toString(), userId, tokenId, session, config);
 
         if (status == null) {
-            logger.error("Failed to send status to server. Status claim not mapped");
+            logger.warn("Status list publication failed or was skipped; continuing without status claim");
             return;
         }
 
@@ -173,8 +185,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         try {
             URI uri = new URI(url);
             String scheme = uri.getScheme();
-            return scheme != null
-                    && (scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"));
+            return scheme != null && (scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"));
         } catch (URISyntaxException e) {
             logger.debugf("Invalid URL format: %s", url);
             return false;
@@ -199,65 +210,52 @@ public class StatusListProtocolMapper extends OID4VCMapper {
                 statusListId, userId, tokenId);
         AtomicReference<Status> status = new AtomicReference<>();
 
-        withEntityManagerInTransaction(
-                session,
-                em -> {
-                    try {
-                        StatusListMappingEntity mapping = new StatusListMappingEntity();
-                        mapping.setStatusListId(statusListId);
-                        mapping.setUserId(userId);
-                        mapping.setTokenId(tokenId);
-                        mapping.setRealmId(session.getContext().getRealm().getId());
+        try {
+            withEntityManagerInTransaction(session, em -> {
+                StatusListMappingEntity mapping = new StatusListMappingEntity();
+                mapping.setStatusListId(statusListId);
+                mapping.setUserId(userId);
+                mapping.setTokenId(tokenId);
+                mapping.setRealmId(session.getContext().getRealm().getId());
 
-                        em.persist(mapping);
-                        em.flush();
+                em.persist(mapping);
+                em.flush();
 
-                        Long generatedIdx = mapping.getIdx();
-                        logger.debugf("Stored mapping with generated index: %d", generatedIdx);
+                Long generatedIdx = mapping.getIdx();
+                logger.debugf("Stored mapping with generated index: %d", generatedIdx);
 
-                        sendStatusToServer(generatedIdx, statusListId, realmConfig);
-                        StatusListClaim statusList = new StatusListClaim(generatedIdx, uri);
-                        status.set(new Status(statusList));
-                    } catch (Exception e) {
-                        logger.error("Failed to store index mapping", e);
-                        session.getTransactionManager().setRollbackOnly();
-                    }
-                });
+                sendStatusToServer(generatedIdx, statusListId, realmConfig);
+                StatusListClaim statusList = new StatusListClaim(generatedIdx, uri);
+                status.set(new Status(statusList));
+            });
+        } catch (Exception e) {
+            logger.error("Failed to store index mapping", e);
+            session.getTransactionManager().setRollbackOnly();
+            if (realmConfig.isMandatory()) {
+                    logger.error("Status list is mandatory and publication failed; failing issuance");
+                throw new RuntimeException("Status list publication failed and is mandatory", e);
+            }
+            logger.warn("Status list publication failed; proceeding without status claim", e);
+        }
 
         return status.get();
     }
 
-    private void sendStatusToServer(long idx, String statusListId, StatusListConfig realmConfig)
-            throws IOException {
+    private void sendStatusToServer(long idx, String statusListId, StatusListConfig realmConfig) {
         Objects.requireNonNull(cryptoIdentityService);
 
         // Prepare payload
-        StatusListService.StatusListPayload payload =
-                new StatusListService.StatusListPayload(
-                        statusListId,
-                        List.of(
-                                new StatusListService.StatusListPayload.StatusEntry(
-                                        (int) idx, Constants.TOKEN_STATUS_VALID)));
+        StatusListService.StatusListPayload payload = new StatusListService.StatusListPayload(
+                statusListId,
+                List.of(new StatusListService.StatusListPayload.StatusEntry((int) idx, Constants.TOKEN_STATUS_VALID))
+        );
 
         // Publish or update status list on server
         try {
             statusListService.publishOrUpdate(payload);
         } catch (Exception e) {
-            throw new IOException(e);
+            throw new RuntimeException(e);
         }
     }
 
-    protected interface Constants {
-        String MAPPER_ID = "oid4vc-status-list-claim-mapper";
-        String CONFIG_LIST_ID_PROPERTY = "status.list.list_id";
-
-        String ID_CLAIM_KEY = "id";
-        String STATUS_CLAIM_KEY = "status";
-        String TOKEN_STATUS_VALID = "VALID";
-
-        String HTTP_ENDPOINT_RETRIEVE_PATH = "/statuslists/%s";
-        String HTTP_ENDPOINT_PUBLISH_PATH = "/statuslists/publish";
-        String HTTP_ENDPOINT_UPDATE_PATH = "/statuslists/update";
-        String BEARER_PREFIX = "Bearer ";
-    }
 }

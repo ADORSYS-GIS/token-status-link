@@ -1,12 +1,5 @@
 package com.adorsys.keycloakstatuslist;
 
-import static com.adorsys.keycloakstatuslist.StatusListProtocolMapper.Constants;
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.*;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
-
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.helpers.MockKeycloakTest;
@@ -16,12 +9,6 @@ import com.adorsys.keycloakstatuslist.model.StatusListClaim;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
 import jakarta.persistence.PersistenceException;
 import jakarta.ws.rs.core.UriBuilder;
-
-import java.net.URI;
-import java.util.HashMap;
-import java.util.Random;
-import java.util.UUID;
-
 import nl.altindag.log.LogCaptor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -29,10 +16,24 @@ import org.keycloak.models.ProtocolMapperModel;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 
+import java.net.URI;
+import java.util.HashMap;
+import java.util.Random;
+import java.util.UUID;
+
+import static com.adorsys.keycloakstatuslist.StatusListProtocolMapper.Constants;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.*;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
+
 class StatusListProtocolMapperTest extends MockKeycloakTest {
 
-    protected static final String TEST_SERVER_URL = "https://example.com";
     LogCaptor logCaptor = LogCaptor.forClass(StatusListProtocolMapper.class);
+
+    protected static final String TEST_SERVER_URL = "https://example.com";
 
     @Mock
     ProtocolMapperModel mapperModel;
@@ -76,8 +77,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         assertThat(status.getStatusList(), equalTo(new StatusListClaim(idx, listUri(TEST_REALM_ID))));
 
         // 2. Verify service was called with correct payload
-        ArgumentCaptor<StatusListService.StatusListPayload> payloadCaptor =
-                ArgumentCaptor.forClass(StatusListService.StatusListPayload.class);
+        ArgumentCaptor<StatusListService.StatusListPayload> payloadCaptor = ArgumentCaptor.forClass(StatusListService.StatusListPayload.class);
         verify(statusListService).publishOrUpdate(payloadCaptor.capture());
         StatusListService.StatusListPayload capturedPayload = payloadCaptor.getValue();
         assertThat(capturedPayload.listId(), equalTo(TEST_REALM_ID));
@@ -88,23 +88,23 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
     @Test
     void shouldNotMap_IfFeatureDisabled() {
-        when(realm.getAttribute(StatusListConfig.STATUS_LIST_ENABLED)).thenReturn("false");
+        when(realm.getAttribute(StatusListConfig.STATUS_LIST_ENABLED))
+                .thenReturn("false");
 
         mapper.setClaimsForSubject(claims, userSession);
 
-        assertThat(
-                "Claims should remain unmapped", claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
+        assertThat("Claims should remain unmapped", claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
         assertThat(logCaptor.getDebugLogs(), hasItem(containsString("Status list is disabled")));
     }
 
     @Test
     void shouldNotMap_IfInvalidStatusServerUrl() {
-        when(realm.getAttribute(StatusListConfig.STATUS_LIST_SERVER_URL)).thenReturn("invalid-url");
+        when(realm.getAttribute(StatusListConfig.STATUS_LIST_SERVER_URL))
+                .thenReturn("invalid-url");
 
         mapper.setClaimsForSubject(claims, userSession);
 
-        assertThat(
-                "Claims should remain unmapped", claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
+        assertThat("Claims should remain unmapped", claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
         assertThat(logCaptor.getErrorLogs(), hasItem(containsString("Invalid status list server URL")));
     }
 
@@ -114,52 +114,79 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
         mapper.setClaimsForSubject(claims, userSession);
 
-        assertThat(
-                "Claims should remain unmapped", claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
+        assertThat("Claims should remain unmapped", claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
         assertThat(logCaptor.getErrorLogs(), hasItem(containsString("Failed to store index mapping")));
     }
 
     @Test
     void shouldNotMap_WhenSendingStatusFails() throws Exception {
+        when(realm.getAttribute(StatusListConfig.STATUS_LIST_MANDATORY)).thenReturn("false");
         mockEntityPersist();
         doThrow(new StatusListException("Server not reachable"))
-                .when(statusListService)
-                .publishOrUpdate(any(StatusListService.StatusListPayload.class));
+                .when(statusListService).publishOrUpdate(any(StatusListService.StatusListPayload.class));
 
         // Act
         mapper.setClaimsForSubject(claims, userSession);
 
         // Assert
-        assertThat(
-                "Claims should remain unmapped", claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
-        assertThat(logCaptor.getErrorLogs(), hasItems(containsString("Failed to store index mapping")));
+        assertThat("Claims should remain unmapped", claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
+        assertThat(logCaptor.getErrorLogs(), hasItems(
+                containsString("Failed to store index mapping")
+        ));
+        assertThat(logCaptor.getWarnLogs(), hasItem(containsString("Status list publication failed; proceeding without status claim")));
+    }
+
+    @Test
+    void shouldContinueIssuance_WhenOptionalAndDbPersistenceFails() {
+        when(realm.getAttribute(StatusListConfig.STATUS_LIST_MANDATORY)).thenReturn("false");
+        doThrow(new PersistenceException("DB Error")).when(entityManager).persist(any());
+
+        mapper.setClaimsForSubject(claims, userSession);
+
+        assertThat("Claims should remain unmapped", claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
+        assertThat(logCaptor.getWarnLogs(), hasItem(containsString("Status list publication failed; proceeding without status claim")));
+    }
+
+    @Test
+    void shouldFailIssuance_WhenMandatoryAndDbPersistenceFails() {
+        when(realm.getAttribute(StatusListConfig.STATUS_LIST_MANDATORY)).thenReturn("true");
+        doThrow(new PersistenceException("DB Error")).when(entityManager).persist(any());
+
+        assertThrows(RuntimeException.class, () -> mapper.setClaimsForSubject(claims, userSession));
+        assertThat(logCaptor.getErrorLogs(), hasItem(containsString("Status list is mandatory and publication failed; failing issuance")));
+    }
+
+    @Test
+    void shouldFailIssuance_WhenMandatoryAndSendingStatusFails() throws Exception {
+        when(realm.getAttribute(StatusListConfig.STATUS_LIST_MANDATORY)).thenReturn("true");
+        mockEntityPersist();
+        doThrow(new StatusListException("Server not reachable"))
+                .when(statusListService).publishOrUpdate(any(StatusListService.StatusListPayload.class));
+
+        assertThrows(RuntimeException.class, () -> mapper.setClaimsForSubject(claims, userSession));
+        assertThat(logCaptor.getErrorLogs(), hasItem(containsString("Status list is mandatory and publication failed; failing issuance")));
     }
 
     private void mockDefaultRealmConfig() {
         lenient().when(realm.getAttribute(StatusListConfig.STATUS_LIST_ENABLED)).thenReturn("true");
-        lenient()
-                .when(realm.getAttribute(StatusListConfig.STATUS_LIST_SERVER_URL))
-                .thenReturn(TEST_SERVER_URL);
+        lenient().when(realm.getAttribute(StatusListConfig.STATUS_LIST_SERVER_URL)).thenReturn(TEST_SERVER_URL);
     }
 
     /**
-     * Mocks the EntityManager.persist() method. Generates a random index and UUID to simulate
-     * database behavior.
+     * Mocks the EntityManager.persist() method.
+     * Generates a random index and UUID to simulate database behavior.
      *
      * @return the simulated index that will be assigned to the entity
      */
     private long mockEntityPersist() {
         long simulatedIndex = new Random().nextInt(100000);
 
-        doAnswer(
-                invocation -> {
-                    StatusListMappingEntity entity = invocation.getArgument(0);
-                    entity.setIdx(simulatedIndex); // Simulate sequence generation
-                    entity.setId(UUID.randomUUID().toString()); // Simulate UUID generation
-                    return null;
-                })
-                .when(entityManager)
-                .persist(any(StatusListMappingEntity.class));
+        doAnswer(invocation -> {
+            StatusListMappingEntity entity = invocation.getArgument(0);
+            entity.setIdx(simulatedIndex); // Simulate sequence generation
+            entity.setId(UUID.randomUUID().toString()); // Simulate UUID generation
+            return null;
+        }).when(entityManager).persist(any(StatusListMappingEntity.class));
 
         return simulatedIndex;
     }
