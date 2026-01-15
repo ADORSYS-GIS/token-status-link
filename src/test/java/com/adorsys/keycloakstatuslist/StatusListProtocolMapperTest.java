@@ -22,6 +22,7 @@ import jakarta.ws.rs.core.UriBuilder;
 
 import java.net.URI;
 import java.util.HashMap;
+import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
 import nl.altindag.log.LogCaptor;
@@ -62,6 +63,11 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
     @Test
     void testDefaultConstructor() {
         new StatusListProtocolMapper();
+    }
+
+    @Test
+    void testGetMetadataAttributePath() {
+        assertEquals(Constants.STATUS_CLAIM_KEY, mapper.getMetadataAttributePath().getFirst());
     }
 
     @Test
@@ -175,10 +181,10 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         var query = mock(TypedQuery.class);
 
         when(entityManager.createQuery(anyString(), eq(StatusListMappingEntity.class))).thenReturn(query);
-        when(query.getSingleResult()).thenAnswer(invocation -> {
+        when(query.getResultList()).thenAnswer(invocation -> {
             var entity = new StatusListMappingEntity();
             entity.setIdx(nextIndex - 1);
-            return entity;
+            return List.of(entity);
         });
 
         return nextIndex;

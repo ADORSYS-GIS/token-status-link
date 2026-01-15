@@ -10,9 +10,9 @@ import com.adorsys.keycloakstatuslist.service.StatusListService;
 import com.adorsys.keycloakstatuslist.service.http.CloseableHttpClientAdapter;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
-import jakarta.persistence.PersistenceException;
 import jakarta.persistence.TypedQuery;
 import jakarta.ws.rs.core.UriBuilder;
+import org.apache.commons.collections4.ListUtils;
 import org.jboss.logging.Logger;
 import org.keycloak.connections.jpa.JpaConnectionProvider;
 import org.keycloak.models.KeycloakSession;
@@ -65,6 +65,11 @@ public class StatusListProtocolMapper extends OID4VCMapper {
                         config.getServerUrl(),
                         cryptoIdentityService.getJwtToken(config),
                         new CloseableHttpClientAdapter(CustomHttpClient.getHttpClient()));
+    }
+
+    @Override
+    public List<String> getMetadataAttributePath() {
+        return ListUtils.union(getAttributePrefix(), List.of(Constants.STATUS_CLAIM_KEY));
     }
 
     @Override
@@ -209,8 +214,8 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         query.setMaxResults(1);
         query.setLockMode(LockModeType.PESSIMISTIC_WRITE);
 
-        StatusListMappingEntity max = query.getSingleResult();
-        return (max == null) ? 0 : max.getIdx() + 1;
+        List<StatusListMappingEntity> max = query.getResultList();
+        return (max.isEmpty()) ? 0 : max.get(0).getIdx() + 1;
     }
 
     /**
@@ -239,7 +244,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
                 em.persist(mapping);
                 em.flush();
             });
-        } catch (PersistenceException e) {
+        } catch (Exception e) {
             logger.error("Failed to initiate index mapping", e);
             return null;
         }
@@ -261,7 +266,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         try {
             logger.debugf("Persisting completion mapping status: %s", mapping.getStatus());
             withEntityManagerInTransaction(session, em -> em.merge(mapping));
-        } catch (PersistenceException e) {
+        } catch (Exception e) {
             logger.error("Failed to persist completion mapping status. Will proceed because non-fatal", e);
         }
 
