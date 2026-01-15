@@ -112,8 +112,6 @@ public class CircuitBreaker {
                 logger.infof("Circuit breaker '%s' transitioning to CLOSED after successful test", name);
             }
         } else if (currentState == State.CLOSED) {
-            // Normal success, optionally reset failure count
-            // We keep track within the window, so no action needed here
         }
     }
     
@@ -127,7 +125,6 @@ public class CircuitBreaker {
         State currentState = state.get();
         
         if (currentState == State.HALF_OPEN) {
-            // Failure in half-open state, reopen the circuit
             if (state.compareAndSet(State.HALF_OPEN, State.OPEN)) {
                 logger.warnf("Circuit breaker '%s' transitioning back to OPEN after failed test", name);
             }
@@ -152,9 +149,8 @@ public class CircuitBreaker {
         logger.debugf("Circuit breaker '%s' recorded timeout %d/%d", name, timeouts, timeoutThreshold);
         
         if (timeouts >= timeoutThreshold) {
-            // Treat accumulated timeouts as a failure
             recordFailure();
-            timeoutCount.set(0); // Reset timeout counter after converting to failure
+            timeoutCount.set(0);
         }
     }
     

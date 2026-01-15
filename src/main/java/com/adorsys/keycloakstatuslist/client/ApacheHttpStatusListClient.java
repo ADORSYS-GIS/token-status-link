@@ -28,6 +28,10 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
     
     private static final Logger logger = Logger.getLogger(ApacheHttpStatusListClient.class);
     
+    private static final String CREDENTIALS_PATH = "credentials";
+    private static final String STATUS_LISTS_PATH = "statuslists";
+    private static final String HEALTH_PATH = "health";
+    
     private final String serverUrl;
     private final String authToken;
     private final CloseableHttpClient httpClient;
@@ -68,7 +72,7 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
             String jsonPayload = objectMapper.writeValueAsString(statusRecord);
             logger.debug("Request ID: " + requestId + ", Publishing record for credentialId: " + credentialId);
             
-            HttpPost httpPost = new HttpPost(serverUrl + "credentials");
+            HttpPost httpPost = new HttpPost(serverUrl + CREDENTIALS_PATH);
             httpPost.setHeader("Content-Type", "application/json");
             httpPost.setHeader("X-Request-ID", requestId);
             httpPost.setEntity(new StringEntity(jsonPayload));
@@ -130,7 +134,7 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
             String jsonPayload = objectMapper.writeValueAsString(statusRecord);
             logger.debug("Request ID: " + requestId + ", Updating record for credentialId: " + credentialId);
             
-            HttpPatch httpPatch = new HttpPatch(serverUrl + "credentials");
+            HttpPatch httpPatch = new HttpPatch(serverUrl + CREDENTIALS_PATH);
             httpPatch.setHeader("Content-Type", "application/json");
             httpPatch.setHeader("X-Request-ID", requestId);
             httpPatch.setEntity(new StringEntity(jsonPayload));
@@ -192,7 +196,7 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
             String jsonPayload = objectMapper.writeValueAsString(issuerRecord);
             logger.debug("Request ID: " + requestId + ", Registering issuer: " + issuerId + ", Payload: " + jsonPayload);
             
-            HttpPost httpPost = new HttpPost(serverUrl + "credentials");
+            HttpPost httpPost = new HttpPost(serverUrl + CREDENTIALS_PATH);
             httpPost.setHeader("Content-Type", "application/json");
             httpPost.setHeader("X-Request-ID", requestId);
             httpPost.setEntity(new StringEntity(jsonPayload));
@@ -250,7 +254,7 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
         String requestId = UUID.randomUUID().toString();
         logger.debug("Request ID: " + requestId + ", Checking if status list exists: " + statusListId);
         
-        HttpGet httpGet = new HttpGet(serverUrl + "statuslists/" + statusListId);
+        HttpGet httpGet = new HttpGet(serverUrl + STATUS_LISTS_PATH + "/" + statusListId);
         httpGet.setHeader("X-Request-ID", requestId);
         
         try {
@@ -302,7 +306,7 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
         
         try {
             String jsonPayload = objectMapper.writeValueAsString(payload);
-            HttpPost httpPost = new HttpPost(serverUrl + "statuslists");
+            HttpPost httpPost = new HttpPost(serverUrl + STATUS_LISTS_PATH);
             httpPost.setHeader("Content-Type", "application/json");
             httpPost.setHeader("X-Request-ID", requestId);
             httpPost.setEntity(new StringEntity(jsonPayload));
@@ -355,7 +359,7 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
         
         try {
             String jsonPayload = objectMapper.writeValueAsString(payload);
-            HttpPatch httpPatch = new HttpPatch(serverUrl + "statuslists/" + listId);
+            HttpPatch httpPatch = new HttpPatch(serverUrl + STATUS_LISTS_PATH + "/" + listId);
             httpPatch.setHeader("Content-Type", "application/json");
             httpPatch.setHeader("X-Request-ID", requestId);
             httpPatch.setEntity(new StringEntity(jsonPayload));
@@ -404,11 +408,10 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
         String requestId = UUID.randomUUID().toString();
         logger.debugf("Request ID: %s, Checking server health at: %s", requestId, serverUrl);
         
-        HttpGet httpGet = new HttpGet(this.serverUrl + "health");
+        HttpGet httpGet = new HttpGet(this.serverUrl + HEALTH_PATH);
         httpGet.setHeader("X-Request-ID", requestId);
         
         try {
-            // Don't check circuit breaker for health checks
             return httpClient.execute(httpGet, response -> {
                 int statusCode = response.getCode();
                 if (statusCode >= 200 && statusCode < 300) {
@@ -423,6 +426,11 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
             logger.errorf(e, "Request ID: %s, Error during server health check", requestId);
             return false;
         }
+    }
+    
+    @Override
+    public String getStatusListUri(String listId) {
+        return serverUrl + STATUS_LISTS_PATH + "/" + listId;
     }
     
     /**

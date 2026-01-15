@@ -15,9 +15,6 @@ import com.adorsys.keycloakstatuslist.model.Status;
 import com.adorsys.keycloakstatuslist.model.StatusListClaim;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
 import jakarta.persistence.PersistenceException;
-import jakarta.ws.rs.core.UriBuilder;
-
-import java.net.URI;
 import java.util.HashMap;
 import java.util.Random;
 import java.util.UUID;
@@ -26,7 +23,6 @@ import nl.altindag.log.LogCaptor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.keycloak.models.ProtocolMapperModel;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 
 class StatusListProtocolMapperTest extends MockKeycloakTest {
@@ -65,6 +61,12 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
     @Test
     void shouldMapSuccessfully_WhenStatusIsSent() throws Exception {
         long idx = mockEntityPersist();
+        
+        // Mock the service to return a Status with the expected URI
+        String expectedUri = TEST_SERVER_URL + "statuslists/" + TEST_REALM_ID;
+        Status expectedStatus = new Status(new StatusListClaim(idx, expectedUri));
+        when(statusListService.registerAndPublishStatus(TEST_REALM_ID, idx))
+                .thenReturn(expectedStatus);
 
         // Act
         mapper.setClaimsForSubject(claims, userSession);
@@ -73,17 +75,10 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         assertThat(claims.keySet(), hasItem(Constants.STATUS_CLAIM_KEY));
         assertInstanceOf(Status.class, claims.get(Constants.STATUS_CLAIM_KEY));
         Status status = (Status) claims.get(Constants.STATUS_CLAIM_KEY);
-        assertThat(status.getStatusList(), equalTo(new StatusListClaim(idx, listUri(TEST_REALM_ID))));
+        assertThat(status.getStatusList(), equalTo(new StatusListClaim(idx, expectedUri)));
 
-        // 2. Verify service was called with correct payload
-        ArgumentCaptor<StatusListService.StatusListPayload> payloadCaptor =
-                ArgumentCaptor.forClass(StatusListService.StatusListPayload.class);
-        verify(statusListService).publishOrUpdate(payloadCaptor.capture());
-        StatusListService.StatusListPayload capturedPayload = payloadCaptor.getValue();
-        assertThat(capturedPayload.listId(), equalTo(TEST_REALM_ID));
-        assertThat(capturedPayload.status().size(), equalTo(1));
-        assertThat(capturedPayload.status().get(0).index(), equalTo((int) idx));
-        assertThat(capturedPayload.status().get(0).status(), equalTo(Constants.TOKEN_STATUS_VALID));
+        // Verify service was called with correct parameters
+        verify(statusListService).registerAndPublishStatus(TEST_REALM_ID, idx);
     }
 
     @Test
@@ -109,7 +104,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
     }
 
     @Test
-    void shouldNotMap_IfDbPersistenceFails() {
+    void shouldNotMap_IfDbPersistenceFails() throws Exception {
         doThrow(new PersistenceException("DB Error")).when(entityManager).persist(any());
 
         mapper.setClaimsForSubject(claims, userSession);
@@ -117,22 +112,172 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         assertThat(
                 "Claims should remain unmapped", claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
         assertThat(logCaptor.getErrorLogs(), hasItem(containsString("Failed to store index mapping")));
+        // Verify HTTP call was never attempted
+        verify(statusListService, never()).registerAndPublishStatus(anyString(), anyLong());
     }
 
     @Test
-    void shouldNotMap_WhenSendingStatusFails() throws Exception {
-        mockEntityPersist();
+    void shouldMap_EvenWhenHttpFails() throws Exception {
+        long idx = mockEntityPersist();
+        String expectedUri = TEST_SERVER_URL + "statuslists/" + TEST_REALM_ID;
+        
+        // Mock HTTP failure
         doThrow(new StatusListException("Server not reachable"))
                 .when(statusListService)
-                .publishOrUpdate(any(StatusListService.StatusListPayload.class));
+                .registerAndPublishStatus(anyString(), anyLong());
+        
+        // Mock fallback URI retrieval
+        when(statusListService.getStatusListUri(TEST_REALM_ID))
+                .thenReturn(expectedUri);
+
+        // Act
+        mapper.setClaimsForSubject(claims, userSession);
+
+        // Assert - token issuance should proceed even if HTTP fails
+        // The mapper returns a Status with the stored index and URI
+        assertThat(
+                "Claims should be mapped even when HTTP fails", 
+                claims.keySet(), hasItem(Constants.STATUS_CLAIM_KEY));
+        assertInstanceOf(Status.class, claims.get(Constants.STATUS_CLAIM_KEY));
+        Status status = (Status) claims.get(Constants.STATUS_CLAIM_KEY);
+        assertThat(status.getStatusList(), equalTo(new StatusListClaim(idx, expectedUri)));
+        
+        // Verify HTTP was attempted
+        verify(statusListService).registerAndPublishStatus(TEST_REALM_ID, idx);
+        // Verify fallback was used
+        verify(statusListService).getStatusListUri(TEST_REALM_ID);
+        // Verify error was logged
+        assertThat(logCaptor.getErrorLogs(), 
+                hasItem(containsString("Failed to publish status to server")));
+    }
+
+    @Test
+    void shouldMap_WhenCircuitBreakerIsOpen() throws Exception {
+        long idx = mockEntityPersist();
+        String expectedUri = TEST_SERVER_URL + "statuslists/" + TEST_REALM_ID;
+        
+        // Mock circuit breaker open exception (wrapped in StatusListException)
+        doThrow(new StatusListException("Circuit breaker is open: Circuit breaker 'test' is OPEN. Failing fast."))
+                .when(statusListService)
+                .registerAndPublishStatus(anyString(), anyLong());
+        
+        // Mock fallback URI retrieval
+        when(statusListService.getStatusListUri(TEST_REALM_ID))
+                .thenReturn(expectedUri);
+
+        // Act
+        mapper.setClaimsForSubject(claims, userSession);
+
+        // Assert - token issuance should proceed even when circuit breaker is open
+        assertThat(
+                "Claims should be mapped even when circuit breaker is open", 
+                claims.keySet(), hasItem(Constants.STATUS_CLAIM_KEY));
+        assertInstanceOf(Status.class, claims.get(Constants.STATUS_CLAIM_KEY));
+        Status status = (Status) claims.get(Constants.STATUS_CLAIM_KEY);
+        assertThat(status.getStatusList(), equalTo(new StatusListClaim(idx, expectedUri)));
+        
+        // Verify HTTP was attempted (circuit breaker check happens in HTTP client)
+        verify(statusListService).registerAndPublishStatus(TEST_REALM_ID, idx);
+        // Verify fallback was used
+        verify(statusListService).getStatusListUri(TEST_REALM_ID);
+        // Verify error was logged
+        assertThat(logCaptor.getErrorLogs(), 
+                hasItem(containsString("Failed to publish status to server")));
+    }
+
+    @Test
+    void shouldMap_WhenHttpCallTimesOut() throws Exception {
+        long idx = mockEntityPersist();
+        String expectedUri = TEST_SERVER_URL + "statuslists/" + TEST_REALM_ID;
+        
+        // Mock HTTP timeout (simulating slow server)
+        doThrow(new StatusListException("Timeout publishing status list", 
+                new java.io.InterruptedIOException("Read timed out")))
+                .when(statusListService)
+                .registerAndPublishStatus(anyString(), anyLong());
+        
+        // Mock fallback URI retrieval
+        when(statusListService.getStatusListUri(TEST_REALM_ID))
+                .thenReturn(expectedUri);
+
+        // Act
+        mapper.setClaimsForSubject(claims, userSession);
+
+        // Assert - token issuance should proceed even when HTTP times out
+        assertThat(
+                "Claims should be mapped even when HTTP times out", 
+                claims.keySet(), hasItem(Constants.STATUS_CLAIM_KEY));
+        assertInstanceOf(Status.class, claims.get(Constants.STATUS_CLAIM_KEY));
+        Status status = (Status) claims.get(Constants.STATUS_CLAIM_KEY);
+        assertThat(status.getStatusList(), equalTo(new StatusListClaim(idx, expectedUri)));
+        
+        // Verify HTTP was attempted
+        verify(statusListService).registerAndPublishStatus(TEST_REALM_ID, idx);
+        // Verify fallback was used
+        verify(statusListService).getStatusListUri(TEST_REALM_ID);
+        // Verify timeout error was logged
+        assertThat(logCaptor.getErrorLogs(), 
+                hasItem(containsString("Failed to publish status to server")));
+    }
+
+    @Test
+    void shouldCompleteTransaction_BeforeHttpCall() throws Exception {
+        long idx = mockEntityPersist();
+        String expectedUri = TEST_SERVER_URL + "statuslists/" + TEST_REALM_ID;
+        Status expectedStatus = new Status(new StatusListClaim(idx, expectedUri));
+        
+        // Use Answer to verify transaction completes before HTTP call
+        when(statusListService.registerAndPublishStatus(TEST_REALM_ID, idx))
+                .thenAnswer(invocation -> {
+                    // Verify entity was already persisted (transaction completed)
+                    verify(entityManager, atLeastOnce()).persist(any(StatusListMappingEntity.class));
+                    verify(entityManager, atLeastOnce()).flush();
+                    return expectedStatus;
+                });
 
         // Act
         mapper.setClaimsForSubject(claims, userSession);
 
         // Assert
-        assertThat(
-                "Claims should remain unmapped", claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
-        assertThat(logCaptor.getErrorLogs(), hasItems(containsString("Failed to store index mapping")));
+        assertThat(claims.keySet(), hasItem(Constants.STATUS_CLAIM_KEY));
+        Status status = (Status) claims.get(Constants.STATUS_CLAIM_KEY);
+        assertThat(status.getStatusList(), equalTo(new StatusListClaim(idx, expectedUri)));
+        
+        // Verify order: DB operations complete before HTTP call
+        // The Answer above already verified this, but we can also check the sequence
+        verify(entityManager).persist(any(StatusListMappingEntity.class));
+        verify(entityManager).flush();
+        verify(statusListService).registerAndPublishStatus(TEST_REALM_ID, idx);
+    }
+
+    @Test
+    void shouldNotBlockTokenIssuance_WhenHttpIsSlow() throws Exception {
+        long idx = mockEntityPersist();
+        String expectedUri = TEST_SERVER_URL + "statuslists/" + TEST_REALM_ID;
+        
+        // Simulate slow HTTP call (but don't actually wait - just verify fallback works)
+        doThrow(new StatusListException("Server slow response"))
+                .when(statusListService)
+                .registerAndPublishStatus(anyString(), anyLong());
+        
+        when(statusListService.getStatusListUri(TEST_REALM_ID))
+                .thenReturn(expectedUri);
+
+        // Act - should return quickly even if HTTP is slow
+        long startTime = System.currentTimeMillis();
+        mapper.setClaimsForSubject(claims, userSession);
+        long duration = System.currentTimeMillis() - startTime;
+
+        // Assert - token issuance completed (with fallback)
+        assertThat(claims.keySet(), hasItem(Constants.STATUS_CLAIM_KEY));
+        assertThat("Should complete quickly (fallback used)", duration, lessThan(1000L));
+        
+        // Verify the returned status has the correct index
+        Status status = (Status) claims.get(Constants.STATUS_CLAIM_KEY);
+        assertThat(status.getStatusList().getIdx(), equalTo(idx));
+        
+        // Verify fallback was used
+        verify(statusListService).getStatusListUri(TEST_REALM_ID);
     }
 
     private void mockDefaultRealmConfig() {
@@ -162,12 +307,5 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
                 .persist(any(StatusListMappingEntity.class));
 
         return simulatedIndex;
-    }
-
-    @SuppressWarnings("SameParameterValue")
-    private URI listUri(String listId) {
-        return UriBuilder.fromUri(TEST_SERVER_URL)
-                .path(String.format(Constants.HTTP_ENDPOINT_RETRIEVE_PATH, listId))
-                .build();
     }
 }

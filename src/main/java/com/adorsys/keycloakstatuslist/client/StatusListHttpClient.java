@@ -70,6 +70,14 @@ public interface StatusListHttpClient {
      * @return true if the server is healthy, false otherwise
      */
     boolean checkServerHealth();
+    
+    /**
+     * Gets the URI for retrieving a status list.
+     *
+     * @param listId the status list identifier
+     * @return the URI string for the status list
+     */
+    String getStatusListUri(String listId);
 }
 
 

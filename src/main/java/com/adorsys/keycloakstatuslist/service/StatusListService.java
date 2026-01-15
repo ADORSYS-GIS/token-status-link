@@ -2,6 +2,8 @@ package com.adorsys.keycloakstatuslist.service;
 
 import com.adorsys.keycloakstatuslist.client.StatusListHttpClient;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
+import com.adorsys.keycloakstatuslist.model.Status;
+import com.adorsys.keycloakstatuslist.model.StatusListClaim;
 import com.adorsys.keycloakstatuslist.model.TokenStatus;
 import com.adorsys.keycloakstatuslist.model.TokenStatusRecord;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -140,6 +142,39 @@ public class StatusListService {
      */
     public boolean checkServerHealth() {
         return httpClient.checkServerHealth();
+    }
+
+    /**
+     * Gets the URI for a status list without making any HTTP calls.
+     *
+     * @param listId the status list identifier
+     * @return the URI string for the status list
+     */
+    public String getStatusListUri(String listId) {
+        return httpClient.getStatusListUri(listId);
+    }
+
+    /**
+     * Registers a status entry and publishes it to the server.
+     *
+     * @param listId the status list identifier
+     * @param index the index of the token in the status list
+     * @return Status object containing the index and URI
+     * @throws StatusListException if the operation fails
+     */
+    public Status registerAndPublishStatus(String listId, long index) throws StatusListException {
+        // Prepare payload
+        StatusListPayload payload = new StatusListPayload(
+                listId,
+                List.of(new StatusListPayload.StatusEntry((int) index, "VALID")));
+        
+        publishOrUpdate(payload);
+        
+        String uri = httpClient.getStatusListUri(listId);
+        
+        // Return Status with index and URI
+        StatusListClaim statusList = new StatusListClaim(index, uri);
+        return new Status(statusList);
     }
 
     public record StatusListPayload(

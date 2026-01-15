@@ -187,12 +187,11 @@ public class CredentialRevocationResourceProviderFactory extends OIDCLoginProtoc
 
             CryptoIdentityService cryptoIdentityService = new CryptoIdentityService(session);
             
-            // For admin operations, we don't need circuit breaker - use default timeouts
             StatusListHttpClient httpClient = new ApacheHttpStatusListClient(
                     config.getServerUrl(),
                     cryptoIdentityService.getJwtToken(config),
                     CustomHttpClient.getHttpClient(),
-                    null // No circuit breaker for admin operations
+                    null
             );
             StatusListService statusListService = new StatusListService(httpClient);
 

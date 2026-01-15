@@ -64,12 +64,11 @@ public class CredentialRevocationService {
             StatusListConfig config = new StatusListConfig(realm);
             CryptoIdentityService cryptoIdentityService = new CryptoIdentityService(session);
             
-            // For revocation operations, we don't need circuit breaker - use default timeouts
             StatusListHttpClient httpClient = new ApacheHttpStatusListClient(
                     config.getServerUrl(),
                     cryptoIdentityService.getJwtToken(config),
                     CustomHttpClient.getHttpClient(),
-                    null // No circuit breaker for revocation operations
+                    null
             );
             this.statusListService = new StatusListService(httpClient);
         }

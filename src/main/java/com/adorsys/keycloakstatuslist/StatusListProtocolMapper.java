@@ -11,15 +11,11 @@ import com.adorsys.keycloakstatuslist.service.CryptoIdentityService;
 import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
 import jakarta.persistence.EntityManager;
-import jakarta.ws.rs.core.UriBuilder;
 
-import java.io.IOException;
-import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
@@ -172,14 +168,10 @@ public class StatusListProtocolMapper extends OID4VCMapper {
             return;
         }
 
-        // Build URI for status list
+        // Get list ID from mapper config
         Map<String, String> mapperConfig = mapperModel.getConfig();
         String listId = mapperConfig.getOrDefault(Constants.CONFIG_LIST_ID_PROPERTY, realmId);
-        URI uri =
-                UriBuilder.fromUri(serverUrl)
-                        .path(String.format(Constants.HTTP_ENDPOINT_RETRIEVE_PATH, listId))
-                        .build();
-        logger.debugf("Configuration: listId=%s, uri=%s", listId, uri);
+        logger.debugf("Configuration: listId=%s", listId);
 
         // Get credential ID
         String tokenId = null;
@@ -190,10 +182,11 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         UserSessionModel userSession = session.getContext().getUserSession();
         String userId = userSession != null ? userSession.getUser().getId() : null;
 
-        Status status = storeIndexMapping(listId, uri.toString(), userId, tokenId, session, config);
+        // Store index mapping and publish status - service handles HTTP details
+        Status status = storeIndexMappingAndPublish(listId, userId, tokenId, session);
 
         if (status == null) {
-            logger.error("Failed to send status to server. Status claim not mapped");
+            logger.error("Failed to register and publish status. Status claim not mapped");
             return;
         }
 
@@ -203,7 +196,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
 
     private boolean isValidHttpUrl(String url) {
         try {
-            URI uri = new URI(url);
+            java.net.URI uri = new java.net.URI(url);
             String scheme = uri.getScheme();
             return scheme != null
                     && (scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"));
@@ -225,57 +218,56 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         });
     }
 
-    private Status storeIndexMapping(String statusListId, String uri, String userId, String tokenId,
-                                     KeycloakSession session, StatusListConfig realmConfig) {
+    private Status storeIndexMappingAndPublish(String statusListId, String userId, String tokenId,
+                                             KeycloakSession session) {
         logger.debugf("Storing index mapping: status_list_id=%s, userId=%s, tokenId=%s",
                 statusListId, userId, tokenId);
-        AtomicReference<Status> status = new AtomicReference<>();
+        AtomicReference<Long> generatedIdx = new AtomicReference<>();
 
-        withEntityManagerInTransaction(
-                session,
-                em -> {
-                    try {
-                        StatusListMappingEntity mapping = new StatusListMappingEntity();
-                        mapping.setStatusListId(statusListId);
-                        mapping.setUserId(userId);
-                        mapping.setTokenId(tokenId);
-                        mapping.setRealmId(session.getContext().getRealm().getId());
-
-                        em.persist(mapping);
-                        em.flush();
-
-                        Long generatedIdx = mapping.getIdx();
-                        logger.debugf("Stored mapping with generated index: %d", generatedIdx);
-
-                        sendStatusToServer(generatedIdx, statusListId, realmConfig);
-                        StatusListClaim statusList = new StatusListClaim(generatedIdx, uri);
-                        status.set(new Status(statusList));
-                    } catch (Exception e) {
-                        logger.error("Failed to store index mapping", e);
-                        session.getTransactionManager().setRollbackOnly();
-                    }
-                });
-
-        return status.get();
-    }
-
-    private void sendStatusToServer(long idx, String statusListId, StatusListConfig realmConfig)
-            throws IOException {
-        Objects.requireNonNull(cryptoIdentityService);
-
-        // Prepare payload
-        StatusListService.StatusListPayload payload =
-                new StatusListService.StatusListPayload(
-                        statusListId,
-                        List.of(
-                                new StatusListService.StatusListPayload.StatusEntry(
-                                        (int) idx, Constants.TOKEN_STATUS_VALID)));
-
-        // Publish or update status list on server
+        // 1. Database operation - INSIDE transaction (fast, no HTTP blocking)
         try {
-            statusListService.publishOrUpdate(payload);
+            withEntityManagerInTransaction(
+                    session,
+                    em -> {
+                        try {
+                            StatusListMappingEntity mapping = new StatusListMappingEntity();
+                            mapping.setStatusListId(statusListId);
+                            mapping.setUserId(userId);
+                            mapping.setTokenId(tokenId);
+                            mapping.setRealmId(session.getContext().getRealm().getId());
+
+                            em.persist(mapping);
+                            em.flush();
+
+                            Long idx = mapping.getIdx();
+                            logger.debugf("Stored mapping with generated index: %d", idx);
+                            generatedIdx.set(idx);
+                        } catch (Exception e) {
+                            logger.error("Failed to store index mapping", e);
+                            session.getTransactionManager().setRollbackOnly();
+                            throw e; // Re-throw to prevent HTTP call if DB fails
+                        }
+                    });
         } catch (Exception e) {
-            throw new IOException(e);
+            logger.error("Failed to store index mapping and publish status", e);
+            return null;
+        }
+
+        // 2. HTTP call - OUTSIDE transaction (after commit)
+        try {
+            Status publishedStatus = statusListService.registerAndPublishStatus(
+                    statusListId, generatedIdx.get());
+            return publishedStatus;
+        } catch (Exception e) {
+            logger.errorf(
+                    "Failed to publish status to server for listId: %s, index: %d. " +
+                            "Index is stored in DB, but status list server update failed. " +
+                            "Token issuance will proceed with stored index: %s",
+                    statusListId, generatedIdx.get(), e.getMessage(), e);
+
+            String uri = statusListService.getStatusListUri(statusListId);
+            StatusListClaim statusList = new StatusListClaim(generatedIdx.get(), uri);
+            return new Status(statusList);
         }
     }
 
@@ -285,11 +277,5 @@ public class StatusListProtocolMapper extends OID4VCMapper {
 
         String ID_CLAIM_KEY = "id";
         String STATUS_CLAIM_KEY = "status";
-        String TOKEN_STATUS_VALID = "VALID";
-
-        String HTTP_ENDPOINT_RETRIEVE_PATH = "/statuslists/%s";
-        String HTTP_ENDPOINT_PUBLISH_PATH = "/statuslists/publish";
-        String HTTP_ENDPOINT_UPDATE_PATH = "/statuslists/update";
-        String BEARER_PREFIX = "Bearer ";
     }
 }

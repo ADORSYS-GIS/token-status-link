@@ -8,6 +8,7 @@ import static org.mockito.Mockito.*;
 import com.adorsys.keycloakstatuslist.client.ApacheHttpStatusListClient;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.exception.StatusListServerException;
+import com.adorsys.keycloakstatuslist.model.Status;
 import com.adorsys.keycloakstatuslist.model.TokenStatus;
 import com.adorsys.keycloakstatuslist.model.TokenStatusRecord;
 
@@ -387,6 +388,100 @@ class StatusListServiceTest {
         verify(closeableHttpClient, times(1)).execute(any(HttpGet.class), any(HttpClientResponseHandler.class));
         verify(closeableHttpClient, never()).execute(any(HttpPost.class), any(HttpClientResponseHandler.class));
         verify(closeableHttpClient, never()).execute(any(HttpPatch.class), any(HttpClientResponseHandler.class));
+    }
+
+    @Test
+    void registerAndPublishStatus_shouldPublishAndReturnStatus() throws IOException {
+        String listId = "test-list-id";
+        long index = 42L;
+        
+        // Setup: list doesn't exist, so it will be published
+        doAnswer(
+                invocation -> {
+                    HttpClientResponseHandler<?> handler = invocation.getArgument(1);
+                    ClassicHttpResponse response = new BasicClassicHttpResponse(404);
+                    return handler.handleResponse(response);
+                })
+                .when(closeableHttpClient)
+                .execute(any(HttpGet.class), any(HttpClientResponseHandler.class));
+
+        doAnswer(
+                invocation -> {
+                    HttpClientResponseHandler<?> handler = invocation.getArgument(1);
+                    ClassicHttpResponse response = new BasicClassicHttpResponse(201);
+                    return handler.handleResponse(response);
+                })
+                .when(closeableHttpClient)
+                .execute(any(HttpPost.class), any(HttpClientResponseHandler.class));
+
+        // Act
+        Status status = assertDoesNotThrow(() -> statusListService.registerAndPublishStatus(listId, index));
+
+        // Assert
+        assertNotNull(status);
+        assertNotNull(status.getStatusList());
+        assertEquals(index, status.getStatusList().getIdx());
+        assertTrue(status.getStatusList().getUri().contains(listId));
+        
+        // Verify HTTP calls were made
+        verify(closeableHttpClient, times(1)).execute(any(HttpGet.class), any(HttpClientResponseHandler.class));
+        verify(closeableHttpClient, times(1)).execute(any(HttpPost.class), any(HttpClientResponseHandler.class));
+    }
+
+    @Test
+    void registerAndPublishStatus_shouldUpdateAndReturnStatus() throws IOException {
+        String listId = "test-list-id";
+        long index = 42L;
+        
+        // Setup: list exists, so it will be updated
+        doAnswer(
+                invocation -> {
+                    HttpClientResponseHandler<?> handler = invocation.getArgument(1);
+                    ClassicHttpResponse response = new BasicClassicHttpResponse(200);
+                    return handler.handleResponse(response);
+                })
+                .when(closeableHttpClient)
+                .execute(any(HttpGet.class), any(HttpClientResponseHandler.class));
+
+        doAnswer(
+                invocation -> {
+                    HttpClientResponseHandler<?> handler = invocation.getArgument(1);
+                    ClassicHttpResponse response = new BasicClassicHttpResponse(200);
+                    return handler.handleResponse(response);
+                })
+                .when(closeableHttpClient)
+                .execute(any(HttpPatch.class), any(HttpClientResponseHandler.class));
+
+        // Act
+        Status status = assertDoesNotThrow(() -> statusListService.registerAndPublishStatus(listId, index));
+
+        // Assert
+        assertNotNull(status);
+        assertNotNull(status.getStatusList());
+        assertEquals(index, status.getStatusList().getIdx());
+        assertTrue(status.getStatusList().getUri().contains(listId));
+        
+        // Verify HTTP calls were made
+        verify(closeableHttpClient, times(1)).execute(any(HttpGet.class), any(HttpClientResponseHandler.class));
+        verify(closeableHttpClient, times(1)).execute(any(HttpPatch.class), any(HttpClientResponseHandler.class));
+        verify(closeableHttpClient, never()).execute(any(HttpPost.class), any(HttpClientResponseHandler.class));
+    }
+
+    @Test
+    void getStatusListUri_shouldReturnCorrectUri() {
+        String listId = "test-list-id";
+        String expectedUri = SERVER_URL.endsWith("/") 
+                ? SERVER_URL + "statuslists/" + listId 
+                : SERVER_URL + "/statuslists/" + listId;
+        
+        // Act
+        String uri = statusListService.getStatusListUri(listId);
+        
+        // Assert
+        assertNotNull(uri);
+        assertTrue(uri.contains(listId));
+        assertTrue(uri.contains("statuslists"));
+        assertEquals(expectedUri, uri);
     }
 
     private StatusListService.StatusListPayload createTestPayload() {
