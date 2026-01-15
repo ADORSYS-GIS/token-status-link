@@ -25,6 +25,7 @@ public class StatusListConfig {
     public static final String STATUS_LIST_CIRCUIT_BREAKER_TIMEOUT_THRESHOLD = "status-list-circuit-breaker-timeout-threshold";
     public static final String STATUS_LIST_CIRCUIT_BREAKER_WINDOW_SECONDS = "status-list-circuit-breaker-window-seconds";
     public static final String STATUS_LIST_CIRCUIT_BREAKER_COOLDOWN_SECONDS = "status-list-circuit-breaker-cooldown-seconds";
+    public static final String STATUS_LIST_MANDATORY = "status-list-mandatory";
    
     // Default values
     private static final boolean DEFAULT_ENABLED = true;
@@ -40,6 +41,7 @@ public class StatusListConfig {
     private static final int DEFAULT_TIMEOUT_THRESHOLD = 3; // Count as failure after 3 timeouts
     private static final int DEFAULT_WINDOW_SECONDS = 60; // 1 minute rolling window
     private static final int DEFAULT_COOLDOWN_SECONDS = 30; // 30 seconds before retry
+    private static final boolean DEFAULT_MANDATORY = false;
 
     private final RealmModel realm;
 
@@ -62,6 +64,11 @@ public class StatusListConfig {
     public boolean isEnabled() {
         String value = realm.getAttribute(STATUS_LIST_ENABLED);
         return value != null ? Boolean.parseBoolean(value) : DEFAULT_ENABLED;
+    }
+
+    public boolean isMandatory() {
+        String value = realm.getAttribute(STATUS_LIST_MANDATORY);
+        return value != null ? Boolean.parseBoolean(value) : DEFAULT_MANDATORY;
     }
 
     /**
