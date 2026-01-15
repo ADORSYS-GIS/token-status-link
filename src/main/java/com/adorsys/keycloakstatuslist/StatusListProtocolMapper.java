@@ -7,6 +7,7 @@ import com.adorsys.keycloakstatuslist.model.StatusListClaim;
 import com.adorsys.keycloakstatuslist.service.CryptoIdentityService;
 import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
+import com.adorsys.keycloakstatuslist.service.http.CloseableHttpClientAdapter;
 import jakarta.persistence.EntityManager;
 import jakarta.ws.rs.core.UriBuilder;
 import org.jboss.logging.Logger;
@@ -73,7 +74,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         this.statusListService = new StatusListService(
                 config.getServerUrl(),
                 cryptoIdentityService.getJwtToken(config),
-                CustomHttpClient.getHttpClient()
+                new CloseableHttpClientAdapter(CustomHttpClient.getHttpClient())
         );
     }
 

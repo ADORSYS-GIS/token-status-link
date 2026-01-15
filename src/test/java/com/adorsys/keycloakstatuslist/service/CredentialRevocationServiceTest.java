@@ -8,6 +8,7 @@ import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationResponse;
 import com.adorsys.keycloakstatuslist.model.TokenStatusRecord;
+import com.adorsys.keycloakstatuslist.service.validation.SdJwtVPValidationService;
 
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
@@ -89,29 +90,14 @@ class CredentialRevocationServiceTest {
         lenient().when(keyWrapper.getPublicKey()).thenReturn(publicKey);
         lenient().when(keyWrapper.getAlgorithm()).thenReturn("RS256");
 
-        // Create service with mocked dependencies
-        service = new CredentialRevocationService(session);
-
-        // Inject mocked dependencies using reflection
-        injectMockedDependencies();
-    }
-
-    private void injectMockedDependencies() {
-        try {
-            // Inject mocked SdJwtVPValidationService
-            java.lang.reflect.Field sdJwtVPValidationField = CredentialRevocationService.class.getDeclaredField("sdJwtVPValidationService");
-            sdJwtVPValidationField.setAccessible(true);
-            sdJwtVPValidationField.set(service, sdJwtVPValidationService);
-
-
-            // Inject mocked StatusListService
-            java.lang.reflect.Field statusListField = CredentialRevocationService.class.getDeclaredField("statusListService");
-            statusListField.setAccessible(true);
-            statusListField.set(service, statusListService);
-
-        } catch (Exception e) {
-            fail("Failed to inject mocked dependencies: " + e.getMessage());
-        }
+        // Create service with mocked dependencies using dependency injection
+        service =
+                new CredentialRevocationService(
+                        session,
+                        statusListService,
+                        sdJwtVPValidationService,
+                        new RevocationRecordService(session),
+                        new DefaultRequestValidationService());
     }
 
     @Test
