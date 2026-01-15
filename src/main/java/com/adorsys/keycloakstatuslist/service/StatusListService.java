@@ -46,12 +46,14 @@ public class StatusListService {
 
         // Check required fields according to the specification
         if (statusRecord.getCredentialId() == null || statusRecord.getCredentialId().isEmpty()) {
-            throw new StatusListException("Credential ID (sub) is required for credentialId: " + credentialId);
+            throw new StatusListException(
+                    "Credential ID (sub) is required for credentialId: " + credentialId);
         }
 
         // Ensure both iss and issuer fields are set
         if (statusRecord.getIssuerId() == null || statusRecord.getIssuerId().isEmpty()) {
-            throw new StatusListException("Issuer ID (iss) is required for credentialId: " + credentialId);
+            throw new StatusListException(
+                    "Issuer ID (iss) is required for credentialId: " + credentialId);
         }
 
         // Make sure issuer field is set if not already
@@ -113,8 +115,12 @@ public class StatusListService {
                 publishStatusList(payload, requestId);
             }
         } catch (StatusListException e) {
-            logger.error("Request ID: " + requestId + ", Failed to publish or update status list " + listId +
-                    ": " + e.getMessage(), e);
+            logger.errorf(
+                    "Request ID: %s, Failed to publish or update status list %s: %s",
+                    requestId,
+                    listId,
+                    e.getMessage(),
+                    e);
             throw e;
         }
     }
@@ -138,8 +144,7 @@ public class StatusListService {
 
     public record StatusListPayload(
             @JsonProperty("list_id") String listId,
-            List<StatusEntry> status
-    ) {
+            List<StatusEntry> status) {
         public record StatusEntry(int index, String status) {
         }
     }

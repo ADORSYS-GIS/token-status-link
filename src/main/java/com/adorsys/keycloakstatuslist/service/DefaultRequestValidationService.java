@@ -2,12 +2,13 @@ package com.adorsys.keycloakstatuslist.service;
 
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest;
+import com.adorsys.keycloakstatuslist.service.validation.RequestValidationService;
 
 /**
- * Service for validating credential revocation requests.
- * Performs basic validation on request parameters.
+ * Default implementation of RequestValidationService. Performs basic validation on request
+ * parameters.
  */
-public class RequestValidationService {
+public class DefaultRequestValidationService implements RequestValidationService {
 
     /**
      * Validates a credential revocation request.
@@ -15,7 +16,9 @@ public class RequestValidationService {
      * @param request the revocation request to validate
      * @throws StatusListException if validation fails
      */
-    public void validateRevocationRequest(CredentialRevocationRequest request) throws StatusListException {
+    @Override
+    public void validateRevocationRequest(CredentialRevocationRequest request)
+            throws StatusListException {
         if (request == null) {
             throw new StatusListException("Revocation request cannot be null");
         }
@@ -24,4 +27,4 @@ public class RequestValidationService {
             throw new StatusListException("Credential ID is required");
         }
     }
-} 
+}

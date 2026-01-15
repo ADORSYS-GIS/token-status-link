@@ -22,11 +22,11 @@ The status list server should implement the OAuth 2.0 Status List pattern.
 
 The plugin can be configured at the realm level with the following properties:
 
-| Property                          | Description                                  | Default Value                          |
-|-----------------------------------|----------------------------------------------|----------------------------------------|
-| `status-list-enabled`             | Enables or disables the status list service  | `true`                                 |
-| `status-list-server-url`          | URL of the status list server                | `https://statuslist.eudi-adorsys.com/` |
-| `status-list-token-issuer-prefix` | Prefix for building the Token Issuer ID      | `Generated UUID`                       |
+| Property                          | Description                                 | Default Value                          |
+|-----------------------------------|---------------------------------------------|----------------------------------------|
+| `status-list-enabled`             | Enables or disables the status list service | `true`                                 |
+| `status-list-server-url`          | URL of the status list server               | `https://statuslist.eudi-adorsys.com/` |
+| `status-list-token-issuer-prefix` | Prefix for building the Token Issuer ID     | `Generated UUID`                       |
 
 ## Token Status Record Format
 
@@ -66,17 +66,14 @@ OAuth 2.0 Status List specification:
 ## Installation
 
 1. Build the plugin using Maven:
-
-```bash
-./mvnw clean package
-```
-
-2. Copy the resulting JAR file from `target/keycloak-token-status-plugin-1.0.0-SNAPSHOT.jar` to Keycloak's `providers`
-   directory.
+    ```bash
+    ./mvnw clean package
+    ```
+2. Copy the resulting JAR file `target/keycloak-token-status-plugin-1.0.0-SNAPSHOT.jar` to Keycloak's `providers` directory.
 
 3. Restart Keycloak to load the plugin.
 
-4. Configure the plugin using the realm attributes described in the Configuration Properties section above.
+4. Configure the plugin using the realm attributes described in the [Configuration Properties Section](README.md#configuration-properties)
 
 ### Configuring Keycloak's credential issuance to use the Status List protocol mapper
 
@@ -94,8 +91,10 @@ corresponding to a specific credential's configuration. Below is a sample such c
 
 ## Performance Considerations
 
-- The plugin performs HTTP requests using the bundled HTTP clients; calls are synchronous (blocking) in the current implementation and execute on the caller's thread.
-- **No retry mechanism** is used by default (retry count = 0) to ensure fast failure and avoid prolonged thread blocking. Some internal clients include retry strategies but the default configuration disables retries.
+- The plugin performs HTTP requests using the bundled HTTP clients; calls are synchronous (blocking) in the current
+  implementation and execute on the caller's thread.
+- **No retry mechanism** is used by default (retry count = 0) to ensure fast failure and avoid prolonged thread
+  blocking. Some internal clients include retry strategies but the default configuration disables retries.
 - Connection and read timeouts are **fixed at safe defaults** (30s connect, 60s read) to prevent hanging connections.
 
 ## Security Features
@@ -115,7 +114,7 @@ To check code formatting (Spotless), use:
 ./mvnw spotless:check
 ```
 
-To automatically format the code according to the configured rules, use:
+To automatically remove unused imports, use:
 
 ```bash
 ./mvnw spotless:apply

@@ -1,7 +1,16 @@
 package com.adorsys.keycloakstatuslist.service;
 
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
+
+import java.security.Key;
+import java.security.PublicKey;
+import java.util.List;
+import java.util.Objects;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
 import org.jboss.logging.Logger;
+import org.keycloak.common.VerificationException;
 import org.keycloak.crypto.KeyUse;
 import org.keycloak.crypto.KeyWrapper;
 import org.keycloak.crypto.SignatureProvider;
@@ -10,16 +19,10 @@ import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.sdjwt.IssuerSignedJWT;
 import org.keycloak.sdjwt.vp.SdJwtVP;
-import org.keycloak.common.VerificationException;
-
-import java.security.PublicKey;
-import java.util.List;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 /**
- * Service for retrieving Keycloak's internal verifying keys.
- * Leverages Keycloak's session and key management instead of external JWKS endpoints.
+ * Service for retrieving Keycloak's internal verifying keys. Leverages Keycloak's session and key
+ * management instead of external JWKS endpoints.
  */
 public class JwksService {
 
@@ -32,10 +35,11 @@ public class JwksService {
     }
 
     /**
-     * Retrieves all public keys from Keycloak's internal key management.
-     * This is more efficient than making HTTP requests to JWKS endpoints.
+     * Retrieves all public keys from Keycloak's internal key management. This is more efficient than
+     * making HTTP requests to JWKS endpoints.
      */
-    public List<PublicKey> getAllIssuerPublicKeys(SdJwtVP sdJwtVP, String issuer, String requestId) throws StatusListException {
+    public List<PublicKey> getAllIssuerPublicKeys(SdJwtVP sdJwtVP, String issuer, String requestId)
+            throws StatusListException {
         try {
             RealmModel realm = session.getContext().getRealm();
             var keyManager = session.keys();
@@ -53,7 +57,7 @@ public class JwksService {
             List<PublicKey> publicKeys = keyStream
                     .map(key -> {
                         try {
-                            java.security.Key keyValue = key.getPublicKey();
+                            Key keyValue = key.getPublicKey();
                             if (keyValue instanceof PublicKey) {
                                 PublicKey publicKey = (PublicKey) keyValue;
                                 logger.debugf("Retrieved public key: %s, algorithm: %s, kid: %s. RequestId: %s",
@@ -85,10 +89,11 @@ public class JwksService {
     }
 
     /**
-     * Creates signature verifier contexts directly from Keycloak's key management.
-     * This is the preferred approach as it avoids converting keys unnecessarily.
+     * Creates signature verifier contexts directly from Keycloak's key management. This is the
+     * preferred approach as it avoids converting keys unnecessarily.
      */
-    public List<SignatureVerifierContext> getSignatureVerifierContexts(SdJwtVP sdJwtVP, String issuer, String requestId) throws StatusListException {
+    public List<SignatureVerifierContext> getSignatureVerifierContexts(
+            SdJwtVP sdJwtVP, String issuer, String requestId) throws StatusListException {
         try {
             RealmModel realm = session.getContext().getRealm();
             var keyManager = session.keys();
@@ -118,7 +123,7 @@ public class JwksService {
                             return null;
                         }
                     })
-                    .filter(verifier -> verifier != null)
+                    .filter(Objects::nonNull)
                     .collect(Collectors.toList());
 
             logger.infof("Successfully created %d signature verifier contexts. RequestId: %s",
@@ -146,4 +151,4 @@ public class JwksService {
         }
         return null;
     }
-} 
+}

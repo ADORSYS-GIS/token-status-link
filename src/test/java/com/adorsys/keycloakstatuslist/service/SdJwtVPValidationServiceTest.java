@@ -1,18 +1,19 @@
 package com.adorsys.keycloakstatuslist.service;
 
+import static org.junit.jupiter.api.Assertions.*;
+
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.keycloak.crypto.SignatureVerifierContext;
-import org.keycloak.models.KeycloakSession;
-import org.keycloak.sdjwt.vp.SdJwtVP;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.security.PublicKey;
 
-import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.keycloak.crypto.AsymmetricSignatureVerifierContext;
+import org.keycloak.crypto.SignatureVerifierContext;
+import org.keycloak.models.KeycloakSession;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
  * Unit tests for SdJwtVPValidationService.
@@ -27,36 +28,13 @@ class SdJwtVPValidationServiceTest {
     private JwksService jwksService;
 
     @Mock
-    private org.keycloak.models.KeycloakContext context;
-
-    @Mock
-    private SdJwtVP sdJwtVP;
-
-    @Mock
     private PublicKey publicKey;
 
-    @Mock
-    private SignatureVerifierContext verifierContext;
-
-    private SdJwtVPValidationService service;
+    private DefaultSdJwtVPValidationService service;
 
     @BeforeEach
     void setUp() {
-        service = new SdJwtVPValidationService(session);
-
-        try {
-            // Inject mocked JwksService
-            java.lang.reflect.Field jwksField = SdJwtVPValidationService.class.getDeclaredField("jwksService");
-            jwksField.setAccessible(true);
-            jwksField.set(service, jwksService);
-
-            // Inject mocked session
-            java.lang.reflect.Field sessionField = SdJwtVPValidationService.class.getDeclaredField("session");
-            sessionField.setAccessible(true);
-            sessionField.set(service, session);
-        } catch (Exception e) {
-            fail("Failed to inject mocked dependencies: " + e.getMessage());
-        }
+        service = new DefaultSdJwtVPValidationService(session, jwksService);
     }
 
     @Test
@@ -102,7 +80,7 @@ class SdJwtVPValidationServiceTest {
 
         assertNotNull(result);
         // Verify it's the correct type
-        assertTrue(result instanceof org.keycloak.crypto.AsymmetricSignatureVerifierContext);
+        assertInstanceOf(AsymmetricSignatureVerifierContext.class, result);
     }
 
     @Test
@@ -111,7 +89,7 @@ class SdJwtVPValidationServiceTest {
         SignatureVerifierContext result = service.createSignatureVerifierContextFromPublicKey(publicKey, "ES256");
 
         assertNotNull(result);
-        assertTrue(result instanceof org.keycloak.crypto.AsymmetricSignatureVerifierContext);
+        assertInstanceOf(AsymmetricSignatureVerifierContext.class, result);
     }
 
     @Test
@@ -143,4 +121,4 @@ class SdJwtVPValidationServiceTest {
 
         assertTrue(exception.getMessage().contains("Failed to create signature verifier context from public key"));
     }
-} 
+}

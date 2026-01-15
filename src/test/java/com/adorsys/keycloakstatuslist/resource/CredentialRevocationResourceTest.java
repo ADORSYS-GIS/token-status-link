@@ -1,5 +1,9 @@
 package com.adorsys.keycloakstatuslist.resource;
 
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest;
 import com.adorsys.keycloakstatuslist.service.CredentialRevocationService;
@@ -18,11 +22,6 @@ import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.models.RealmModel;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-
-
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
 
 /**
  * Unit tests for CredentialRevocationResource.
@@ -98,7 +97,8 @@ class CredentialRevocationResourceTest {
 
         assertNotNull(response);
         assertEquals(200, response.getStatus());
-        verify(revocationService).revokeCredential(any(CredentialRevocationRequest.class), eq("test-token"));
+        verify(revocationService)
+                .revokeCredential(any(CredentialRevocationRequest.class), eq("test-token"));
     }
 
     @Test
@@ -160,28 +160,32 @@ class CredentialRevocationResourceTest {
     void testRevoke_ServiceThrowsException() throws Exception {
         mockRequest("test-credential-123", "Test revocation", "Bearer test-token");
 
-        doThrow(new StatusListException("Invalid token format")).when(revocationService)
+        doThrow(new StatusListException("Invalid token format"))
+                .when(revocationService)
                 .revokeCredential(any(CredentialRevocationRequest.class), anyString());
 
         Response response = resource.revoke();
 
         assertNotNull(response);
         assertEquals(200, response.getStatus());
-        verify(revocationService).revokeCredential(any(CredentialRevocationRequest.class), eq("test-token"));
+        verify(revocationService)
+                .revokeCredential(any(CredentialRevocationRequest.class), eq("test-token"));
     }
 
     @Test
     void testRevoke_ServiceThrowsRuntimeException() throws Exception {
         mockRequest("test-credential-123", "Test revocation", "Bearer test-token");
 
-        doThrow(new RuntimeException("Unexpected error")).when(revocationService)
+        doThrow(new RuntimeException("Unexpected error"))
+                .when(revocationService)
                 .revokeCredential(any(CredentialRevocationRequest.class), anyString());
 
         Response response = resource.revoke();
 
         assertNotNull(response);
         assertEquals(200, response.getStatus());
-        verify(revocationService).revokeCredential(any(CredentialRevocationRequest.class), eq("test-token"));
+        verify(revocationService)
+                .revokeCredential(any(CredentialRevocationRequest.class), eq("test-token"));
     }
 
     @Test
@@ -192,18 +196,21 @@ class CredentialRevocationResourceTest {
 
         assertNotNull(response);
         assertEquals(200, response.getStatus());
-        verify(revocationService).revokeCredential(any(CredentialRevocationRequest.class), eq("token-with-spaces"));
+        verify(revocationService)
+                .revokeCredential(any(CredentialRevocationRequest.class), eq("token-with-spaces"));
     }
 
     /**
-     * Testable version of CredentialRevocationResource that overrides the parent
-     * class behavior
-     * to avoid complex Keycloak setup requirements.
+     * Testable version of CredentialRevocationResource that overrides the parent class behavior to
+     * avoid complex Keycloak setup requirements.
      */
     private static class TestableCredentialRevocationResource extends CredentialRevocationResource {
         private final KeycloakSession session;
 
-        public TestableCredentialRevocationResource(KeycloakSession session, HttpHeaders headers, CredentialRevocationService revocationService) {
+        public TestableCredentialRevocationResource(
+                KeycloakSession session,
+                HttpHeaders headers,
+                CredentialRevocationService revocationService) {
             super(session, null, headers, revocationService);
             this.session = session;
         }
@@ -211,7 +218,8 @@ class CredentialRevocationResourceTest {
         @Override
         public Response revoke() {
             // Get the form parameters and authorization header directly
-            MultivaluedMap<String, String> form = session.getContext().getHttpRequest().getDecodedFormParameters();
+            MultivaluedMap<String, String> form =
+                    session.getContext().getHttpRequest().getDecodedFormParameters();
             String authorizationHeader = getHeaders().getHeaderString(HttpHeaders.AUTHORIZATION);
 
             if (authorizationHeader != null && authorizationHeader.toLowerCase().startsWith("bearer ")) {

@@ -1,14 +1,13 @@
 package com.adorsys.keycloakstatuslist.config;
 
+import java.util.UUID;
+
 import org.jboss.logging.Logger;
 import org.keycloak.models.RealmModel;
 
-import java.util.UUID;
-
 /**
- * Configuration holder for the Token Status plugin.
- * This class provides access to the plugin configuration, which can be set in
- * the Keycloak Admin Console.
+ * Configuration holder for the Token Status plugin. This class provides access to the plugin
+ * configuration, which can be set in the Keycloak Admin Console.
  */
 @SuppressWarnings("ClassCanBeRecord")
 public class StatusListConfig {
@@ -85,7 +84,8 @@ public class StatusListConfig {
         if (prefix == null) {
             prefix = UUID.randomUUID().toString();
             realm.setAttribute(STATUS_LIST_TOKEN_ISSUER_PREFIX, prefix);
-            logger.warnf("No token issuer prefix configured for realm %s. Using generated: %s",
+            logger.warnf(
+                    "No token issuer prefix configured for realm %s. Using generated: %s",
                     realm.getName(), prefix);
         }
 

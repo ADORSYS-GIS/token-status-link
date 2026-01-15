@@ -1,14 +1,15 @@
 package com.adorsys.keycloakstatuslist.client;
 
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
+import com.adorsys.keycloakstatuslist.exception.StatusListServerException;
 import com.adorsys.keycloakstatuslist.model.TokenStatusRecord;
 import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
 import org.jboss.logging.Logger;
 
 /**
- * Client for interacting with the status list server directly.
- * This can be used for testing or direct integrations.
+ * Client for interacting with the status list server directly. This can be used for testing or
+ * direct integrations.
  */
 public class StatusListClient {
 
@@ -44,6 +45,13 @@ public class StatusListClient {
         try {
             statusListService.publishRecord(statusRecord);
             return true;
+        } catch (StatusListServerException e) {
+            logger.errorf(
+                    "Error publishing record - server returned status code: %d, message: %s",
+                    e.getStatusCode(),
+                    e.getMessage(),
+                    e);
+            return false;
         } catch (StatusListException e) {
             logger.error("Error publishing record", e);
             return false;
@@ -51,8 +59,8 @@ public class StatusListClient {
     }
 
     /**
-     * Basic validation for backward compatibility with existing tests.
-     * This ensures the tests that expect IllegalArgumentException still work.
+     * Basic validation for backward compatibility with existing tests. This ensures the tests that
+     * expect IllegalArgumentException still work.
      */
     private void validateBasicFields(TokenStatusRecord statusRecord) {
         if (statusRecord.getCredentialId() == null || statusRecord.getCredentialId().isEmpty()) {
@@ -62,5 +70,4 @@ public class StatusListClient {
             throw new IllegalArgumentException("Issuer ID (iss) is required");
         }
     }
-
 }

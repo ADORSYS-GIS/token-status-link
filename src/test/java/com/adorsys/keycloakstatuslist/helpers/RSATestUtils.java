@@ -1,12 +1,5 @@
 package com.adorsys.keycloakstatuslist.helpers;
 
-import org.keycloak.common.util.Base64Url;
-import org.keycloak.crypto.KeyType;
-import org.keycloak.crypto.KeyWrapper;
-import org.keycloak.jose.jwk.JWK;
-import org.keycloak.jose.jwk.RSAPublicJWK;
-import org.keycloak.util.JWKSUtils;
-
 import java.math.BigInteger;
 import java.security.KeyFactory;
 import java.security.NoSuchAlgorithmException;
@@ -15,6 +8,13 @@ import java.security.spec.InvalidKeySpecException;
 import java.security.spec.RSAPrivateCrtKeySpec;
 import java.util.Objects;
 import java.util.function.Function;
+
+import org.keycloak.common.util.Base64Url;
+import org.keycloak.crypto.KeyType;
+import org.keycloak.crypto.KeyWrapper;
+import org.keycloak.jose.jwk.JWK;
+import org.keycloak.jose.jwk.RSAPublicJWK;
+import org.keycloak.util.JWKSUtils;
 
 /**
  * @author <a href="mailto:Ingrid.Kamga@adorsys.com">Ingrid Kamga</a>
@@ -28,7 +28,8 @@ public class RSATestUtils {
     private static final String JWK_SECRET_DQ_FIELD = "dq";
     private static final String JWK_SECRET_QI_FIELD = "qi";
 
-    public static KeyWrapper getRsaKeyWrapper(JWK jwk) throws NoSuchAlgorithmException, InvalidKeySpecException {
+    public static KeyWrapper getRsaKeyWrapper(JWK jwk)
+            throws NoSuchAlgorithmException, InvalidKeySpecException {
         if (!KeyType.RSA.equals(jwk.getKeyType())) {
             throw new IllegalArgumentException("Only RSA keys are supported");
         }
@@ -40,9 +41,10 @@ public class RSATestUtils {
         return keyWrapper;
     }
 
-    private static PrivateKey getRsaPrivateKey(JWK jwk) throws NoSuchAlgorithmException, InvalidKeySpecException {
-        Function<String, byte[]> getField = name
-                -> Base64Url.decode((String) jwk.getOtherClaims().get(name));
+    private static PrivateKey getRsaPrivateKey(JWK jwk)
+            throws NoSuchAlgorithmException, InvalidKeySpecException {
+        Function<String, byte[]> getField =
+                name -> Base64Url.decode((String) jwk.getOtherClaims().get(name));
 
         BigInteger n = new BigInteger(1, getField.apply(RSAPublicJWK.MODULUS));
         BigInteger e = new BigInteger(1, getField.apply(RSAPublicJWK.PUBLIC_EXPONENT));

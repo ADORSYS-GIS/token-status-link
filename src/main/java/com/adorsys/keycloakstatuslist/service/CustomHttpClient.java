@@ -1,5 +1,7 @@
 package com.adorsys.keycloakstatuslist.service;
 
+import java.io.IOException;
+
 import org.apache.hc.client5.http.HttpRequestRetryStrategy;
 import org.apache.hc.client5.http.config.RequestConfig;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
@@ -10,8 +12,6 @@ import org.apache.hc.core5.http.protocol.HttpContext;
 import org.apache.hc.core5.util.TimeValue;
 import org.apache.hc.core5.util.Timeout;
 import org.jboss.logging.Logger;
-
-import java.io.IOException;
 
 public class CustomHttpClient {
 
@@ -57,8 +57,10 @@ public class CustomHttpClient {
 
         return new HttpRequestRetryStrategy() {
             @Override
-            public boolean retryRequest(HttpRequest httpRequest, IOException e, int execCount, HttpContext httpContext) {
-                logger.warnf("[Attempt %d/%d] Error sending status: %s", execCount, maxRetries, e.getMessage());
+            public boolean retryRequest(
+                    HttpRequest httpRequest, IOException e, int execCount, HttpContext httpContext) {
+                logger.warnf(
+                        "[Attempt %d/%d] Error sending status: %s", execCount, maxRetries, e.getMessage());
                 return execCount <= maxRetries;
             }
 
@@ -67,14 +69,16 @@ public class CustomHttpClient {
                 int status = response.getCode();
                 Boolean isRetriable = status >= 500;
                 if (isRetriable) {
-                    logger.warnf("[Attempt %d/%d] Failed to send status. Response: %d %s",
+                    logger.warnf(
+                            "[Attempt %d/%d] Failed to send status. Response: %d %s",
                             execCount, maxRetries, status, response.getReasonPhrase());
                 }
                 return execCount <= maxRetries && isRetriable;
             }
 
             @Override
-            public TimeValue getRetryInterval(HttpResponse httpResponse, int execCount, HttpContext httpContext) {
+            public TimeValue getRetryInterval(
+                    HttpResponse httpResponse, int execCount, HttpContext httpContext) {
                 // Exponential backoff: 1s, 2s, 4s
                 return TimeValue.ofSeconds((long) Math.pow(2, execCount - 1));
             }
