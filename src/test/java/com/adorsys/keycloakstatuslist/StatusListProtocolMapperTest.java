@@ -225,28 +225,24 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         long idx = mockEntityPersist();
         String expectedUri = TEST_SERVER_URL + "statuslists/" + TEST_REALM_ID;
         
-        // Simulate slow HTTP call (but don't actually wait - just verify fallback works)
-        doThrow(new StatusListException("Server slow response"))
-                .when(statusListService)
-                .registerAndPublishStatus(anyString(), anyLong());
-        
+        // Mock URI retrieval (called synchronously)
         when(statusListService.getStatusListUri(TEST_REALM_ID))
                 .thenReturn(expectedUri);
 
-        // Act - should return quickly even if HTTP is slow
+        // Act - should return quickly even if HTTP is slow (HTTP happens async in background)
         long startTime = System.currentTimeMillis();
         mapper.setClaimsForSubject(claims, userSession);
         long duration = System.currentTimeMillis() - startTime;
 
-        // Assert - token issuance completed (with fallback)
+        // Assert - token issuance completed immediately (async HTTP doesn't block)
         assertThat(claims.keySet(), hasItem(Constants.STATUS_CLAIM_KEY));
-        assertThat("Should complete quickly (fallback used)", duration, lessThan(1000L));
+        assertThat("Should complete quickly (async HTTP)", duration, lessThan(1000L));
         
         // Verify the returned status has the correct index
         Status status = (Status) claims.get(Constants.STATUS_CLAIM_KEY);
         assertThat(status.getStatusList().getIdx(), equalTo(idx));
         
-        // Verify fallback was used
+        // Verify URI was retrieved synchronously
         verify(statusListService).getStatusListUri(TEST_REALM_ID);
     }
 
