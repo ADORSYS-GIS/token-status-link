@@ -64,11 +64,10 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
     void shouldMapSuccessfully_WhenStatusIsSent() throws Exception {
         long idx = mockEntityPersist();
         
-        // Mock the service to return a Status with the expected URI
+        // Mock getStatusListUri which is now called synchronously
         String expectedUri = TEST_SERVER_URL + "statuslists/" + TEST_REALM_ID;
-        Status expectedStatus = new Status(new StatusListClaim(idx, expectedUri));
-        when(statusListService.registerAndPublishStatus(TEST_REALM_ID, idx))
-                .thenReturn(expectedStatus);
+        when(statusListService.getStatusListUri(TEST_REALM_ID))
+                .thenReturn(expectedUri);
 
         // Act
         mapper.setClaimsForSubject(claims, userSession);
@@ -79,8 +78,8 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         Status status = (Status) claims.get(Constants.STATUS_CLAIM_KEY);
         assertThat(status.getStatusList(), equalTo(new StatusListClaim(idx, expectedUri)));
 
-        // Verify service was called with correct parameters
-        verify(statusListService).registerAndPublishStatus(TEST_REALM_ID, idx);
+        // Verify URI was retrieved
+        verify(statusListService).getStatusListUri(TEST_REALM_ID);
     }
 
     @Test
@@ -123,34 +122,25 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         long idx = mockEntityPersist();
         String expectedUri = TEST_SERVER_URL + "statuslists/" + TEST_REALM_ID;
         
-        // Mock HTTP failure
-        doThrow(new StatusListException("Server not reachable"))
-                .when(statusListService)
-                .registerAndPublishStatus(anyString(), anyLong());
-        
-        // Mock fallback URI retrieval
+        // Mock URI retrieval (always called synchronously to create Status)
         when(statusListService.getStatusListUri(TEST_REALM_ID))
                 .thenReturn(expectedUri);
 
         // Act
         mapper.setClaimsForSubject(claims, userSession);
 
-        // Assert - token issuance should proceed even if HTTP fails
-        // The mapper returns a Status with the stored index and URI
+        // Assert - token issuance should proceed immediately in optional mode
+        // The mapper returns a Status immediately without waiting for HTTP
         assertThat(
-                "Claims should be mapped even when HTTP fails", 
+                "Claims should be mapped immediately (async HTTP)", 
                 claims.keySet(), hasItem(Constants.STATUS_CLAIM_KEY));
         assertInstanceOf(Status.class, claims.get(Constants.STATUS_CLAIM_KEY));
         Status status = (Status) claims.get(Constants.STATUS_CLAIM_KEY);
         assertThat(status.getStatusList(), equalTo(new StatusListClaim(idx, expectedUri)));
         
-        // Verify HTTP was attempted
-        verify(statusListService).registerAndPublishStatus(TEST_REALM_ID, idx);
-        // Verify fallback was used
+        // Verify URI was retrieved synchronously
         verify(statusListService).getStatusListUri(TEST_REALM_ID);
-        // Verify error was logged
-        assertThat(logCaptor.getErrorLogs(), 
-                hasItem(containsString("Failed to publish status to server")));
+        // HTTP happens asynchronously in background, so we don't verify it here
     }
 
     @Test
@@ -159,33 +149,25 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         long idx = mockEntityPersist();
         String expectedUri = TEST_SERVER_URL + "statuslists/" + TEST_REALM_ID;
         
-        // Mock circuit breaker open exception (wrapped in StatusListException)
-        doThrow(new StatusListException("Circuit breaker is open: Circuit breaker 'test' is OPEN. Failing fast."))
-                .when(statusListService)
-                .registerAndPublishStatus(anyString(), anyLong());
-        
-        // Mock fallback URI retrieval
+        // Mock URI retrieval (always called synchronously)
         when(statusListService.getStatusListUri(TEST_REALM_ID))
                 .thenReturn(expectedUri);
 
         // Act
         mapper.setClaimsForSubject(claims, userSession);
 
-        // Assert - token issuance should proceed even when circuit breaker is open
+        // Assert - token issuance should proceed immediately even when circuit breaker is open
+        // In optional mode, HTTP happens asynchronously, so circuit breaker doesn't block
         assertThat(
-                "Claims should be mapped even when circuit breaker is open", 
+                "Claims should be mapped immediately (async HTTP)", 
                 claims.keySet(), hasItem(Constants.STATUS_CLAIM_KEY));
         assertInstanceOf(Status.class, claims.get(Constants.STATUS_CLAIM_KEY));
         Status status = (Status) claims.get(Constants.STATUS_CLAIM_KEY);
         assertThat(status.getStatusList(), equalTo(new StatusListClaim(idx, expectedUri)));
         
-        // Verify HTTP was attempted (circuit breaker check happens in HTTP client)
-        verify(statusListService).registerAndPublishStatus(TEST_REALM_ID, idx);
-        // Verify fallback was used
+        // Verify URI was retrieved
         verify(statusListService).getStatusListUri(TEST_REALM_ID);
-        // Verify error was logged
-        assertThat(logCaptor.getErrorLogs(), 
-                hasItem(containsString("Failed to publish status to server")));
+        // HTTP happens asynchronously in background
     }
 
     @Test
@@ -194,64 +176,47 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         long idx = mockEntityPersist();
         String expectedUri = TEST_SERVER_URL + "statuslists/" + TEST_REALM_ID;
         
-        // Mock HTTP timeout (simulating slow server)
-        doThrow(new StatusListException("Timeout publishing status list", 
-                new java.io.InterruptedIOException("Read timed out")))
-                .when(statusListService)
-                .registerAndPublishStatus(anyString(), anyLong());
-        
-        // Mock fallback URI retrieval
+        // Mock URI retrieval (always called synchronously)
         when(statusListService.getStatusListUri(TEST_REALM_ID))
                 .thenReturn(expectedUri);
 
         // Act
         mapper.setClaimsForSubject(claims, userSession);
 
-        // Assert - token issuance should proceed even when HTTP times out
+        // Assert - token issuance should proceed immediately (async HTTP means no timeout blocking)
         assertThat(
-                "Claims should be mapped even when HTTP times out", 
+                "Claims should be mapped immediately (async HTTP)", 
                 claims.keySet(), hasItem(Constants.STATUS_CLAIM_KEY));
         assertInstanceOf(Status.class, claims.get(Constants.STATUS_CLAIM_KEY));
         Status status = (Status) claims.get(Constants.STATUS_CLAIM_KEY);
         assertThat(status.getStatusList(), equalTo(new StatusListClaim(idx, expectedUri)));
         
-        // Verify HTTP was attempted
-        verify(statusListService).registerAndPublishStatus(TEST_REALM_ID, idx);
-        // Verify fallback was used
+        // Verify URI was retrieved
         verify(statusListService).getStatusListUri(TEST_REALM_ID);
-        // Verify timeout error was logged
-        assertThat(logCaptor.getErrorLogs(), 
-                hasItem(containsString("Failed to publish status to server")));
+        // HTTP timeout happens asynchronously in background, doesn't affect token issuance
     }
 
     @Test
     void shouldCompleteTransaction_BeforeHttpCall() throws Exception {
         long idx = mockEntityPersist();
         String expectedUri = TEST_SERVER_URL + "statuslists/" + TEST_REALM_ID;
-        Status expectedStatus = new Status(new StatusListClaim(idx, expectedUri));
         
-        // Use Answer to verify transaction completes before HTTP call
-        when(statusListService.registerAndPublishStatus(TEST_REALM_ID, idx))
-                .thenAnswer(invocation -> {
-                    // Verify entity was already persisted (transaction completed)
-                    verify(entityManager, atLeastOnce()).persist(any(StatusListMappingEntity.class));
-                    verify(entityManager, atLeastOnce()).flush();
-                    return expectedStatus;
-                });
+        // Mock URI retrieval
+        when(statusListService.getStatusListUri(TEST_REALM_ID))
+                .thenReturn(expectedUri);
 
         // Act
         mapper.setClaimsForSubject(claims, userSession);
 
-        // Assert
+        // Assert - transaction completes and Status is created before returning
         assertThat(claims.keySet(), hasItem(Constants.STATUS_CLAIM_KEY));
         Status status = (Status) claims.get(Constants.STATUS_CLAIM_KEY);
         assertThat(status.getStatusList(), equalTo(new StatusListClaim(idx, expectedUri)));
         
-        // Verify order: DB operations complete before HTTP call
-        // The Answer above already verified this, but we can also check the sequence
+        // Verify DB operations completed
         verify(entityManager).persist(any(StatusListMappingEntity.class));
         verify(entityManager).flush();
-        verify(statusListService).registerAndPublishStatus(TEST_REALM_ID, idx);
+        // HTTP call happens asynchronously after transaction and return
     }
 
     @Test
@@ -316,7 +281,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
                 .registerAndPublishStatus(anyString(), anyLong());
 
         assertThrows(RuntimeException.class, () -> mapper.setClaimsForSubject(claims, userSession));
-        assertThat(logCaptor.getErrorLogs(), hasItem(containsString("Status list is mandatory and publication failed; failing issuance")));
+        assertThat(logCaptor.getErrorLogs(), hasItem(containsString("Failing token issuance as status list is mandatory")));
     }
 
     private void mockDefaultRealmConfig() {

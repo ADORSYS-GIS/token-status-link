@@ -11,8 +11,6 @@ import com.adorsys.keycloakstatuslist.service.CryptoIdentityService;
 import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
 import jakarta.persistence.EntityManager;
-
-import jakarta.ws.rs.core.UriBuilder;
 import org.jboss.logging.Logger;
 import org.keycloak.connections.jpa.JpaConnectionProvider;
 import org.keycloak.models.KeycloakSession;
@@ -24,12 +22,13 @@ import org.keycloak.protocol.oid4vc.issuance.mappers.OID4VCMapper;
 import org.keycloak.protocol.oid4vc.model.VerifiableCredential;
 import org.keycloak.provider.ProviderConfigProperty;
 
-import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
@@ -59,11 +58,6 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         String ID_CLAIM_KEY = "id";
         String STATUS_CLAIM_KEY = "status";
         String TOKEN_STATUS_VALID = "VALID";
-
-        String HTTP_ENDPOINT_RETRIEVE_PATH = "/statuslists/%s";
-        String HTTP_ENDPOINT_PUBLISH_PATH = "/statuslists/publish";
-        String HTTP_ENDPOINT_UPDATE_PATH = "/statuslists/update";
-        String BEARER_PREFIX = "Bearer ";
     }
 
     public StatusListProtocolMapper() {
@@ -189,10 +183,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         Map<String, String> mapperConfig = mapperModel.getConfig();
         String listId = mapperConfig.getOrDefault(Constants.CONFIG_LIST_ID_PROPERTY, realmId);
 
-        URI uri = UriBuilder.fromUri(serverUrl)
-                .path(String.format(Constants.HTTP_ENDPOINT_RETRIEVE_PATH, listId))
-                .build();
-        logger.debugf("Configuration: listId=%s, uri=%s", listId, uri);
+        logger.debugf("Configuration: listId=%s", listId);
 
 
         // Get credential ID
@@ -280,27 +271,74 @@ public class StatusListProtocolMapper extends OID4VCMapper {
             return null;
         }
 
-        // 2. HTTP call - OUTSIDE transaction (after commit)
-        try {
-            Status publishedStatus = statusListService.registerAndPublishStatus(
-                    statusListId, generatedIdx.get());
-            return publishedStatus;
-        } catch (Exception e) {
-            logger.errorf(
-                    "Failed to publish status to server for listId: %s, index: %d. " +
-                            "Index is stored in DB, but status list server update failed. " +
-                            "Token issuance will proceed with stored index: %s",
-                    statusListId, generatedIdx.get(), e.getMessage(), e);
+        long index = generatedIdx.get();
+        String uri = statusListService.getStatusListUri(statusListId);
+        
+        StatusListClaim statusList = new StatusListClaim(index, uri);
+        Status status = new Status(statusList);
 
-            if (config.isMandatory()) {
-                logger.error("Status list is mandatory and publication failed; failing issuance");
-                throw new RuntimeException("Status list publication failed and is mandatory", e);
-            }
-
-            String uri = statusListService.getStatusListUri(statusListId);
-            StatusListClaim statusList = new StatusListClaim(generatedIdx.get(), uri);
-            return new Status(statusList);
+        if (config.isMandatory()) {
+            return publishStatusSynchronously(statusListId, index, status, config);
+        } else {
+            publishStatusAsynchronously(statusListId, index);
+            return status;
         }
+    }
+
+    /**
+     * Publishes status synchronously with timeout for mandatory mode.
+     * This ensures we wait for HTTP but with a reasonable timeout.
+     */
+    private Status publishStatusSynchronously(String statusListId, long index, Status fallbackStatus, 
+                                            StatusListConfig config) {
+        try {
+            CompletableFuture<Status> future = CompletableFuture.supplyAsync(() -> {
+                try {
+                    return statusListService.registerAndPublishStatus(statusListId, index);
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
+            });
+
+            Status publishedStatus = future.get(5, TimeUnit.SECONDS);
+            logger.debugf("Successfully published status synchronously for mandatory mode: listId=%s, index=%d", 
+                    statusListId, index);
+            return publishedStatus;
+            
+        } catch (Exception e) {
+            logger.errorf(e,
+                    "Failed to publish status synchronously for listId: %s, index: %d (mandatory mode). " +
+                    "Failing token issuance as status list is mandatory.",
+                    statusListId, index);
+            throw new RuntimeException("Status list publication failed and is mandatory", e);
+        }
+    }
+
+    /**
+     * Publishes status asynchronously without blocking token issuance.
+     * Errors are logged but don't affect token issuance.
+     */
+    private void publishStatusAsynchronously(String statusListId, long index) {
+        CompletableFuture.runAsync(() -> {
+            try {
+                statusListService.registerAndPublishStatus(statusListId, index);
+                logger.debugf("Successfully published status asynchronously: listId=%s, index=%d", 
+                        statusListId, index);
+            } catch (Exception e) {
+                logger.warnf(e,
+                        "Failed to publish status asynchronously for listId: %s, index: %d. " +
+                        "Index is stored in DB. Status list server can sync later. Error: %s",
+                        statusListId, index, e.getMessage());
+            }
+        }).exceptionally(throwable -> {
+            logger.errorf(throwable,
+                    "Unexpected error in async status publication for listId: %s, index: %d",
+                    statusListId, index);
+            return null;
+        });
+        
+        logger.debugf("Async status publication queued for listId=%s, index=%d. Token issuance proceeding immediately.",
+                statusListId, index);
     }
 
 }
