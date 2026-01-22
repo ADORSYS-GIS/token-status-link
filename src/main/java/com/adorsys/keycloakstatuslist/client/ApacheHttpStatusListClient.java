@@ -5,6 +5,7 @@ import com.adorsys.keycloakstatuslist.exception.StatusListServerException;
 import com.adorsys.keycloakstatuslist.model.TokenStatusRecord;
 import com.adorsys.keycloakstatuslist.service.CircuitBreaker;
 import com.adorsys.keycloakstatuslist.service.StatusListService.StatusListPayload;
+import com.adorsys.keycloakstatuslist.util.HttpStatusCode;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
@@ -12,6 +13,8 @@ import org.apache.hc.client5.http.classic.methods.HttpGet;
 import org.apache.hc.client5.http.classic.methods.HttpPatch;
 import org.apache.hc.client5.http.classic.methods.HttpPost;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.core5.http.ClassicHttpResponse;
+import org.apache.hc.core5.http.ParseException;
 import org.apache.hc.core5.http.io.entity.EntityUtils;
 import org.apache.hc.core5.http.io.entity.StringEntity;
 import org.jboss.logging.Logger;
@@ -70,7 +73,7 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
         
         try {
             String jsonPayload = objectMapper.writeValueAsString(statusRecord);
-            logger.debug("Request ID: " + requestId + ", Publishing record for credentialId: " + credentialId);
+            logger.debugf("Request ID: %s, Publishing record for credentialId: %s", requestId, credentialId);
             
             HttpPost httpPost = new HttpPost(serverUrl + CREDENTIALS_PATH);
             httpPost.setHeader("Content-Type", "application/json");
@@ -81,45 +84,17 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
                 httpPost.setHeader("Authorization", "Bearer " + authToken);
             }
             
-            httpClient.execute(httpPost, response -> {
-                int statusCode = response.getCode();
-                String responseBody = EntityUtils.toString(response.getEntity());
-                if (statusCode >= 200 && statusCode < 300 || statusCode == 409) {
-                    logger.info("Request ID: " + requestId + ", Successfully published record for credentialId: "
-                            + credentialId +
-                            (statusCode == 409 ? " (already registered)" : ""));
-                    recordSuccess();
-                    return null;
-                } else {
-                    logger.error("Request ID: " + requestId + ", Failed to publish record for credentialId: "
-                            + credentialId +
-                            ". Status code: " + statusCode + ", Response: " + responseBody);
-                    recordFailure();
-                    throw new IllegalStateException(new StatusListServerException(
-                            "Failed to publish record for credentialId: " + credentialId + ". Status code: "
-                                    + statusCode,
-                            statusCode));
-                }
-            });
+            httpClient.execute(httpPost, response -> handleVoidResponse(
+                    response, requestId,
+                    "Successfully published record for credentialId: " + credentialId,
+                    "Failed to publish record for credentialId: " + credentialId,
+                    true));
             
-        } catch (InterruptedIOException e) {
-            recordTimeout();
-            logger.error("Request ID: " + requestId + ", Timeout publishing record for credentialId: " + credentialId +
-                    ": " + e.getMessage(), e);
-            throw new StatusListException("Timeout publishing record for credentialId: " + credentialId, e);
-        } catch (IOException e) {
-            recordFailure();
-            logger.error("Request ID: " + requestId + ", Failed to publish record for credentialId: " + credentialId +
-                    ": " + e.getMessage(), e);
-            throw new StatusListException("Failed to publish record for credentialId: " + credentialId, e);
         } catch (Exception e) {
-            if (e.getCause() instanceof StatusListServerException serverException) {
-                throw serverException;
-            }
-            recordFailure();
-            logger.error("Request ID: " + requestId + ", Unexpected error publishing record for credentialId: " + credentialId +
-                    ": " + e.getMessage(), e);
-            throw new StatusListException("Unexpected error publishing record for credentialId: " + credentialId, e);
+            handleException(e, requestId, "publishing record for credentialId: " + credentialId,
+                    "Timeout publishing record for credentialId: " + credentialId,
+                    "Failed to publish record for credentialId: " + credentialId,
+                    "Unexpected error publishing record for credentialId: " + credentialId);
         }
     }
     
@@ -132,7 +107,7 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
         
         try {
             String jsonPayload = objectMapper.writeValueAsString(statusRecord);
-            logger.debug("Request ID: " + requestId + ", Updating record for credentialId: " + credentialId);
+            logger.debugf("Request ID: %s, Updating record for credentialId: %s", requestId, credentialId);
             
             HttpPatch httpPatch = new HttpPatch(serverUrl + CREDENTIALS_PATH);
             httpPatch.setHeader("Content-Type", "application/json");
@@ -143,41 +118,17 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
                 httpPatch.setHeader("Authorization", "Bearer " + authToken);
             }
             
-            httpClient.execute(httpPatch, response -> {
-                int statusCode = response.getCode();
-                String responseBody = EntityUtils.toString(response.getEntity());
-                if (statusCode >= 200 && statusCode < 300) {
-                    logger.info("Request ID: " + requestId + ", Successfully updated record for credentialId: " + credentialId);
-                    recordSuccess();
-                    return null;
-                } else {
-                    logger.error("Request ID: " + requestId + ", Failed to update record for credentialId: " + credentialId +
-                            ". Status code: " + statusCode + ", Response: " + responseBody);
-                    recordFailure();
-                    throw new IllegalStateException(new StatusListServerException(
-                            "Failed to update record for credentialId: " + credentialId + ". Status code: " + statusCode,
-                            statusCode));
-                }
-            });
+            httpClient.execute(httpPatch, response -> handleVoidResponse(
+                    response, requestId,
+                    "Successfully updated record for credentialId: " + credentialId,
+                    "Failed to update record for credentialId: " + credentialId,
+                    false));
             
-        } catch (InterruptedIOException e) {
-            recordTimeout();
-            logger.error("Request ID: " + requestId + ", Timeout updating record for credentialId: " + credentialId +
-                    ": " + e.getMessage(), e);
-            throw new StatusListException("Timeout updating record for credentialId: " + credentialId, e);
-        } catch (IOException e) {
-            recordFailure();
-            logger.error("Request ID: " + requestId + ", Failed to update record for credentialId: " + credentialId +
-                    ": " + e.getMessage(), e);
-            throw new StatusListException("Failed to update record for credentialId: " + credentialId, e);
         } catch (Exception e) {
-            if (e.getCause() instanceof StatusListServerException serverException) {
-                throw serverException;
-            }
-            recordFailure();
-            logger.error("Request ID: " + requestId + ", Unexpected error updating record for credentialId: " + credentialId +
-                    ": " + e.getMessage(), e);
-            throw new StatusListException("Unexpected error updating record for credentialId: " + credentialId, e);
+            handleException(e, requestId, "updating record for credentialId: " + credentialId,
+                    "Timeout updating record for credentialId: " + credentialId,
+                    "Failed to update record for credentialId: " + credentialId,
+                    "Unexpected error updating record for credentialId: " + credentialId);
         }
     }
     
@@ -186,7 +137,7 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
         checkCircuitBreaker();
         
         String requestId = UUID.randomUUID().toString();
-        logger.info("Request ID: " + requestId + ", Registering issuer: " + issuerId + " with server: " + serverUrl);
+        logger.infof("Request ID: %s, Registering issuer: %s with server: %s", requestId, issuerId, serverUrl);
         
         TokenStatusRecord issuerRecord = new TokenStatusRecord();
         issuerRecord.setIssuer(issuerId);
@@ -194,7 +145,7 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
         
         try {
             String jsonPayload = objectMapper.writeValueAsString(issuerRecord);
-            logger.debug("Request ID: " + requestId + ", Registering issuer: " + issuerId + ", Payload: " + jsonPayload);
+            logger.debugf("Request ID: %s, Registering issuer: %s, Payload: %s", requestId, issuerId, jsonPayload);
             
             HttpPost httpPost = new HttpPost(serverUrl + CREDENTIALS_PATH);
             httpPost.setHeader("Content-Type", "application/json");
@@ -202,48 +153,23 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
             httpPost.setEntity(new StringEntity(jsonPayload));
             
             httpClient.execute(httpPost, response -> {
-                int statusCode = response.getCode();
-                String responseBody = EntityUtils.toString(response.getEntity());
                 String responseHeaders = response.getHeaders().toString();
+                logger.debugf("Request ID: %s, Received response: Status code: %d, Headers: %s, Body: %s", 
+                        requestId, response.getCode(), responseHeaders, 
+                        (response.getEntity() != null ? "present" : "empty"));
                 
-                logger.debug("Request ID: " + requestId + ", Received response: Status code: " + statusCode +
-                        ", Headers: " + responseHeaders + ", Body: " + responseBody);
-                
-                if (statusCode >= 200 && statusCode < 300 || statusCode == 409) {
-                    logger.info("Request ID: " + requestId + ", Successfully registered issuer: " + issuerId +
-                            (statusCode == 409 ? " (already registered)" : ""));
-                    recordSuccess();
-                    return Boolean.TRUE;
-                } else {
-                    recordFailure();
-                    throw new IllegalStateException(new StatusListServerException(
-                            "Failed to register issuer: " + issuerId +
-                                    ", Status code: " + statusCode +
-                                    ", Response: " + responseBody,
-                            statusCode));
-                }
+                handleResponse(response, requestId,
+                        "Successfully registered issuer: " + issuerId,
+                        "Failed to register issuer: " + issuerId,
+                        true);
+                return Boolean.TRUE;
             });
             
-        } catch (InterruptedIOException e) {
-            recordTimeout();
-            logger.error("Request ID: " + requestId + ", Timeout registering issuer: " + issuerId +
-                    ": " + e.getMessage() + ", Server URL: " + serverUrl, e);
-            throw new StatusListException("Timeout registering issuer: " + issuerId +
-                    ", Server URL: " + serverUrl, e);
-        } catch (IOException e) {
-            recordFailure();
-            logger.error("Request ID: " + requestId + ", Failed to register issuer: " + issuerId +
-                    ": " + e.getMessage() + ", Server URL: " + serverUrl, e);
-            throw new StatusListException("Failed to register issuer: " + issuerId +
-                    ", Server URL: " + serverUrl, e);
         } catch (Exception e) {
-            if (e.getCause() instanceof StatusListServerException serverException) {
-                throw serverException;
-            }
-            recordFailure();
-            logger.error("Request ID: " + requestId + ", Unexpected error registering issuer: " + issuerId +
-                    ": " + e.getMessage(), e);
-            throw new StatusListException("Unexpected error registering issuer: " + issuerId, e);
+            handleException(e, requestId, "registering issuer: " + issuerId,
+                    "Timeout registering issuer: " + issuerId + ", Server URL: " + serverUrl,
+                    "Failed to register issuer: " + issuerId + ", Server URL: " + serverUrl,
+                    "Unexpected error registering issuer: " + issuerId);
         }
     }
     
@@ -252,48 +178,21 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
         checkCircuitBreaker();
         
         String requestId = UUID.randomUUID().toString();
-        logger.debug("Request ID: " + requestId + ", Checking if status list exists: " + statusListId);
+        logger.debugf("Request ID: %s, Checking if status list exists: %s", requestId, statusListId);
         
         HttpGet httpGet = new HttpGet(serverUrl + STATUS_LISTS_PATH + "/" + statusListId);
         httpGet.setHeader("X-Request-ID", requestId);
         
         try {
-            return httpClient.execute(httpGet, response -> {
-                int statusCode = response.getCode();
-                if (statusCode == 200) {
-                    logger.info("Request ID: " + requestId + ", Status list " + statusListId + " exists.");
-                    recordSuccess();
-                    return true;
-                } else if (statusCode == 404) {
-                    logger.info("Request ID: " + requestId + ", Status list " + statusListId + " does not exist.");
-                    recordSuccess();
-                    return false;
-                } else {
-                    String responseBody = EntityUtils.toString(response.getEntity());
-                    logger.error("Request ID: " + requestId + ", Failed to check status list " + statusListId +
-                            ". Status code: " + statusCode + ", Response: " + responseBody);
-                    recordFailure();
-                    throw new IllegalStateException(new StatusListServerException(
-                            "Failed to check status list " + statusListId + ". Status code: " + statusCode,
-                            statusCode));
-                }
-            });
+            return httpClient.execute(httpGet, response -> 
+                    handleStatusListExistsResponse(response, requestId, statusListId));
             
-        } catch (InterruptedIOException e) {
-            recordTimeout();
-            logger.error("Request ID: " + requestId + ", Timeout checking status list " + statusListId + ": " + e.getMessage(), e);
-            throw new StatusListException("Timeout checking status list " + statusListId, e);
-        } catch (IOException e) {
-            recordFailure();
-            logger.error("Request ID: " + requestId + ", Error checking status list " + statusListId + ": " + e.getMessage(), e);
-            throw new StatusListException("Error checking status list " + statusListId, e);
         } catch (Exception e) {
-            if (e.getCause() instanceof StatusListServerException serverException) {
-                throw serverException;
-            }
-            recordFailure();
-            logger.error("Request ID: " + requestId + ", Unexpected error checking status list " + statusListId + ": " + e.getMessage(), e);
-            throw new StatusListException("Unexpected error checking status list " + statusListId, e);
+            handleException(e, requestId, "checking status list " + statusListId,
+                    "Timeout checking status list " + statusListId,
+                    "Error checking status list " + statusListId,
+                    "Unexpected error checking status list " + statusListId);
+            return false;
         }
     }
     
@@ -302,7 +201,7 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
         checkCircuitBreaker();
         
         String listId = payload.listId();
-        logger.debug("Request ID: " + requestId + ", Publishing new status list: " + listId);
+        logger.debugf("Request ID: %s, Publishing new status list: %s", requestId, listId);
         
         try {
             String jsonPayload = objectMapper.writeValueAsString(payload);
@@ -315,38 +214,17 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
                 httpPost.setHeader("Authorization", "Bearer " + authToken);
             }
             
-            httpClient.execute(httpPost, response -> {
-                int statusCode = response.getCode();
-                if (statusCode >= 200 && statusCode < 300) {
-                    logger.info("Request ID: " + requestId + ", Successfully published status list: " + listId);
-                    recordSuccess();
-                    return null;
-                } else {
-                    String responseBody = EntityUtils.toString(response.getEntity());
-                    logger.error("Request ID: " + requestId + ", Failed to publish status list " + listId +
-                            ". Status code: " + statusCode + ", Response: " + responseBody);
-                    recordFailure();
-                    throw new IllegalStateException(new StatusListServerException(
-                            "Failed to publish status list " + listId + ". Status code: " + statusCode,
-                            statusCode));
-                }
-            });
+            httpClient.execute(httpPost, response -> handleVoidResponse(
+                    response, requestId,
+                    "Successfully published status list: " + listId,
+                    "Failed to publish status list " + listId,
+                    false));
             
-        } catch (InterruptedIOException e) {
-            recordTimeout();
-            logger.error("Request ID: " + requestId + ", Timeout publishing status list " + listId + ": " + e.getMessage(), e);
-            throw new StatusListException("Timeout publishing status list " + listId, e);
-        } catch (IOException e) {
-            recordFailure();
-            logger.error("Request ID: " + requestId + ", Error publishing status list " + listId + ": " + e.getMessage(), e);
-            throw new StatusListException("Error publishing status list " + listId, e);
         } catch (Exception e) {
-            if (e.getCause() instanceof StatusListServerException serverException) {
-                throw serverException;
-            }
-            recordFailure();
-            logger.error("Request ID: " + requestId + ", Unexpected error publishing status list " + listId + ": " + e.getMessage(), e);
-            throw new StatusListException("Unexpected error publishing status list " + listId, e);
+            handleException(e, requestId, "publishing status list " + listId,
+                    "Timeout publishing status list " + listId,
+                    "Error publishing status list " + listId,
+                    "Unexpected error publishing status list " + listId);
         }
     }
     
@@ -355,7 +233,7 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
         checkCircuitBreaker();
         
         String listId = payload.listId();
-        logger.debug("Request ID: " + requestId + ", Updating existing status list: " + listId);
+        logger.debugf("Request ID: %s, Updating existing status list: %s", requestId, listId);
         
         try {
             String jsonPayload = objectMapper.writeValueAsString(payload);
@@ -368,38 +246,17 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
                 httpPatch.setHeader("Authorization", "Bearer " + authToken);
             }
             
-            httpClient.execute(httpPatch, response -> {
-                int statusCode = response.getCode();
-                if (statusCode >= 200 && statusCode < 300) {
-                    logger.info("Request ID: " + requestId + ", Successfully updated status list: " + listId);
-                    recordSuccess();
-                    return null;
-                } else {
-                    String responseBody = EntityUtils.toString(response.getEntity());
-                    logger.error("Request ID: " + requestId + ", Failed to update status list " + listId +
-                            ". Status code: " + statusCode + ", Response: " + responseBody);
-                    recordFailure();
-                    throw new IllegalStateException(new StatusListServerException(
-                            "Failed to update status list " + listId + ". Status code: " + statusCode,
-                            statusCode));
-                }
-            });
+            httpClient.execute(httpPatch, response -> handleVoidResponse(
+                    response, requestId,
+                    "Successfully updated status list: " + listId,
+                    "Failed to update status list " + listId,
+                    false));
             
-        } catch (InterruptedIOException e) {
-            recordTimeout();
-            logger.error("Request ID: " + requestId + ", Timeout updating status list " + listId + ": " + e.getMessage(), e);
-            throw new StatusListException("Timeout updating status list " + listId, e);
-        } catch (IOException e) {
-            recordFailure();
-            logger.error("Request ID: " + requestId + ", Error updating status list " + listId + ": " + e.getMessage(), e);
-            throw new StatusListException("Error updating status list " + listId, e);
         } catch (Exception e) {
-            if (e.getCause() instanceof StatusListServerException serverException) {
-                throw serverException;
-            }
-            recordFailure();
-            logger.error("Request ID: " + requestId + ", Unexpected error updating status list " + listId + ": " + e.getMessage(), e);
-            throw new StatusListException("Unexpected error updating status list " + listId, e);
+            handleException(e, requestId, "updating status list " + listId,
+                    "Timeout updating status list " + listId,
+                    "Error updating status list " + listId,
+                    "Unexpected error updating status list " + listId);
         }
     }
     
@@ -414,7 +271,7 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
         try {
             return httpClient.execute(httpGet, response -> {
                 int statusCode = response.getCode();
-                if (statusCode >= 200 && statusCode < 300) {
+                if (HttpStatusCode.isSuccess(statusCode)) {
                     logger.infof("Request ID: %s, Server health check successful.", requestId);
                     return true;
                 }
@@ -434,6 +291,140 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
     }
     
     /**
+     * Handles HTTP response with success/error logic, logging, and circuit breaker recording.
+     * 
+     * @param response the HTTP response
+     * @param requestId the request ID for logging
+     * @param successMessage the message to log on success
+     * @param errorMessagePrefix the prefix for error messages
+     * @param acceptConflict whether to accept HTTP 409 (CONFLICT) as success
+     * @throws IllegalStateException wrapping StatusListServerException on error
+     */
+    private void handleResponse(ClassicHttpResponse response, String requestId, 
+                                String successMessage, String errorMessagePrefix, 
+                                boolean acceptConflict) {
+        int statusCode = response.getCode();
+        String responseBody;
+        try {
+            if (response.getEntity() != null) {
+                responseBody = EntityUtils.toString(response.getEntity());
+            } else {
+                responseBody = "";
+            }
+        } catch (IOException | ParseException e) {
+            responseBody = "Unable to read response body: " + e.getMessage();
+        }
+        
+        boolean isSuccess = HttpStatusCode.isSuccess(statusCode) || 
+                           (acceptConflict && statusCode == HttpStatusCode.CONFLICT.getCode());
+        
+        if (isSuccess) {
+            String fullMessage = successMessage;
+            if (acceptConflict && statusCode == HttpStatusCode.CONFLICT.getCode()) {
+                fullMessage += " (already registered)";
+            }
+            logger.infof("Request ID: %s, %s", requestId, fullMessage);
+            recordSuccess();
+        } else {
+            logger.errorf("Request ID: %s, %s. Status code: %d, Response: %s", 
+                    requestId, errorMessagePrefix, statusCode, responseBody);
+            recordFailure();
+            throw new IllegalStateException(new StatusListServerException(
+                    errorMessagePrefix + ". Status code: " + statusCode, statusCode));
+        }
+    }
+    
+    /**
+     * Handles HTTP response for operations that return void (no return value).
+     * 
+     * @param response the HTTP response
+     * @param requestId the request ID for logging
+     * @param successMessage the message to log on success
+     * @param errorMessagePrefix the prefix for error messages
+     * @param acceptConflict whether to accept HTTP 409 (CONFLICT) as success
+     * @return null (for use in response handlers)
+     */
+    private Void handleVoidResponse(ClassicHttpResponse response, String requestId,
+                                   String successMessage, String errorMessagePrefix,
+                                   boolean acceptConflict) {
+        handleResponse(response, requestId, successMessage, errorMessagePrefix, acceptConflict);
+        return null;
+    }
+    
+    /**
+     * Handles HTTP response for status list existence check (special logic: 200=true, 404=false, else error).
+     * 
+     * @param response the HTTP response
+     * @param requestId the request ID for logging
+     * @param statusListId the status list ID for logging
+     * @return true if status list exists (200), false if not found (404)
+     * @throws IllegalStateException wrapping StatusListServerException on other errors
+     */
+    private boolean handleStatusListExistsResponse(ClassicHttpResponse response, 
+                                                  String requestId, String statusListId) {
+        int statusCode = response.getCode();
+        
+        if (statusCode == HttpStatusCode.OK.getCode()) {
+            logger.infof("Request ID: %s, Status list %s exists.", requestId, statusListId);
+            recordSuccess();
+            return true;
+        } else if (statusCode == HttpStatusCode.NOT_FOUND.getCode()) {
+            logger.infof("Request ID: %s, Status list %s does not exist.", requestId, statusListId);
+            recordSuccess();
+            return false;
+        } else {
+            String responseBody;
+            try {
+                if (response.getEntity() != null) {
+                    responseBody = EntityUtils.toString(response.getEntity());
+                } else {
+                    responseBody = "";
+                }
+            } catch (IOException | ParseException e) {
+                responseBody = "Unable to read response body: " + e.getMessage();
+            }
+            logger.errorf("Request ID: %s, Failed to check status list %s. Status code: %d, Response: %s", 
+                    requestId, statusListId, statusCode, responseBody);
+            recordFailure();
+            throw new IllegalStateException(new StatusListServerException(
+                    "Failed to check status list " + statusListId + ". Status code: " + statusCode,
+                    statusCode));
+        }
+    }
+    
+    /**
+     * Handles exceptions consistently across all HTTP operations.
+     * 
+     * @param e the exception to handle
+     * @param requestId the request ID for logging
+     * @param operationDescription description of the operation (e.g., "publishing record for credentialId: xyz")
+     * @param timeoutMessage message for timeout exceptions
+     * @param ioErrorMessage message for IO exceptions
+     * @param unexpectedErrorMessage message for unexpected exceptions
+     * @throws StatusListException always throws a StatusListException
+     */
+    private void handleException(Exception e, String requestId, String operationDescription,
+                                String timeoutMessage, String ioErrorMessage, 
+                                String unexpectedErrorMessage) throws StatusListException {
+        if (e instanceof InterruptedIOException) {
+            recordTimeout();
+            logger.errorf(e, "Request ID: %s, %s: %s", requestId, timeoutMessage, e.getMessage());
+            throw new StatusListException(timeoutMessage, e);
+        } else if (e instanceof IOException) {
+            recordFailure();
+            logger.errorf(e, "Request ID: %s, %s: %s", requestId, ioErrorMessage, e.getMessage());
+            throw new StatusListException(ioErrorMessage, e);
+        } else {
+            if (e.getCause() instanceof StatusListServerException serverException) {
+                throw serverException;
+            }
+            recordFailure();
+            logger.errorf(e, "Request ID: %s, %s: %s", requestId, unexpectedErrorMessage, e.getMessage());
+            throw new StatusListException(unexpectedErrorMessage, e);
+        }
+    }
+    
+    /**
      * Checks the circuit breaker state before allowing a request.
      */
     private void checkCircuitBreaker() throws StatusListException {
@@ -441,7 +432,7 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
             try {
                 circuitBreaker.checkState();
             } catch (CircuitBreaker.CircuitBreakerOpenException e) {
-                logger.warn("Circuit breaker is open, failing fast: " + e.getMessage());
+                logger.warnf("Circuit breaker is open, failing fast: %s", e.getMessage());
                 throw new StatusListException("Circuit breaker is open: " + e.getMessage(), e);
             }
         }

@@ -7,8 +7,6 @@ import org.keycloak.jose.jwk.JWK;
 
 /**
  * Interface for HTTP client operations to the status list server.
- * This abstraction allows for different implementations (e.g., with circuit breakers,
- * different HTTP libraries, or mock implementations for testing).
  */
 public interface StatusListHttpClient {
     
