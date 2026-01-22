@@ -14,6 +14,7 @@ import java.io.IOException;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import com.adorsys.keycloakstatuslist.service.http.HttpClient;
@@ -24,6 +25,7 @@ import org.apache.hc.core5.http.io.entity.EntityUtils;
 import org.apache.hc.core5.http.io.entity.StringEntity;
 import org.jboss.logging.Logger;
 import org.keycloak.jose.jwk.JWK;
+import org.keycloak.utils.StringUtil;
 
 public class StatusListService {
     private static final Logger logger = Logger.getLogger(StatusListService.class);
@@ -44,6 +46,8 @@ public class StatusListService {
         logger.infof("Initialized StatusListService with serverUrl: %s", this.serverUrl);
     }
 
+    // TODO: This method is functionally wrong. It must be removed and calls updated
+    //  to use `publishStatusList` instead.
     public void publishRecord(TokenStatusRecord statusRecord) throws StatusListException {
         validateStatusRecord(statusRecord);
         String requestId = UUID.randomUUID().toString(); // Correlation ID for tracing
@@ -59,9 +63,11 @@ public class StatusListService {
             httpPost.setHeader("X-Request-ID", requestId);
             httpPost.setEntity(new StringEntity(jsonPayload));
 
-            if (authToken != null && !authToken.isEmpty()) {
-                httpPost.setHeader("Authorization", "Bearer " + authToken);
+            if (StringUtil.isBlank(authToken)) {
+                throw new IllegalStateException("Auth token required but blank");
             }
+
+            httpPost.setHeader("Authorization", "Bearer " + authToken);
 
             logger.debugf("Request ID: %s, Sending HTTP request to: %s", requestId, httpPost.getRequestUri());
 
@@ -89,8 +95,6 @@ public class StatusListService {
                 }
             });
 
-        } catch (StatusListServerException e) {
-            throw e;
         } catch (IOException e) {
             logger.errorf(
                     "Request ID: %s, Failed to publish record for credentialId: %s: %s",
@@ -100,60 +104,6 @@ public class StatusListService {
                     e);
             throw new StatusListException(
                     "Failed to publish record for credentialId: " + credentialId, e);
-        }
-    }
-
-    public void updateRecord(TokenStatusRecord statusRecord) throws StatusListException {
-        validateStatusRecord(statusRecord);
-        String requestId = UUID.randomUUID().toString();
-        String credentialId = statusRecord.getCredentialId();
-
-        try {
-            String jsonPayload = objectMapper.writeValueAsString(statusRecord);
-            logger.debugf(
-                    "Request ID: %s, Updating record for credentialId: %s", requestId, credentialId);
-
-            HttpPatch httpPatch = new HttpPatch(serverUrl + "credentials");
-            httpPatch.setHeader("Content-Type", "application/json");
-            httpPatch.setHeader("X-Request-ID", requestId);
-            httpPatch.setEntity(new StringEntity(jsonPayload));
-
-            if (authToken != null && !authToken.isEmpty()) {
-                httpPatch.setHeader("Authorization", "Bearer " + authToken);
-            }
-
-            httpClient.execute(httpPatch, response -> {
-                int statusCode = response.getCode();
-                String responseBody = EntityUtils.toString(response.getEntity());
-                if (statusCode >= HttpStatusCode.OK.getCode() && statusCode < 300) {
-                    logger.infof(
-                            "Request ID: %s, Successfully updated record for credentialId: %s",
-                            requestId,
-                            credentialId);
-                    return null;
-                } else {
-                    logger.errorf(
-                            "Request ID: %s, Failed to update record for credentialId: %s. Status code: %d, Response: %s",
-                            requestId,
-                            credentialId,
-                            statusCode,
-                            responseBody);
-                    throw new StatusListServerException(
-                            "Failed to update record for credentialId: " + credentialId + ". Status code: "
-                                    + statusCode,
-                            statusCode);
-                }
-            });
-        } catch (StatusListServerException e) {
-            throw e;
-        } catch (IOException e) {
-            logger.errorf(
-                    "Request ID: %s, Failed to update record for credentialId: %s: %s",
-                    requestId,
-                    credentialId,
-                    e.getMessage(),
-                    e);
-            throw new StatusListException("Failed to update record for credentialId: " + credentialId, e);
         }
     }
 
@@ -208,8 +158,6 @@ public class StatusListService {
                             statusCode);
                 }
             });
-        } catch (StatusListServerException e) {
-            throw e;
         } catch (IOException e) {
             logger.errorf(
                     "Request ID: %s, Failed to register issuer: %s: %s, Server URL: %s",
@@ -224,7 +172,7 @@ public class StatusListService {
     }
 
     private void validateStatusRecord(TokenStatusRecord statusRecord) throws StatusListException {
-        String credentialId = statusRecord.getCredentialId() != null ? statusRecord.getCredentialId() : "unknown";
+        String credentialId = Optional.ofNullable(statusRecord.getCredentialId()).orElse("unknown");
 
         // Check required fields according to the specification
         if (statusRecord.getCredentialId() == null || statusRecord.getCredentialId().isEmpty()) {
@@ -311,8 +259,6 @@ public class StatusListService {
                             statusCode);
                 }
             });
-        } catch (StatusListServerException e) {
-            throw e;
         } catch (IOException e) {
             logger.errorf(
                     "Request ID: %s, Error checking status list %s: %s",
@@ -353,14 +299,16 @@ public class StatusListService {
 
         try {
             String jsonPayload = objectMapper.writeValueAsString(payload);
-            HttpPost httpPost = new HttpPost(serverUrl + "statuslists");
+            HttpPost httpPost = new HttpPost(serverUrl + "statuslists/publish");
             httpPost.setHeader("Content-Type", "application/json");
             httpPost.setHeader("X-Request-ID", requestId);
             httpPost.setEntity(new StringEntity(jsonPayload));
 
-            if (authToken != null && !authToken.isEmpty()) {
-                httpPost.setHeader("Authorization", "Bearer " + authToken);
+            if (StringUtil.isBlank(authToken)) {
+                throw new IllegalStateException("Auth token required but blank");
             }
+
+            httpPost.setHeader("Authorization", "Bearer " + authToken);
 
             httpClient.execute(httpPost, response -> {
                 int statusCode = response.getCode();
@@ -380,8 +328,6 @@ public class StatusListService {
                             statusCode);
                 }
             });
-        } catch (StatusListServerException e) {
-            throw e;
         } catch (IOException e) {
             logger.errorf(
                     "Request ID: %s, Error publishing status list %s: %s",
@@ -400,14 +346,16 @@ public class StatusListService {
 
         try {
             String jsonPayload = objectMapper.writeValueAsString(payload);
-            HttpPatch httpPatch = new HttpPatch(serverUrl + "statuslists/" + listId);
+            HttpPatch httpPatch = new HttpPatch(serverUrl + "statuslists/update");
             httpPatch.setHeader("Content-Type", "application/json");
             httpPatch.setHeader("X-Request-ID", requestId);
             httpPatch.setEntity(new StringEntity(jsonPayload));
 
-            if (authToken != null && !authToken.isEmpty()) {
-                httpPatch.setHeader("Authorization", "Bearer " + authToken);
+            if (StringUtil.isBlank(authToken)) {
+                throw new IllegalStateException("Auth token required but blank");
             }
+
+            httpPatch.setHeader("Authorization", "Bearer " + authToken);
 
             httpClient.execute(httpPatch, response -> {
                 int statusCode = response.getCode();
@@ -427,8 +375,6 @@ public class StatusListService {
                             statusCode);
                 }
             });
-        } catch (StatusListServerException e) {
-            throw e;
         } catch (IOException e) {
             logger.errorf(
                     "Request ID: %s, Error updating status list %s: %s",

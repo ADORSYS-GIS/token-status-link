@@ -30,6 +30,7 @@ import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.function.Consumer;
 
 import static com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity.MappingStatus;
@@ -46,19 +47,17 @@ public class StatusListProtocolMapper extends OID4VCMapper {
     private static final List<ProviderConfigProperty> CONFIG_PROPERTIES = new ArrayList<>();
 
     private final KeycloakSession session;
-    private final CryptoIdentityService cryptoIdentityService;
     private final StatusListService statusListService;
 
     public StatusListProtocolMapper() {
         // An empty mapper constructor is required by Keycloak
         this.session = null;
-        this.cryptoIdentityService = null;
         this.statusListService = null;
     }
 
     public StatusListProtocolMapper(KeycloakSession session) {
         this.session = session;
-        this.cryptoIdentityService = new CryptoIdentityService(session);
+        CryptoIdentityService cryptoIdentityService = new CryptoIdentityService(session);
         StatusListConfig config = new StatusListConfig(session.getContext().getRealm());
         this.statusListService =
                 new StatusListService(
@@ -148,7 +147,8 @@ public class StatusListProtocolMapper extends OID4VCMapper {
 
         // Build URI for status list
         Map<String, String> mapperConfig = mapperModel.getConfig();
-        String listId = mapperConfig.getOrDefault(Constants.CONFIG_LIST_ID_PROPERTY, realmId);
+        // TODO: TEMP: Undo UUID
+        String listId = UUID.randomUUID().toString(); // mapperConfig.getOrDefault(Constants.CONFIG_LIST_ID_PROPERTY, realmId);
         URI uri =
                 UriBuilder.fromUri(serverUrl)
                         .path(String.format(Constants.HTTP_ENDPOINT_RETRIEVE_PATH, listId))

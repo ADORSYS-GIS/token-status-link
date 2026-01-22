@@ -50,7 +50,7 @@ class StatusListServiceTest {
     @BeforeEach
     void setUp() {
         httpClient = new CloseableHttpClientAdapter(closeableHttpClient);
-        statusListService = new StatusListService(SERVER_URL, null, httpClient);
+        statusListService = new StatusListService(SERVER_URL, "auth.token.jwt", httpClient);
     }
 
     private void setupResponse(int statusCode) throws IOException {
