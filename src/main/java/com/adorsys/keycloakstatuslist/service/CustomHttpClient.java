@@ -22,18 +22,7 @@ public class CustomHttpClient {
     private static final int DEFAULT_RETRY_COUNT = 0; // Retry disabled by default
 
     public static CloseableHttpClient getHttpClient() {
-        return getHttpClient(DEFAULT_CONNECT_TIMEOUT, DEFAULT_READ_TIMEOUT);
-    }
-    
-    /**
-     * Creates an HTTP client with custom timeout values.
-     *
-     * @param connectTimeoutMs connection timeout in milliseconds
-     * @param readTimeoutMs read timeout in milliseconds
-     * @return configured HTTP client
-     */
-    public static CloseableHttpClient getHttpClient(int connectTimeoutMs, int readTimeoutMs) {
-        RequestConfig requestConfig = getRequestConfig(connectTimeoutMs, readTimeoutMs);
+        RequestConfig requestConfig = getRequestConfig();
         HttpRequestRetryStrategy retryStrategy = getHttpRequestRetryStrategy();
 
         return HttpClients.custom()
@@ -42,9 +31,9 @@ public class CustomHttpClient {
                 .build();
     }
 
-    private static RequestConfig getRequestConfig(int connectTimeoutMs, int readTimeoutMs) {
-        Timeout connectTimeout = Timeout.ofMilliseconds(connectTimeoutMs);
-        Timeout responseTimeout = Timeout.ofMilliseconds(readTimeoutMs);
+    private static RequestConfig getRequestConfig() {
+        Timeout connectTimeout = Timeout.ofMilliseconds(DEFAULT_CONNECT_TIMEOUT);
+        Timeout responseTimeout = Timeout.ofMilliseconds(DEFAULT_READ_TIMEOUT);
 
         return RequestConfig.custom()
                 .setConnectionRequestTimeout(connectTimeout)
