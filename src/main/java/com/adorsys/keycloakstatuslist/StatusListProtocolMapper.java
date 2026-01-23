@@ -238,7 +238,6 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         AtomicReference<Long> generatedIdx = new AtomicReference<>();
         StatusListConfig config = getStatusListConfig(session.getContext().getRealm());
 
-        // 1. Database operation - INSIDE transaction (fast, no HTTP blocking)
         try {
             withEntityManagerInTransaction(
                     session,
@@ -259,7 +258,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
                         } catch (Exception e) {
                             logger.error("Failed to store index mapping", e);
                             session.getTransactionManager().setRollbackOnly();
-                            throw e; // Re-throw to prevent HTTP call if DB fails
+                            throw e;
                         }
                     });
         } catch (Exception e) {

@@ -32,15 +32,15 @@ public class StatusListConfig {
     private static final String DEFAULT_SERVER_URL = "https://statuslist.eudi-adorsys.com/";
     
     // Default timeout values for issuance path (shorter than general operations)
-    private static final int DEFAULT_ISSUANCE_CONNECT_TIMEOUT = 5000; // 5 seconds
-    private static final int DEFAULT_ISSUANCE_READ_TIMEOUT = 10000; // 10 seconds
+    private static final int DEFAULT_ISSUANCE_CONNECT_TIMEOUT = 5000;
+    private static final int DEFAULT_ISSUANCE_READ_TIMEOUT = 10000;
     
     // Default circuit breaker values
     private static final boolean DEFAULT_CIRCUIT_BREAKER_ENABLED = true;
-    private static final int DEFAULT_FAILURE_THRESHOLD = 5; // Open after 5 failures
-    private static final int DEFAULT_TIMEOUT_THRESHOLD = 3; // Count as failure after 3 timeouts
-    private static final int DEFAULT_WINDOW_SECONDS = 60; // 1 minute rolling window
-    private static final int DEFAULT_COOLDOWN_SECONDS = 30; // 30 seconds before retry
+    private static final int DEFAULT_FAILURE_THRESHOLD = 5;
+    private static final int DEFAULT_TIMEOUT_THRESHOLD = 3;
+    private static final int DEFAULT_WINDOW_SECONDS = 60;
+    private static final int DEFAULT_COOLDOWN_SECONDS = 30;
     private static final boolean DEFAULT_MANDATORY = false;
 
     private final RealmModel realm;

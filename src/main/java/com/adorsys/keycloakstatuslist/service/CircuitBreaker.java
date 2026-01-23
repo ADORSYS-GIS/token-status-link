@@ -93,7 +93,6 @@ public class CircuitBreaker {
                 break;
                 
             case HALF_OPEN:
-                // Allow limited requests to test recovery
                 logger.debugf("Circuit breaker '%s' in HALF_OPEN, allowing test request", name);
                 break;
         }
