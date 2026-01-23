@@ -3,7 +3,9 @@ package com.adorsys.keycloakstatuslist.client;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.exception.StatusListServerException;
 import com.adorsys.keycloakstatuslist.model.TokenStatusRecord;
+import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
+import com.adorsys.keycloakstatuslist.service.http.CloseableHttpClientAdapter;
 import org.jboss.logging.Logger;
 
 /**
@@ -16,20 +18,13 @@ public class StatusListClient {
 
     private final StatusListService statusListService;
 
-    /**
-     * Creates a StatusListClient with a configured HTTP client.
-     *
-     * @param httpClient the configured HTTP client implementation
-     */
-    public StatusListClient(StatusListHttpClient httpClient) {
-        this.statusListService = new StatusListService(httpClient);
+    public StatusListClient(String serverUrl, String authToken) {
+        this(new StatusListService(
+                serverUrl,
+                authToken,
+                new CloseableHttpClientAdapter(CustomHttpClient.getHttpClient())));
     }
 
-    /**
-     * Creates a StatusListClient with an existing StatusListService.
-     *
-     * @param statusListService the configured status list service
-     */
     public StatusListClient(StatusListService statusListService) {
         this.statusListService = statusListService;
     }
