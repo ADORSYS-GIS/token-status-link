@@ -14,6 +14,7 @@ import org.keycloak.events.EventBuilder;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.protocol.oidc.endpoints.TokenRevocationEndpoint;
+import org.keycloak.utils.StringUtil;
 
 public class CredentialRevocationEndpoint extends TokenRevocationEndpoint {
 
@@ -48,23 +49,28 @@ public class CredentialRevocationEndpoint extends TokenRevocationEndpoint {
                 session.getContext().getHttpRequest().getDecodedFormParameters();
         String authorizationHeader = getHeaders().getHeaderString(HttpHeaders.AUTHORIZATION);
 
+        if (form.getFirst("token") == null || form.getFirst("reason") == null) {
+            logger.debugf("Payload misses a 'token' or 'reason' param. Falling back to standard revocation logic.");
+            return super.revoke();
+        }
+
         if (!isServiceEnabled()) {
-            logger.debug("Credential revocation service is disabled, falling back to standard revocation");
+            logger.debug("Will fail because credential revocation service is disabled");
             // In a RealmResourceProvider, we don't have a super.revoke().
             // We should return an error or handle it differently.
-            return createErrorResponse(Response.Status.SERVICE_UNAVAILABLE, "Credential revocation service is disabled");
+            return createErrorResponse(Response.Status.INTERNAL_SERVER_ERROR,
+                    "Credential revocation service is disabled");
         }
 
         if (!isServiceConfigured()) {
-            logger.warn("Credential revocation service is not configured, falling back to standard revocation");
-            return createErrorResponse(Response.Status.INTERNAL_SERVER_ERROR, "Credential revocation service is not configured");
+            logger.warn("Will fail because credential revocation service is not configured");
+            return createErrorResponse(Response.Status.INTERNAL_SERVER_ERROR,
+                    "Credential revocation service is not configured");
         }
 
         if (authorizationHeader == null || authorizationHeader.trim().isEmpty()) {
-            logger.debug("No authorization header provided, falling back to standard revocation");
-            return super.revoke();
-            // logger.debug("No authorization header provided, returning error for custom revocation");
-            // return createErrorResponse(Response.Status.UNAUTHORIZED, "Missing Authorization header");
+             logger.debug("No authorization header provided, returning error for custom revocation");
+             return createErrorResponse(Response.Status.UNAUTHORIZED, "Missing Authorization header");
         }
 
         String[] authParts = authorizationHeader.trim().split("\\s+", 2);
@@ -174,9 +180,7 @@ public class CredentialRevocationEndpoint extends TokenRevocationEndpoint {
             StatusListConfig config = new StatusListConfig(realm);
             
             // Check if the service is enabled and has a valid server URL
-            return config.isEnabled() &&
-                   config.getServerUrl() != null &&
-                   !config.getServerUrl().trim().isEmpty();
+            return config.isEnabled() && StringUtil.isNotBlank(config.getServerUrl());
             
         } catch (Exception e) {
             logger.warn("Error checking service configuration", e);
