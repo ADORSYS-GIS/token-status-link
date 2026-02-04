@@ -120,6 +120,9 @@ Failure to meet these validation requirements will result in specific error resp
 - `400 Bad Request`: For malformed VPs or invalid challenge parameters.
 - `401 Unauthorized`: For invalid holder proofs (e.g., incorrect nonce, audience mismatch, expired or replayed nonce).
 
+**Retry policy:** The plugin does **not** retry revocation requests. A nonce is single-use and is consumed on the first
+attempt. On failure, clients must request a **new challenge** and repeat the flow.
+
 ## Development and Testing
 
 ### Running Tests and Formatting

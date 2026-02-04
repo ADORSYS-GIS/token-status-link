@@ -1,4 +1,10 @@
+
 package com.adorsys.keycloakstatuslist.service;
+
+import com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
+import org.keycloak.connections.jpa.JpaConnectionProvider;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.TypedQuery;
 
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest;
@@ -22,6 +28,28 @@ import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 
 public class RevocationRecordService {
+
+
+
+    /**
+     * Finds a StatusListMappingEntity by tokenId.
+     * @param tokenId the credential token ID
+     * @return the StatusListMappingEntity or null if not found
+     */
+    public StatusListMappingEntity findMappingByTokenId(String tokenId) {
+        EntityManager em = session.getProvider(JpaConnectionProvider.class).getEntityManager();
+        if (em == null) {
+            logger.error("EntityManager is null for JpaConnectionProvider");
+            return null;
+        }
+        TypedQuery<StatusListMappingEntity> query = em.createQuery(
+            "SELECT m FROM StatusListMappingEntity m WHERE m.tokenId = :tokenId",
+            StatusListMappingEntity.class
+        );
+        query.setParameter("tokenId", tokenId);
+        query.setMaxResults(1);
+        return query.getResultList().stream().findFirst().orElse(null);
+    }
 
     private static final Logger logger = Logger.getLogger(RevocationRecordService.class);
 

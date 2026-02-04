@@ -124,7 +124,7 @@ public class DefaultSdJwtVPValidationService implements SdJwtVPValidationService
      * by verifying the credential ID match. The cryptographic proof is verified separately.
      */
     @Override
-    public void verifyCredentialOwnership(SdJwtVP sdJwtVP, String credentialId, String requestId)
+    public void verifyCredentialOwnership(SdJwtVP sdJwtVP, String credentialId, String requestId, String expectedNonce)
             throws StatusListException {
 
         String vpCredentialId = extractCredentialIdFromSdJwtVP(sdJwtVP);
@@ -140,7 +140,7 @@ public class DefaultSdJwtVPValidationService implements SdJwtVPValidationService
         }
 
 
-        verifyHolderSignatureAndKeyBinding(sdJwtVP, requestId);
+        verifyHolderSignatureAndKeyBinding(sdJwtVP, requestId, expectedNonce);
 
         logger.infof("Credential ownership verified successfully with holder signature. RequestId: %s", requestId);
     }
@@ -151,21 +151,33 @@ public class DefaultSdJwtVPValidationService implements SdJwtVPValidationService
      * <p>
      * SECURITY: If holder signature verification fails, the request is rejected immediately.
      */
-    public void verifyHolderSignatureAndKeyBinding(SdJwtVP sdJwtVP, String requestId)
+    public void verifyHolderSignatureAndKeyBinding(SdJwtVP sdJwtVP, String requestId, String expectedNonce)
             throws StatusListException {
         try {
             logger.debugf("Verifying holder signature and key binding. RequestId: %s", requestId);
 
             logger.infof("Attempting holder signature verification with key binding required. RequestId: %s", requestId);
 
+            // Extract issuer for signature verifier contexts
+            String issuer = extractIssuerFromToken(sdJwtVP);
+            if (issuer == null || issuer.trim().isEmpty()) {
+                logger.errorf("No issuer found in SD-JWT VP token. RequestId: %s", requestId);
+                throw new StatusListException("Token missing required issuer information for verification");
+            }
+
+            List<SignatureVerifierContext> verifyingKeys = jwksService.getSignatureVerifierContexts(sdJwtVP, issuer, requestId);
+            if (verifyingKeys.isEmpty()) {
+                logger.errorf("No valid issuer signature verifier contexts created. RequestId: %s", requestId);
+                throw new StatusListException("No public keys available for issuer: " + issuer);
+            }
+
             // The SD-JWT library automatically handles key binding verification when enabled
-            // No need to manually extract and verify the holder's key
             // Extract credentialId for verification options (may be null for holder verification)
             String credentialId = extractCredentialIdFromSdJwtVP(sdJwtVP);
-            sdJwtVP.verify(
-                    List.of(), // Empty list - no additional verifiers needed for key binding
+                sdJwtVP.verify(
+                    verifyingKeys,
                     getIssuerSignedJwtVerificationOpts(),
-                    getKeyBindingJwtVerificationOpts(sdJwtVP, requestId, getRevocationEndpointUrl(), credentialId, null)
+                    getKeyBindingJwtVerificationOpts(sdJwtVP, requestId, getRevocationEndpointUrl(), credentialId, expectedNonce)
             );
 
             logger.infof("Holder signature verification completed successfully. RequestId: %s", requestId);

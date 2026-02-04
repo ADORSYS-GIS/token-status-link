@@ -140,7 +140,7 @@ class CredentialRevocationServiceTest {
                 .verifySdJwtVPSignature(any(SdJwtVP.class), anyString(), anyString(), anyString());
         doNothing()
                 .when(sdJwtVPValidationService)
-                .verifyCredentialOwnership(any(SdJwtVP.class), anyString(), anyString());
+            .verifyCredentialOwnership(any(SdJwtVP.class), anyString(), anyString(), anyString());
         doNothing().when(statusListService).publishRecord(any(TokenStatusRecord.class));
 
         // Act
@@ -158,7 +158,7 @@ class CredentialRevocationServiceTest {
         verify(nonceCacheService).consumeNonce(testNonce);
         verify(sdJwtVPValidationService).verifySdJwtVPSignature(any(SdJwtVP.class), anyString(), anyString(), anyString());
         verify(sdJwtVPValidationService)
-                .verifyCredentialOwnership(any(SdJwtVP.class), anyString(), anyString());
+            .verifyCredentialOwnership(any(SdJwtVP.class), anyString(), anyString(), anyString());
         verify(statusListService).publishRecord(any(TokenStatusRecord.class));
     }
 
@@ -233,7 +233,7 @@ class CredentialRevocationServiceTest {
                 .verifySdJwtVPSignature(any(SdJwtVP.class), anyString(), anyString(), anyString());
         doNothing()
                 .when(sdJwtVPValidationService)
-                .verifyCredentialOwnership(any(SdJwtVP.class), anyString(), anyString());
+            .verifyCredentialOwnership(any(SdJwtVP.class), anyString(), anyString(), anyString());
         doThrow(new StatusListException("Status list publication failed"))
                 .when(statusListService).publishRecord(any(TokenStatusRecord.class));
 
@@ -251,7 +251,7 @@ class CredentialRevocationServiceTest {
         verify(nonceCacheService).consumeNonce(testNonce);
         verify(sdJwtVPValidationService).verifySdJwtVPSignature(any(SdJwtVP.class), anyString(), anyString(), anyString());
         verify(sdJwtVPValidationService)
-                .verifyCredentialOwnership(any(SdJwtVP.class), anyString(), anyString());
+            .verifyCredentialOwnership(any(SdJwtVP.class), anyString(), anyString(), anyString());
         verify(statusListService).publishRecord(any(TokenStatusRecord.class));
     }
 
@@ -291,7 +291,7 @@ class CredentialRevocationServiceTest {
                 .verifySdJwtVPSignature(any(SdJwtVP.class), anyString(), anyString(), anyString());
         doNothing()
                 .when(sdJwtVPValidationService)
-                .verifyCredentialOwnership(any(SdJwtVP.class), anyString(), anyString());
+            .verifyCredentialOwnership(any(SdJwtVP.class), anyString(), anyString(), anyString());
         doNothing().when(statusListService).publishRecord(any(TokenStatusRecord.class));
 
         // Act

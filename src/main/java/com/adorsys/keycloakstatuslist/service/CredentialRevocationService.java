@@ -6,7 +6,7 @@ import com.adorsys.keycloakstatuslist.exception.StatusListServerException;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationResponse;
 import com.adorsys.keycloakstatuslist.model.RevocationChallenge;
-import com.adorsys.keycloakstatuslist.model.TokenStatusRecord;
+import com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
 import com.adorsys.keycloakstatuslist.service.http.CloseableHttpClientAdapter;
 import com.adorsys.keycloakstatuslist.service.http.HttpClient;
 import com.adorsys.keycloakstatuslist.service.validation.RequestValidationService;
@@ -19,6 +19,7 @@ import org.jboss.logging.Logger;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.sdjwt.vp.SdJwtVP;
+import java.util.List;
 
 /**
  * Main service for handling credential revocation requests. Orchestrates the revocation process
@@ -103,11 +104,28 @@ public class CredentialRevocationService {
             sdJwtVPValidationService.verifySdJwtVPSignature(sdJwtVP, requestId, request.getCredentialId(), challenge.nonce());
             
             // Step 4: Verify credential ownership
-            sdJwtVPValidationService.verifyCredentialOwnership(sdJwtVP, request.getCredentialId(), requestId);
+            sdJwtVPValidationService.verifyCredentialOwnership(
+                sdJwtVP,
+                request.getCredentialId(),
+                requestId,
+                challenge.nonce());
             
-            // Step 5: Publish revocation record
-            TokenStatusRecord revocationRecord = revocationRecordService.createRevocationRecord(request, requestId);
-            getStatusListService().publishRecord(revocationRecord);
+            // Step 5: Validate revocation reason and update status list
+            revocationRecordService.validateRevocationReason(request.getRevocationReason());
+                StatusListMappingEntity mapping = revocationRecordService.findMappingByTokenId(request.getCredentialId());
+                if (mapping == null) {
+                throw new StatusListException(
+                    "No status list mapping found for credential: " + request.getCredentialId(),
+                    404);
+                }
+
+                StatusListService.StatusListPayload payload = new StatusListService.StatusListPayload(
+                    mapping.getStatusListId(),
+                    List.of(new StatusListService.StatusListPayload.StatusEntry(
+                        mapping.getIdx().intValue(), "INVALID"))
+                );
+
+                getStatusListService().publishOrUpdate(payload);
 
             Instant revokedAt = Instant.now();
             logger.infof("Successfully revoked credential. RequestId: %s, CredentialId: %s, RevokedAt: %s",

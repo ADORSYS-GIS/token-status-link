@@ -29,7 +29,7 @@ public interface SdJwtVPValidationService {
      * @param requestId   the request ID for logging
      * @throws StatusListException if ownership verification fails
      */
-    void verifyCredentialOwnership(SdJwtVP sdJwtVP, String credentialId, String requestId)
+    void verifyCredentialOwnership(SdJwtVP sdJwtVP, String credentialId, String requestId, String expectedNonce)
             throws StatusListException;
 
     /**

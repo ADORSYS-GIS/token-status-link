@@ -19,7 +19,6 @@ public class CustomHttpClient {
 
     private static final int DEFAULT_CONNECT_TIMEOUT = 30000;
     private static final int DEFAULT_READ_TIMEOUT = 60000;
-    private static final int DEFAULT_RETRY_COUNT = 0; // Retry disabled by default
 
     public static CloseableHttpClient getHttpClient() {
         RequestConfig requestConfig = getRequestConfig();
@@ -42,34 +41,23 @@ public class CustomHttpClient {
     }
 
     private static HttpRequestRetryStrategy getHttpRequestRetryStrategy() {
-        int maxRetries = DEFAULT_RETRY_COUNT;
-
+        logger.debug("HTTP retries disabled for status list communication.");
         return new HttpRequestRetryStrategy() {
             @Override
             public boolean retryRequest(
                     HttpRequest httpRequest, IOException e, int execCount, HttpContext httpContext) {
-                logger.warnf(
-                        "[Attempt %d/%d] Error sending status: %s", execCount, maxRetries, e.getMessage());
-                return execCount <= maxRetries;
+                return false;
             }
 
             @Override
             public boolean retryRequest(HttpResponse response, int execCount, HttpContext context) {
-                int status = response.getCode();
-                Boolean isRetriable = status >= 500;
-                if (isRetriable) {
-                    logger.warnf(
-                            "[Attempt %d/%d] Failed to send status. Response: %d %s",
-                            execCount, maxRetries, status, response.getReasonPhrase());
-                }
-                return execCount <= maxRetries && isRetriable;
+                return false;
             }
 
             @Override
             public TimeValue getRetryInterval(
                     HttpResponse httpResponse, int execCount, HttpContext httpContext) {
-                // Exponential backoff: 1s, 2s, 4s
-                return TimeValue.ofSeconds((long) Math.pow(2, execCount - 1));
+                return TimeValue.ZERO_MILLISECONDS;
             }
         };
     }
