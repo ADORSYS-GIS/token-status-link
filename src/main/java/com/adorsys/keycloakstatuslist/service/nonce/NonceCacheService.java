@@ -1,14 +1,14 @@
-package com.adorsys.keycloakstatuslist.service;
+package com.adorsys.keycloakstatuslist.service.nonce;
 
 import com.adorsys.keycloakstatuslist.model.RevocationChallenge;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import org.jboss.logging.Logger;
+import org.keycloak.common.util.SecretGenerator;
 import org.keycloak.services.resource.RealmResourceProvider;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.UUID;
 
 /**
  * Service for managing nonce challenges in credential revocation.
@@ -29,26 +29,22 @@ public class NonceCacheService implements NonceCacheProvider, RealmResourceProvi
     
     /**
      * Issues a new nonce challenge for credential revocation.
-     * 
-     * @param credentialId the credential ID this nonce is bound to (optional binding)
+     *
      * @param audience the expected audience (revocation endpoint URL)
      * @return the generated nonce string
      */
     @Override
-    public String issueNonce(String credentialId, String audience) {
-        String nonce = UUID.randomUUID().toString();
-        RevocationChallenge challenge = new RevocationChallenge(
-            nonce,
-            audience,
-            credentialId,
-            Instant.now().plusSeconds(NONCE_EXPIRATION_SECONDS)
-        );
+    public RevocationChallenge issueNonce(String audience) {
+        String nonce = SecretGenerator.getInstance().generateSecureID();
+        long expiresAt = Instant.now().plusSeconds(NONCE_EXPIRATION_SECONDS).getEpochSecond();
+
+        RevocationChallenge challenge = new RevocationChallenge(nonce, audience, expiresAt);
         cache.put(nonce, challenge);
-        
-        logger.debugf("Issued nonce challenge: nonce=%s, credentialId=%s, audience=%s, expiresAt=%s", 
-                     nonce, credentialId, audience, challenge.expiresAt());
-        
-        return nonce;
+
+        logger.debugf("Issued nonce challenge: nonce=%s, audience=%s, expiresAt=%s",
+                nonce, audience, challenge.getExpiresAt());
+
+        return challenge;
     }
     
     /**
@@ -73,14 +69,14 @@ public class NonceCacheService implements NonceCacheProvider, RealmResourceProvi
         }
         
         if (challenge.isExpired()) {
-            logger.warnf("Nonce has expired: %s, expiresAt=%s", nonce, challenge.expiresAt());
+            logger.warnf("Nonce has expired: %s, expiresAt=%s", nonce, challenge.getExpiresAt());
             cache.invalidate(nonce); // Clean up expired nonce
             return null;
         }
         
         // One-time use: remove from cache immediately
         cache.invalidate(nonce);
-        logger.debugf("Successfully consumed nonce: %s, credentialId=%s", nonce, challenge.credentialId());
+        logger.debugf("Successfully consumed nonce: %s", nonce);
         
         return challenge;
     }

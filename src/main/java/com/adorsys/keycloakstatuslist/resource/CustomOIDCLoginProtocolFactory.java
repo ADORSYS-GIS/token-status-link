@@ -6,8 +6,6 @@ import com.adorsys.keycloakstatuslist.exception.StatusListServerException;
 import com.adorsys.keycloakstatuslist.service.CredentialRevocationService;
 import com.adorsys.keycloakstatuslist.service.CryptoIdentityService;
 import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
-import com.adorsys.keycloakstatuslist.service.RevocationRecordService;
-import com.adorsys.keycloakstatuslist.service.RevocationRecordService.KeyData;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
 import com.adorsys.keycloakstatuslist.service.http.CloseableHttpClientAdapter;
 
@@ -172,9 +170,9 @@ public class CustomOIDCLoginProtocolFactory extends OIDCLoginProtocolFactory {
                 return true; // Disabled, no need to register
             }
 
-            KeyData keyData;
+            CryptoIdentityService.KeyData keyData;
             try {
-                keyData = RevocationRecordService.getRealmKeyData(session, realm);
+                keyData = CryptoIdentityService.getRealmKeyData(session, realm);
             } catch (StatusListException e) {
                 logger.warn(
                         "Could not retrieve valid signing key for realm: "

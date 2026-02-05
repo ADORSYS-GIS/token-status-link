@@ -16,6 +16,12 @@ import org.keycloak.models.RealmModel;
 import org.keycloak.protocol.oidc.endpoints.TokenRevocationEndpoint;
 import org.keycloak.utils.StringUtil;
 
+import java.util.Objects;
+
+import static com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest.CREDENTIAL_REVOCATION_MODE;
+import static com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest.REVOCATION_MODE_KEY;
+import static com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest.REVOCATION_REASON_KEY;
+
 public class CredentialRevocationEndpoint extends TokenRevocationEndpoint {
 
     private static final Logger logger = Logger.getLogger(CredentialRevocationEndpoint.class);
@@ -45,12 +51,11 @@ public class CredentialRevocationEndpoint extends TokenRevocationEndpoint {
 
     @Override
     public Response revoke() {
-        MultivaluedMap<String, String> form =
-                session.getContext().getHttpRequest().getDecodedFormParameters();
+        MultivaluedMap<String, String> form = session.getContext().getHttpRequest().getDecodedFormParameters();
         String authorizationHeader = getHeaders().getHeaderString(HttpHeaders.AUTHORIZATION);
 
-        if (form.getFirst("token") == null || form.getFirst("reason") == null) {
-            logger.debugf("Payload misses a 'token' or 'reason' param. Falling back to standard revocation logic.");
+        if (Objects.equals(CREDENTIAL_REVOCATION_MODE, form.getFirst("revocation_mode"))) {
+            logger.debugf("Not in credential revocation mode. Falling back to standard revocation logic.");
             return super.revoke();
         }
 
@@ -69,13 +74,12 @@ public class CredentialRevocationEndpoint extends TokenRevocationEndpoint {
         }
 
         if (authorizationHeader == null || authorizationHeader.trim().isEmpty()) {
-             logger.debug("No authorization header provided, returning error for custom revocation");
-             return createErrorResponse(Response.Status.UNAUTHORIZED, "Missing Authorization header");
+            logger.debug("No authorization header provided, returning error for custom revocation");
+            return createErrorResponse(Response.Status.UNAUTHORIZED, "Missing Authorization header");
         }
 
         String[] authParts = authorizationHeader.trim().split("\\s+", 2);
         if (authParts.length != 2 || !BEARER_PREFIX.equalsIgnoreCase(authParts[0])) {
-
             logger.debugf(
                     "Invalid authorization header format: %s, returning error",
                     authorizationHeader);
@@ -83,53 +87,32 @@ public class CredentialRevocationEndpoint extends TokenRevocationEndpoint {
         }
 
         String token = authParts[1].trim();
-        String credentialId = form.getFirst("token");
 
-        if (credentialId == null || credentialId.trim().isEmpty()) {
+        logger.infof("Attempting credential revocation via Token Status List");
 
-            logger.warn(
-                    "Valid Bearer provided but no credential ID in form; returning error for custom revocation");
-            return Response.status(Response.Status.BAD_REQUEST)
-                    .entity("{\"error\":\"invalid_request\",\"error_description\":\"Missing credential ID\"}")
-                    .type(MediaType.APPLICATION_JSON_TYPE)
-                    .build();
-        }
-
-        logger.infof(
-                "Attempting credential revocation via SD-JWT VP for credentialId: %s", credentialId);
         try {
             CredentialRevocationRequest request = new CredentialRevocationRequest();
-            request.setCredentialId(credentialId);
-            request.setRevocationReason(form.getFirst("reason"));
+            request.setRevocationMode(form.getFirst(REVOCATION_MODE_KEY));
+            request.setRevocationReason(form.getFirst(REVOCATION_REASON_KEY));
 
             CredentialRevocationResponse revocationResponse = getRevocationService().revokeCredential(request, token);
-            logger.infof("Successfully revoked credential '%s' via status list.", credentialId);
+            logger.infof("Successfully revoked credential via status list.");
 
             return Response.ok(revocationResponse)
                     .type(MediaType.APPLICATION_JSON)
                     .build();
         } catch (StatusListException e) {
-
-            logger.errorf(
-                    e,
-                    "SD-JWT VP based revocation failed for credentialId: %s due to status list error.",
-                    credentialId);
+            logger.errorf(e, "SD-JWT VP based revocation failed due to status list error.");
             int statusCode = e.getHttpStatus();
             return Response.status(statusCode)
                     .entity(CredentialRevocationResponse.error(e.getMessage()))
                     .type(MediaType.APPLICATION_JSON)
                     .build();
         } catch (IllegalArgumentException e) {
-            logger.errorf(
-                    e,
-                    "SD-JWT VP based revocation failed for credentialId: %s due to invalid input.",
-                    credentialId);
+            logger.errorf(e, "SD-JWT VP based revocation failed due to invalid input.");
             return createErrorResponse(Response.Status.BAD_REQUEST, e.getMessage());
         } catch (Exception e) {
-            logger.errorf(
-                    e,
-                    "SD-JWT VP based revocation failed for credentialId: %s due to unexpected error.",
-                    credentialId);
+            logger.errorf(e, "SD-JWT VP based revocation failed due to unexpected error.");
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
                     .entity(
                             "{\"error\":\"server_error\",\"error_description\":\"Internal error during credential revocation\"}")

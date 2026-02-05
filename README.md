@@ -16,7 +16,6 @@ The status list server should implement the OAuth 2.0 Status List pattern.
 - Secure communication with TLS 1.2/1.3
 - Support for authentication with the status list server
 - Detailed logging with unique request IDs for better traceability
-- Proper handling of realm public keys and signing algorithms
 
 ## Configuration Properties
 
@@ -27,41 +26,6 @@ The plugin can be configured at the realm level with the following properties:
 | `status-list-enabled`             | Enables or disables the status list service | `true`                                 |
 | `status-list-server-url`          | URL of the status list server               | `https://statuslist.eudi-adorsys.com/` |
 | `status-list-token-issuer-prefix` | Prefix for building the Token Issuer ID     | `Generated UUID`                       |
-
-## Token Status Record Format
-
-The plugin sends token status information to the status list server in the following JSON format, compliant with the
-OAuth 2.0 Status List specification:
-
-```json
-{
-  "sub": "unique-token-identifier",
-  "iss": "realm-name",
-  "issuer": "realm-name",
-  "public_key": "realm-public-key",
-  "alg": "RS256",
-  "status": 0,
-  "iat": 1717006530,
-  "exp": 1717010130,
-  "revoked_at": 1717008330,
-  "type": "oauth2",
-  "status_reason": "Client: client-id, User: user-id, Reason: Token revoked"
-}
-```
-
-### Fields Explanation
-
-- `sub`: The token identifier (credential ID)
-- `iss`: The issuer identifier (realm name)
-- `issuer`: The issuer name (realm name)
-- `public_key`: The realm's public key used for token verification
-- `alg`: The signing algorithm used (e.g., RS256)
-- `status`: Token status (0 = VALID, 1 = REVOKED)
-- `iat`: Issued at timestamp (seconds since epoch)
-- `exp`: Expiration timestamp (seconds since epoch)
-- `revoked_at`: Revocation timestamp for revoked tokens (seconds since epoch)
-- `type`: Credential type, always "oauth2" for this plugin
-- `status_reason`: Human-readable explanation of token status, including client and user IDs
 
 ## Installation
 
@@ -101,12 +65,13 @@ corresponding to a specific credential's configuration. Below is a sample such c
 
 - Secure communication using TLS 1.2/1.3
 - Bearer token authentication support for the status list server
-- Proper handling of Keycloak's realm public keys and algorithms
-- No sensitive information is logged beyond what's necessary for debugging
 
 ## Revocation Protocol
 
-Revocation now requires a pre-issued server challenge to ensure proper LDP-compliant Verifiable Presentation (VP) verification. Before submitting a revocation request, clients must first obtain a challenge from the `/challenge` endpoint. This challenge includes a cryptographically strong nonce, the audience (revocation endpoint URL), and an expiration timestamp.
+Revocation requires a pre-issued server challenge to ensure proper Verifiable Presentation (VP) verification. 
+Before submitting a revocation request, clients must first obtain a challenge from the `/challenge` endpoint. 
+This challenge includes a cryptographically strong nonce, the audience (revocation endpoint URL), and an 
+expiration timestamp.
 
 The revocation plugin strictly validates the incoming VP against these server-issued values:
 
@@ -148,11 +113,3 @@ For manual testing with a local status list server:
 
 1. Configure the `status-list-server-url` to point to your test server
 2. Enable debug logging to see detailed request/response information
-
-### TODO
-
-- Unify HTTP interaction with the status list server in the dedicated `StatusListService` class.
-- Improve persistence layer as the plugin interacts with the database.
-- Drop unnecessary configuration properties.
-- Implement HTTP retry strategy within the framework of the HTTP client library, not manually. For readability.
-- Clean up dependencies.

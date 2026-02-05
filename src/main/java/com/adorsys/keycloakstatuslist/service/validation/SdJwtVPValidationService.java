@@ -21,28 +21,15 @@ public interface SdJwtVPValidationService {
     SdJwtVP parseAndValidateSdJwtVP(String sdJwtVpString, String requestId) throws StatusListException;
 
     /**
-     * Verifies that the SD-JWT VP token proves ownership of the specified credential. This includes
-     * credential ID matching, holder signature verification, and key binding validation.
-     *
-     * @param sdJwtVP     the parsed SD-JWT VP token
-     * @param credentialId the credential ID to verify ownership for
-     * @param requestId   the request ID for logging
-     * @throws StatusListException if ownership verification fails
-     */
-    void verifyCredentialOwnership(SdJwtVP sdJwtVP, String credentialId, String requestId)
-            throws StatusListException;
-
-    /**
      * Extracts the holder's signing key from the token's cnf.jwk field. This is the key that the
      * credential holder used to sign the VP token.
      */
     String extractNonceFromKeyBindingJWT(SdJwtVP sdJwtVP);
 
     /**
-     * Verifies the SD-JWT VP token's issuer signature using Keycloak's internal key management. This
-     * ensures the token was properly issued by the claimed issuer.
+     * Verifies key binding of SD-JWT VP token and issuer signature using Keycloak's internal key management.
+     * This ensures the token was properly issued by the claimed issuer.
      */
-    void verifySdJwtVPSignature(SdJwtVP sdJwtVP, String requestId, String credentialId, String expectedNonce)
+    void verifySdJwtVP(SdJwtVP sdJwtVP, String requestId, String expectedNonce)
             throws StatusListException;
 }
-

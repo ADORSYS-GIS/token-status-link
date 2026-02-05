@@ -1,16 +1,16 @@
 package com.adorsys.keycloakstatuslist.model;
 
 public enum TokenStatus {
-    VALID(0),
-    REVOKED(1);
+    VALID("VALID"),
+    INVALID("INVALID");
 
-    private final int value;
+    private final String value;
 
-    TokenStatus(int value) {
+    TokenStatus(String value) {
         this.value = value;
     }
 
-    public int getValue() {
+    public String getValue() {
         return value;
     }
 }

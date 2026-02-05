@@ -2,8 +2,6 @@ package com.adorsys.keycloakstatuslist.service;
 
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 
-import java.security.Key;
-import java.security.PublicKey;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
@@ -35,65 +33,11 @@ public class JwksService {
     }
 
     /**
-     * Retrieves all public keys from Keycloak's internal key management. This is more efficient than
-     * making HTTP requests to JWKS endpoints.
-     */
-    public List<PublicKey> getAllIssuerPublicKeys(SdJwtVP sdJwtVP, String issuer, String requestId)
-            throws StatusListException {
-        try {
-            RealmModel realm = session.getContext().getRealm();
-            var keyManager = session.keys();
-
-            Stream<KeyWrapper> keyStream = keyManager.getKeysStream(realm)
-                    .filter(key -> KeyUse.SIG.equals(key.getUse()));
-
-            // If we have a specific key ID from the JWT header, filter by it
-            String signingKeyId = getSigningKeyId(sdJwtVP);
-            if (signingKeyId != null) {
-                keyStream = keyStream.filter(key -> signingKeyId.equals(key.getKid()));
-                logger.debugf("Filtering keys by kid: %s. RequestId: %s", signingKeyId, requestId);
-            }
-
-            List<PublicKey> publicKeys = keyStream
-                    .map(key -> {
-                        try {
-                            Key keyValue = key.getPublicKey();
-                            if (keyValue instanceof PublicKey) {
-                                PublicKey publicKey = (PublicKey) keyValue;
-                                logger.debugf("Retrieved public key: %s, algorithm: %s, kid: %s. RequestId: %s",
-                                        publicKey.getAlgorithm(), key.getAlgorithm(), key.getKid(), requestId);
-                                return publicKey;
-                            } else {
-                                logger.warnf("Key %s is not a PublicKey (type: %s). RequestId: %s",
-                                        key.getKid(), keyValue != null ? keyValue.getClass().getSimpleName() : "null", requestId);
-                                return null;
-                            }
-                        } catch (Exception e) {
-                            logger.warnf("Failed to retrieve public key from key %s. RequestId: %s, Error: %s",
-                                    key.getKid(), requestId, e.getMessage());
-                            return null;
-                        }
-                    })
-                    .filter(publicKey -> publicKey != null)
-                    .collect(Collectors.toList());
-
-            logger.infof("Successfully retrieved %d public keys from Keycloak session. RequestId: %s",
-                    publicKeys.size(), requestId);
-            return publicKeys;
-
-        } catch (Exception e) {
-            logger.errorf("Failed to retrieve public keys from Keycloak session. RequestId: %s, Error: %s",
-                    requestId, e.getMessage());
-            throw new StatusListException("Failed to retrieve public keys from Keycloak session: " + e.getMessage(), e);
-        }
-    }
-
-    /**
      * Creates signature verifier contexts directly from Keycloak's key management. This is the
      * preferred approach as it avoids converting keys unnecessarily.
      */
     public List<SignatureVerifierContext> getSignatureVerifierContexts(
-            SdJwtVP sdJwtVP, String issuer, String requestId) throws StatusListException {
+            SdJwtVP sdJwtVP, String requestId) throws StatusListException {
         try {
             RealmModel realm = session.getContext().getRealm();
             var keyManager = session.keys();
@@ -113,8 +57,7 @@ public class JwksService {
                         try {
                             SignatureProvider signatureProvider = session
                                     .getProvider(SignatureProvider.class, key.getAlgorithmOrDefault());
-                            SignatureVerifierContext verifier = signatureProvider.verifier(key);
-                            return verifier;
+                            return signatureProvider.verifier(key);
                         } catch (VerificationException e) {
                             logger.warnf("Failed to create verifier for key %s. RequestId: %s, Error: %s",
                                     key.getKid(), requestId, e.getMessage());

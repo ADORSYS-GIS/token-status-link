@@ -1,4 +1,4 @@
-package com.adorsys.keycloakstatuslist.service;
+package com.adorsys.keycloakstatuslist.service.nonce;
 
 import com.adorsys.keycloakstatuslist.model.RevocationChallenge;
 
@@ -10,12 +10,11 @@ public interface NonceCacheProvider {
     
     /**
      * Issues a new nonce challenge for credential revocation.
-     * 
-     * @param credentialId the credential ID this nonce is bound to
+     *
      * @param audience the expected audience (revocation endpoint URL)
-     * @return the generated nonce string
+     * @return the revocation challenge with the generated nonce string
      */
-    String issueNonce(String credentialId, String audience);
+    RevocationChallenge issueNonce(String audience);
     
     /**
      * Consumes a nonce, validating and removing it from the cache.

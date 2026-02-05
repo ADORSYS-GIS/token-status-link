@@ -1,22 +1,59 @@
 package com.adorsys.keycloakstatuslist.model;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 import java.time.Instant;
 
 /**
- * Represents a nonce challenge issued for credential revocation.
- * Used to prevent replay attacks by ensuring each revocation request uses a fresh, one-time nonce.
+ * Response model for the revocation challenge endpoint.
+ * Contains the nonce, audience, and expiration time for the wallet to use in the revocation request.
  */
-public record RevocationChallenge(
-    String nonce,
-    String audience,
-    String credentialId,
-    Instant expiresAt
-) {
-    /**
-     * Checks if this challenge has expired.
-     * @return true if the challenge is past its expiration time
-     */
+public class RevocationChallenge {
+    
+    @JsonProperty("nonce")
+    private String nonce;
+    
+    @JsonProperty("aud")
+    private String audience;
+    
+    @JsonProperty("expires_at")
+    private long expiresAt;
+    
+    public RevocationChallenge() {
+        // Default constructor for JSON serialization
+    }
+    
+    public RevocationChallenge(String nonce, String audience, long expiresAt) {
+        this.nonce = nonce;
+        this.audience = audience;
+        this.expiresAt = expiresAt;
+    }
+    
+    public String getNonce() {
+        return nonce;
+    }
+    
+    public void setNonce(String nonce) {
+        this.nonce = nonce;
+    }
+    
+    public String getAudience() {
+        return audience;
+    }
+    
+    public void setAudience(String audience) {
+        this.audience = audience;
+    }
+
+    public long getExpiresAt() {
+        return expiresAt;
+    }
+
+    public void setExpiresAt(int expiresAt) {
+        this.expiresAt = expiresAt;
+    }
+
     public boolean isExpired() {
-        return Instant.now().isAfter(expiresAt);
+        return Instant.now().isAfter(Instant.ofEpochSecond(expiresAt));
     }
 }

@@ -246,7 +246,7 @@ class CredentialRevocationResourceTest {
                 if (credentialId != null && !credentialId.isEmpty()) {
                     try {
                         CredentialRevocationRequest request = new CredentialRevocationRequest();
-                        request.setCredentialId(credentialId);
+                        request.setRevocationMode(CredentialRevocationRequest.CREDENTIAL_REVOCATION_MODE);
                         request.setRevocationReason(form.getFirst("reason"));
 
                         getRevocationService().revokeCredential(request, token);

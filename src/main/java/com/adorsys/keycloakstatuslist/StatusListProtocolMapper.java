@@ -4,6 +4,7 @@ import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
 import com.adorsys.keycloakstatuslist.model.Status;
 import com.adorsys.keycloakstatuslist.model.StatusListClaim;
+import com.adorsys.keycloakstatuslist.model.TokenStatus;
 import com.adorsys.keycloakstatuslist.service.CryptoIdentityService;
 import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
@@ -146,9 +147,11 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         }
 
         // Build URI for status list
-        Map<String, String> mapperConfig = mapperModel.getConfig();
-        // TODO: TEMP: Undo UUID
-        String listId = UUID.randomUUID().toString(); // mapperConfig.getOrDefault(Constants.CONFIG_LIST_ID_PROPERTY, realmId);
+        // TODO(status-list-server#128): Use configured list ID
+        // Map<String, String> mapperConfig = mapperModel.getConfig();
+        // mapperConfig.getOrDefault(Constants.CONFIG_LIST_ID_PROPERTY, realmId);
+        String listId = UUID.randomUUID().toString();
+
         URI uri =
                 UriBuilder.fromUri(serverUrl)
                         .path(String.format(Constants.HTTP_ENDPOINT_RETRIEVE_PATH, listId))
@@ -280,7 +283,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
                         statusListId,
                         List.of(
                                 new StatusListService.StatusListPayload.StatusEntry(
-                                        (int) idx, Constants.TOKEN_STATUS_VALID)));
+                                        idx, TokenStatus.VALID.getValue())));
 
         // Publish or update status list on server
         try {
@@ -290,13 +293,12 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         }
     }
 
-    protected interface Constants {
+    public interface Constants {
         String MAPPER_ID = "oid4vc-status-list-claim-mapper";
         String CONFIG_LIST_ID_PROPERTY = "status.list.list_id";
 
         String ID_CLAIM_KEY = "id";
         String STATUS_CLAIM_KEY = "status";
-        String TOKEN_STATUS_VALID = "VALID";
 
         String HTTP_ENDPOINT_RETRIEVE_PATH = "/statuslists/%s";
     }
