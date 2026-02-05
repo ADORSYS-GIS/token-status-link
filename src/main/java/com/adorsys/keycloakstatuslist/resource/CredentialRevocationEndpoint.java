@@ -54,7 +54,7 @@ public class CredentialRevocationEndpoint extends TokenRevocationEndpoint {
         MultivaluedMap<String, String> form = session.getContext().getHttpRequest().getDecodedFormParameters();
         String authorizationHeader = getHeaders().getHeaderString(HttpHeaders.AUTHORIZATION);
 
-        if (Objects.equals(CREDENTIAL_REVOCATION_MODE, form.getFirst("revocation_mode"))) {
+        if (!Objects.equals(CREDENTIAL_REVOCATION_MODE, form.getFirst(REVOCATION_MODE_KEY))) {
             logger.debugf("Not in credential revocation mode. Falling back to standard revocation logic.");
             return super.revoke();
         }
