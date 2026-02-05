@@ -19,7 +19,7 @@ public class RevocationChallenge {
     @JsonProperty("expires_in")
     private int expiresIn;
     
-    // Removed expiresAt field for simplicity
+    private long expiresAt;
     
     public RevocationChallenge() {
     }
@@ -28,7 +28,7 @@ public class RevocationChallenge {
         this.nonce = nonce;
         this.audience = audience;
         this.expiresIn = expiresIn;
-        // Removed expiresAt calculation for simplicity
+        this.expiresAt = Instant.now().plusSeconds(expiresIn).getEpochSecond();
     }
     
     public String getNonce() {
@@ -57,7 +57,6 @@ public class RevocationChallenge {
 
 
     public boolean isExpired() {
-        // Simplified: no expiration checking for revocation challenges
-        return false;
+        return Instant.now().isAfter(Instant.ofEpochSecond(expiresAt));
     }
 }
