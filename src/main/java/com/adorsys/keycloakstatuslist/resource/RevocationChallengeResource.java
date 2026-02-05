@@ -34,7 +34,7 @@ public class RevocationChallengeResource implements RealmResourceProvider {
      *
      * @return a RevocationChallengeResponse with nonce, audience, and expiration
      */
-    @POST
+    @GET
     @Produces(MediaType.APPLICATION_JSON)
     public Response getChallenge() {
         try {

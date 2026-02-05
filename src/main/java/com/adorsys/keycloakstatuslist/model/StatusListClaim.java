@@ -1,5 +1,6 @@
 package com.adorsys.keycloakstatuslist.model;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.net.URI;
@@ -39,7 +40,8 @@ public class StatusListClaim {
      * @param idx The index of the token in the status list.
      * @param uri The URI of the status list resource where the token's status is published.
      */
-    public StatusListClaim(long idx, String uri) {
+    @JsonCreator
+    public StatusListClaim(@JsonProperty("idx") long idx, @JsonProperty("uri") String uri) {
         this.idx = idx;
         this.uri = uri;
     }

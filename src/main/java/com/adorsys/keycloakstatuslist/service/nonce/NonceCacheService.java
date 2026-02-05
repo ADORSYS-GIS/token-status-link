@@ -8,7 +8,6 @@ import org.keycloak.common.util.SecretGenerator;
 import org.keycloak.services.resource.RealmResourceProvider;
 
 import java.time.Duration;
-import java.time.Instant;
 
 /**
  * Service for managing nonce challenges in credential revocation.
@@ -36,13 +35,12 @@ public class NonceCacheService implements NonceCacheProvider, RealmResourceProvi
     @Override
     public RevocationChallenge issueNonce(String audience) {
         String nonce = SecretGenerator.getInstance().generateSecureID();
-        long expiresAt = Instant.now().plusSeconds(NONCE_EXPIRATION_SECONDS).getEpochSecond();
 
-        RevocationChallenge challenge = new RevocationChallenge(nonce, audience, expiresAt);
+        RevocationChallenge challenge = new RevocationChallenge(nonce, audience, NONCE_EXPIRATION_SECONDS);
         cache.put(nonce, challenge);
 
-        logger.debugf("Issued nonce challenge: nonce=%s, audience=%s, expiresAt=%s",
-                nonce, audience, challenge.getExpiresAt());
+        logger.debugf("Issued nonce challenge: nonce=%s, audience=%s, expiresIn=%s",
+                nonce, audience, challenge.getExpiresIn());
 
         return challenge;
     }
@@ -65,12 +63,6 @@ public class NonceCacheService implements NonceCacheProvider, RealmResourceProvi
         
         if (challenge == null) {
             logger.warnf("Nonce not found in cache (may be already consumed or expired): %s", nonce);
-            return null;
-        }
-        
-        if (challenge.isExpired()) {
-            logger.warnf("Nonce has expired: %s, expiresAt=%s", nonce, challenge.getExpiresAt());
-            cache.invalidate(nonce); // Clean up expired nonce
             return null;
         }
         

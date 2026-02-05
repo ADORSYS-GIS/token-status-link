@@ -2,8 +2,6 @@ package com.adorsys.keycloakstatuslist.model;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 
-import java.time.Instant;
-
 /**
  * Response model for the revocation challenge endpoint.
  * Contains the nonce, audience, and expiration time for the wallet to use in the revocation request.
@@ -16,17 +14,16 @@ public class RevocationChallenge {
     @JsonProperty("aud")
     private String audience;
     
-    @JsonProperty("expires_at")
-    private long expiresAt;
+    @JsonProperty("expires_in")
+    private int expiresIn;
     
     public RevocationChallenge() {
-        // Default constructor for JSON serialization
     }
     
-    public RevocationChallenge(String nonce, String audience, long expiresAt) {
+    public RevocationChallenge(String nonce, String audience, int expiresIn) {
         this.nonce = nonce;
         this.audience = audience;
-        this.expiresAt = expiresAt;
+        this.expiresIn = expiresIn;
     }
     
     public String getNonce() {
@@ -45,15 +42,11 @@ public class RevocationChallenge {
         this.audience = audience;
     }
 
-    public long getExpiresAt() {
-        return expiresAt;
+    public int getExpiresIn() {
+        return expiresIn;
     }
 
-    public void setExpiresAt(int expiresAt) {
-        this.expiresAt = expiresAt;
-    }
-
-    public boolean isExpired() {
-        return Instant.now().isAfter(Instant.ofEpochSecond(expiresAt));
+    public void setExpiresIn(int expiresIn) {
+        this.expiresIn = expiresIn;
     }
 }
