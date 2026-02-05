@@ -7,7 +7,6 @@ import static org.mockito.Mockito.*;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.service.CryptoIdentityService;
 import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
-import com.adorsys.keycloakstatuslist.service.RevocationRecordService;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
 import jakarta.persistence.EntityManager;
 
@@ -42,7 +41,7 @@ class CustomOIDCLoginProtocolFactoryTest {
     private JpaConnectionProvider jpaConnectionProvider;
     private EntityManager entityManager;
 
-    private MockedStatic<RevocationRecordService> mockedRevocationService;
+    private MockedStatic<CryptoIdentityService> mockedRevocationService;
     private MockedStatic<CustomHttpClient> mockedHttpClient;
 
     private MockedConstruction<StatusListService> mockedStatusListServiceConstruction;
@@ -74,7 +73,7 @@ class CustomOIDCLoginProtocolFactoryTest {
         when(realm.getAttribute("status-list-enabled")).thenReturn("true");
         when(realm.getAttribute("status-list-server-url")).thenReturn("http://localhost:8080");
 
-        mockedRevocationService = mockStatic(RevocationRecordService.class);
+        mockedRevocationService = mockStatic(CryptoIdentityService.class);
         mockedHttpClient = mockStatic(CustomHttpClient.class);
 
         mockedStatusListServiceConstruction =
@@ -121,9 +120,9 @@ class CustomOIDCLoginProtocolFactoryTest {
                         });
 
         JWK mockJwk = mock(JWK.class);
-        RevocationRecordService.KeyData keyData = new RevocationRecordService.KeyData(mockJwk, "RS256");
+        CryptoIdentityService.KeyData keyData = new CryptoIdentityService.KeyData(mockJwk, "RS256");
         mockedRevocationService
-                .when(() -> RevocationRecordService.getRealmKeyData(session, realm))
+                .when(() -> CryptoIdentityService.getRealmKeyData(session, realm))
                 .thenReturn(keyData);
 
         ArgumentCaptor<ProviderEventListener> listenerCaptor =
@@ -184,7 +183,7 @@ class CustomOIDCLoginProtocolFactoryTest {
         setupSuccessfulHealthCheck();
 
         mockedRevocationService
-                .when(() -> RevocationRecordService.getRealmKeyData(session, realm))
+                .when(() -> CryptoIdentityService.getRealmKeyData(session, realm))
                 .thenThrow(
                         new com.adorsys.keycloakstatuslist.exception.StatusListException("Key not found"));
 
@@ -196,10 +195,10 @@ class CustomOIDCLoginProtocolFactoryTest {
     @Test
     void testInitializeRealms_HandlesAlreadyRegisteredMap() {
         setupSuccessfulHealthCheck();
-        RevocationRecordService.KeyData keyData =
-                new RevocationRecordService.KeyData(mock(JWK.class), "RS256");
+        CryptoIdentityService.KeyData keyData =
+                new CryptoIdentityService.KeyData(mock(JWK.class), "RS256");
         mockedRevocationService
-                .when(() -> RevocationRecordService.getRealmKeyData(session, realm))
+                .when(() -> CryptoIdentityService.getRealmKeyData(session, realm))
                 .thenReturn(keyData);
 
         triggerInitialization();
@@ -213,8 +212,8 @@ class CustomOIDCLoginProtocolFactoryTest {
     void testInitializeRealms_GracefulFailureOnServiceException() {
         setupSuccessfulHealthCheck();
 
-        RevocationRecordService.KeyData keyData = new RevocationRecordService.KeyData(mock(JWK.class), "RS256");
-        mockedRevocationService.when(() -> RevocationRecordService.getRealmKeyData(session, realm))
+        CryptoIdentityService.KeyData keyData = new CryptoIdentityService.KeyData(mock(JWK.class), "RS256");
+        mockedRevocationService.when(() -> CryptoIdentityService.getRealmKeyData(session, realm))
                 .thenReturn(keyData);
 
         triggerInitialization();

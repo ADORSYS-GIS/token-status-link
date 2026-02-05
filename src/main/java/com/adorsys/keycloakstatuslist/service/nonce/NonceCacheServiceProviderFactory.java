@@ -1,4 +1,4 @@
-package com.adorsys.keycloakstatuslist.service;
+package com.adorsys.keycloakstatuslist.service.nonce;
 
 import org.jboss.logging.Logger;
 import org.keycloak.Config;

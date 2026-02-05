@@ -9,27 +9,32 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  */
 public class CredentialRevocationRequest {
 
-    @JsonProperty("credential_id")
-    private String credentialId;
+    public static final String REVOCATION_MODE_KEY = "mode";
+    public static final String REVOCATION_REASON_KEY = "reason";
 
-    @JsonProperty("revocation_reason")
+    public static final String CREDENTIAL_REVOCATION_MODE = "credential_revocation";
+
+    @JsonProperty(REVOCATION_MODE_KEY)
+    private String revocationMode;
+
+    @JsonProperty(REVOCATION_REASON_KEY)
     private String revocationReason;
 
     public CredentialRevocationRequest() {
         // Default constructor for JSON deserialization
     }
 
-    public CredentialRevocationRequest(String credentialId, String revocationReason) {
-        this.credentialId = credentialId;
+    public CredentialRevocationRequest(String revocationMode, String revocationReason) {
+        this.revocationMode = revocationMode;
         this.revocationReason = revocationReason;
     }
 
-    public String getCredentialId() {
-        return credentialId;
+    public String getRevocationMode() {
+        return revocationMode;
     }
 
-    public void setCredentialId(String credentialId) {
-        this.credentialId = credentialId;
+    public void setRevocationMode(String revocationMode) {
+        this.revocationMode = revocationMode;
     }
 
     public String getRevocationReason() {

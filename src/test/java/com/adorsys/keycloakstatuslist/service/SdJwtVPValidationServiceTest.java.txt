@@ -146,7 +146,7 @@ class SdJwtVPValidationServiceTest {
     }
 
     @Test
-    void testVerifySdJwtVPSignature_NonceValidationFailure() throws StatusListException {
+    void testVerifySdJwtVP_NonceValidationFailure() throws StatusListException {
         // Arrange
         String requestId = "test-request-id";
         String issuer = "test-issuer";
@@ -193,7 +193,7 @@ class SdJwtVPValidationServiceTest {
 
         // Act & Assert
         StatusListException exception = assertThrows(StatusListException.class,
-                () -> service.verifySdJwtVPSignature(sdJwtVP, requestId, "test-credential-id", "expected-nonce"));
+                () -> service.verifySdJwtVP(sdJwtVP, requestId, "test-credential-id", "expected-nonce"));
 
         assertTrue(exception.getMessage().contains("SD-JWT VP verification failed") ||
                 exception.getMessage().contains("Key Binding JWT audience does not match"));
@@ -201,7 +201,7 @@ class SdJwtVPValidationServiceTest {
     }
 
     @Test
-    void testVerifySdJwtVPSignature_MissingNonce() throws StatusListException {
+    void testVerifySdJwtVP_MissingNonce() throws StatusListException {
         // Arrange
         String requestId = "test-request-id";
         String issuer = "test-issuer";
@@ -236,7 +236,7 @@ class SdJwtVPValidationServiceTest {
 
         // Act & Assert - Test with null expectedNonce
         StatusListException exception = assertThrows(StatusListException.class,
-                () -> service.verifySdJwtVPSignature(sdJwtVP, requestId, "test-credential-id", null));
+                () -> service.verifySdJwtVP(sdJwtVP, requestId, "test-credential-id", null));
 
         assertTrue(exception.getMessage().contains("Server-generated nonce not provided") ||
                 exception.getMessage().contains("Malformed VP") ||

@@ -1,2 +1,2 @@
-com.adorsys.keycloakstatuslist.service.NonceCacheServiceProviderFactory
-
+com.adorsys.keycloakstatuslist.service.nonce.NonceCacheServiceProviderFactory
+com.adorsys.keycloakstatuslist.resource.RevocationChallengeResourceFactory
