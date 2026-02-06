@@ -21,3 +21,4 @@ target/
 
 # Docker Compose local override file
 docker-compose.local.yml
+.flattened-pom.xml
