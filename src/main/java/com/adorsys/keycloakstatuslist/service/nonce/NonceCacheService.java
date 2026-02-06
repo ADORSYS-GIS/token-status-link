@@ -66,12 +66,6 @@ public class NonceCacheService implements NonceCacheProvider, RealmResourceProvi
             return null;
         }
         
-        if (challenge.isExpired()) {
-            logger.warnf("Nonce has expired: %s, expiresIn=%s", nonce, challenge.getExpiresIn());
-            cache.invalidate(nonce); // Clean up expired nonce
-            return null;
-        }
-        
         // One-time use: remove from cache immediately
         cache.invalidate(nonce);
         logger.debugf("Successfully consumed nonce: %s", nonce);

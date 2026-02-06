@@ -17,7 +17,6 @@ import java.util.Map;
  * REST resource for issuing nonce challenges for credential revocation.
  * Implements the first step of the secure 2-step revocation flow.
  */
-@Path("/revoke/challenge")
 public class RevocationChallengeResource implements RealmResourceProvider {
     
     private static final Logger logger = Logger.getLogger(RevocationChallengeResource.class);
