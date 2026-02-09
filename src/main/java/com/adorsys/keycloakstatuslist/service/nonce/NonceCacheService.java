@@ -15,17 +15,16 @@ import java.time.Duration;
  * Implements RealmResourceProvider so Keycloak can discover it via standard SPI.
  */
 public class NonceCacheService implements NonceCacheProvider, RealmResourceProvider {
-    
     private static final Logger logger = Logger.getLogger(NonceCacheService.class);
     private static final int NONCE_EXPIRATION_SECONDS = 600; // 10 minutes
     private static final int MAX_CACHE_SIZE = 50_000;
-    
+
     // Thread-safe cache with automatic expiration
     private final Cache<String, RevocationChallenge> cache = Caffeine.newBuilder()
             .expireAfterWrite(Duration.ofSeconds(NONCE_EXPIRATION_SECONDS))
             .maximumSize(MAX_CACHE_SIZE)
             .build();
-    
+
     /**
      * Issues a new nonce challenge for credential revocation.
      *
@@ -44,7 +43,7 @@ public class NonceCacheService implements NonceCacheProvider, RealmResourceProvi
 
         return challenge;
     }
-    
+
     /**
      * Consumes a nonce, validating and removing it from the cache.
      * This ensures one-time use - subsequent calls with the same nonce will fail.
@@ -58,30 +57,37 @@ public class NonceCacheService implements NonceCacheProvider, RealmResourceProvi
             logger.warn("Attempted to consume null or empty nonce");
             return null;
         }
-        
+
         RevocationChallenge challenge = cache.getIfPresent(nonce);
-        
+
         if (challenge == null) {
             logger.warnf("Nonce not found in cache (may be already consumed or expired): %s", nonce);
             return null;
         }
-        
+
+        if (challenge.isExpired()) {
+            logger.warnf("Nonce has expired: %s, expiresAt=%s", nonce, challenge.getExpiresAt());
+            cache.invalidate(nonce);
+            return null;
+        }
+
         // One-time use: remove from cache immediately
         cache.invalidate(nonce);
         logger.debugf("Successfully consumed nonce: %s", nonce);
-        
+
         return challenge;
     }
-    
+
     /**
      * Gets the current cache size for monitoring purposes.
+     * 
      * @return the number of active nonces in the cache
      */
     @Override
     public long getCacheSize() {
         return cache.estimatedSize();
     }
-    
+
     /**
      * Clears all nonces from the cache.
      * Used primarily for testing and maintenance.
@@ -91,13 +97,13 @@ public class NonceCacheService implements NonceCacheProvider, RealmResourceProvi
         cache.invalidateAll();
         logger.info("Nonce cache cleared");
     }
-    
+
     // RealmResourceProvider implementation
     @Override
     public Object getResource() {
         return this;
     }
-    
+
     @Override
     public void close() {
         cache.cleanUp();
