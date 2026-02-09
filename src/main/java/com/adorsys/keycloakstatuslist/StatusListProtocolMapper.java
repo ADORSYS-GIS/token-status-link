@@ -33,12 +33,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Consumer;
+import java.util.Objects;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 import static com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity.MappingStatus;
 
 /**
- * Protocol mapper for adding `status_list` claims to issued Verifiable Credentials, as per the <a
- * href=
+ * Protocol mapper for adding `status_list` claims to issued Verifiable
+ * Credentials, as per the
+ * <a href=
  * "https://www.ietf.org/archive/id/draft-ietf-oauth-status-list-11.html#name-referenced-token">
  * Token Status List </a> specification.
  */
@@ -60,11 +64,11 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         this.session = session;
         CryptoIdentityService cryptoIdentityService = new CryptoIdentityService(session);
         StatusListConfig config = new StatusListConfig(session.getContext().getRealm());
-        this.statusListService =
-                new StatusListService(
-                        config.getServerUrl(),
-                        cryptoIdentityService.getJwtToken(config),
-                        new CloseableHttpClientAdapter(CustomHttpClient.getHttpClient()));
+        this.statusListService = new StatusListService(
+                config.getServerUrl(),
+                cryptoIdentityService.getJwtToken(config),
+                new CloseableHttpClientAdapter(CustomHttpClient.getHttpClient())
+        );
     }
 
     @Override
@@ -151,11 +155,9 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         // Map<String, String> mapperConfig = mapperModel.getConfig();
         // mapperConfig.getOrDefault(Constants.CONFIG_LIST_ID_PROPERTY, realmId);
         String listId = UUID.randomUUID().toString();
-
-        URI uri =
-                UriBuilder.fromUri(serverUrl)
-                        .path(String.format(Constants.HTTP_ENDPOINT_RETRIEVE_PATH, listId))
-                        .build();
+        URI uri = UriBuilder.fromUri(serverUrl)
+            .path(String.format(Constants.HTTP_ENDPOINT_RETRIEVE_PATH, listId))
+            .build();
         logger.debugf("Configuration: listId=%s, uri=%s", listId, uri);
 
         // Get credential ID
@@ -170,7 +172,12 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         Status status = sendStatusAndStoreIndexMapping(listId, uri.toString(), userId, tokenId);
 
         if (status == null) {
-            logger.error("Failed to send status to server. Status claim not mapped");
+            if (config.isMandatory()) {
+                    logger.error("Status list is mandatory and publication failed; failing issuance");
+                throw new RuntimeException("Status list publication failed and is mandatory");
+            }
+
+            logger.warn("Status list publication failed; proceeding without status claim");
             return;
         }
 
@@ -182,8 +189,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         try {
             URI uri = new URI(url);
             String scheme = uri.getScheme();
-            return scheme != null
-                    && (scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"));
+            return scheme != null && (scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"));
         } catch (URISyntaxException e) {
             logger.debugf("Invalid URL format: %s", url);
             return false;
@@ -270,7 +276,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
             logger.debugf("Persisting completion mapping status: %s", mapping.getStatus());
             withEntityManagerInTransaction(session, em -> em.merge(mapping));
         } catch (Exception e) {
-            logger.error("Failed to persist completion mapping status. Will proceed because non-fatal", e);
+            logger.error("Failed to persist completion mapping status", e);
         }
 
         return status;
@@ -289,7 +295,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         try {
             statusListService.publishOrUpdate(payload);
         } catch (Exception e) {
-            throw new IOException(e);
+            throw new RuntimeException(e);
         }
     }
 
