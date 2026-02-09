@@ -1,6 +1,7 @@
 package com.adorsys.keycloakstatuslist;
 
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
+import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
 import com.adorsys.keycloakstatuslist.model.Status;
 import com.adorsys.keycloakstatuslist.model.StatusListClaim;
@@ -32,9 +33,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.function.Consumer;
-import java.util.Objects;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 import static com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity.MappingStatus;
@@ -267,7 +265,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
             mapping.setStatus(MappingStatus.SUCCESS);
 
             status = new Status(new StatusListClaim(mapping.getIdx(), uri));
-        } catch (IOException e) {
+        } catch (StatusListException | IOException e) {
             logger.error("Failed to send token status", e);
             mapping.setStatus(MappingStatus.FAILURE);
         }
@@ -282,7 +280,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         return status;
     }
 
-    private void sendStatusToServer(long idx, String statusListId) throws IOException {
+    private void sendStatusToServer(long idx, String statusListId) throws IOException, StatusListException {
         // Prepare payload
         StatusListService.StatusListPayload payload =
                 new StatusListService.StatusListPayload(
@@ -292,11 +290,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
                                         idx, TokenStatus.VALID.getValue())));
 
         // Publish or update status list on server
-        try {
-            statusListService.publishOrUpdate(payload);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
+        statusListService.publishOrUpdate(payload);
     }
 
     public interface Constants {
