@@ -18,6 +18,10 @@ public class RevocationChallenge {
     @JsonProperty("aud")
     private String audience;
 
+    @Deprecated
+    @JsonProperty("expires_in")
+    private int expiresIn;
+
     @JsonProperty("exp")
     private long expiresAt;
 
@@ -27,6 +31,7 @@ public class RevocationChallenge {
     public RevocationChallenge(String nonce, String audience, int expiresIn) {
         this.nonce = nonce;
         this.audience = audience;
+        this.expiresIn = expiresIn;
         this.expiresAt = Instant.now().plusSeconds(expiresIn).getEpochSecond();
     }
 
@@ -51,6 +56,14 @@ public class RevocationChallenge {
 
     public void setAudience(String audience) {
         this.audience = audience;
+    }
+
+    public int getExpiresIn() {
+        return expiresIn;
+    }
+
+    public void setExpiresIn(int expiresIn) {
+        this.expiresIn = expiresIn;
     }
 
     public long getExpiresAt() {
