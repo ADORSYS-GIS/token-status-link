@@ -20,7 +20,6 @@ import java.util.Map;
 public class RevocationChallengeResource {
 
     private static final Logger logger = Logger.getLogger(RevocationChallengeResource.class);
-    private static final int NONCE_EXPIRATION_SECONDS = 600; // 10 minutes
 
     private final KeycloakSession session;
 
@@ -67,5 +66,4 @@ public class RevocationChallengeResource {
                     .build();
         }
     }
-
 }

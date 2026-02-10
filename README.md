@@ -113,3 +113,9 @@ For manual testing with a local status list server:
 
 1. Configure the `status-list-server-url` to point to your test server
 2. Enable debug logging to see detailed request/response information
+
+## TODO
+
+- Address TODO(status-list-server#128), related to issue with hanging list retrieval
+- Ensure nonce cache logic is compatible with clustered environments
+- Improve test coverage (StatusListService, RevocationEndpoint, NonceCacheService)

@@ -1,6 +1,9 @@
 package com.adorsys.keycloakstatuslist.model;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import org.keycloak.util.JsonSerialization;
+
+import java.time.Instant;
 
 /**
  * Response model for the revocation challenge endpoint.
@@ -15,42 +18,23 @@ public class RevocationChallenge {
     @JsonProperty("aud")
     private String audience;
 
-    @JsonProperty("expires_in")
-    private int expiresIn;
-
-    private final long issuedAt;
+    @JsonProperty("exp")
+    private long expiresAt;
 
     public RevocationChallenge() {
-        this.issuedAt = System.currentTimeMillis();
     }
 
     public RevocationChallenge(String nonce, String audience, int expiresIn) {
         this.nonce = nonce;
         this.audience = audience;
-        this.expiresIn = expiresIn;
-        this.issuedAt = System.currentTimeMillis();
+        this.expiresAt = Instant.now().plusSeconds(expiresIn).getEpochSecond();
     }
 
     /**
-     * Checks if the challenge has expired based on its issued timestamp and
-     * lifetime.
+     * Checks if the challenge has expired based on its expiration time.
      */
     public boolean isExpired() {
-        return System.currentTimeMillis() > getExpiresAt();
-    }
-
-    /**
-     * Gets the absolute expiration timestamp in milliseconds.
-     */
-    public long getExpiresAt() {
-        return issuedAt + (expiresIn * 1000L);
-    }
-
-    /**
-     * Gets the timestamp when the challenge was issued.
-     */
-    public long getIssuedAt() {
-        return issuedAt;
+        return Instant.now().isAfter(Instant.ofEpochSecond(expiresAt));
     }
 
     public String getNonce() {
@@ -69,11 +53,16 @@ public class RevocationChallenge {
         this.audience = audience;
     }
 
-    public int getExpiresIn() {
-        return expiresIn;
+    public long getExpiresAt() {
+        return expiresAt;
     }
 
-    public void setExpiresIn(int expiresIn) {
-        this.expiresIn = expiresIn;
+    public void setExpiresAt(long expiresAt) {
+        this.expiresAt = expiresAt;
+    }
+
+    @Override
+    public String toString() {
+        return JsonSerialization.valueAsString(this);
     }
 }

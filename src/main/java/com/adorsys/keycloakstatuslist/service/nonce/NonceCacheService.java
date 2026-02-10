@@ -38,9 +38,7 @@ public class NonceCacheService implements NonceCacheProvider, RealmResourceProvi
         RevocationChallenge challenge = new RevocationChallenge(nonce, audience, NONCE_EXPIRATION_SECONDS);
         cache.put(nonce, challenge);
 
-        logger.debugf("Issued nonce challenge: nonce=%s, audience=%s, expiresIn=%s",
-                nonce, audience, challenge.getExpiresIn());
-
+        logger.debugf("Issued nonce challenge: %s", challenge);
         return challenge;
     }
 

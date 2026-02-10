@@ -174,7 +174,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
             return;
         }
 
-        logger.infof("Adding status claim of value: %s", status.toMap());
+        logger.infof("Adding status claim of value: %s", status);
         claims.put(Constants.STATUS_CLAIM_KEY, status);
     }
 

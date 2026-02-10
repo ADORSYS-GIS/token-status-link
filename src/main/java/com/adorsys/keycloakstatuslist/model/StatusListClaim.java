@@ -1,10 +1,10 @@
 package com.adorsys.keycloakstatuslist.model;
 
-import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import org.keycloak.util.JsonSerialization;
 
 import java.net.URI;
-import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -16,6 +16,7 @@ import java.util.Objects;
  * Jackson annotations are used to ensure proper JSON serialization of the fields into the required
  * structure: `{ "idx": <index>, "uri": <uri> }`.
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class StatusListClaim {
 
     /**
@@ -24,7 +25,7 @@ public class StatusListClaim {
      * token's status is stored.
      */
     @JsonProperty("idx")
-    private final long idx;
+    private long idx;
 
     /**
      * The URI of the status list resource, as per Section 6.1 of the IETF OAuth Status List
@@ -32,7 +33,15 @@ public class StatusListClaim {
      * be retrieved. Annotated with `@JsonProperty("uri")` to map to the `uri` key in the JSON output.
      */
     @JsonProperty("uri")
-    private final String uri;
+    private String uri;
+
+    /**
+     * Default constructor for JSON deserialization. Required by Jackson to create an instance of this
+     * class when deserializing from JSON.
+     */
+    public StatusListClaim() {
+        // Default constructor for JSON deserialization
+    }
 
     /**
      * Constructs a StatusListClaim with the specified index and URI.
@@ -40,8 +49,7 @@ public class StatusListClaim {
      * @param idx The index of the token in the status list.
      * @param uri The URI of the status list resource where the token's status is published.
      */
-    @JsonCreator
-    public StatusListClaim(@JsonProperty("idx") long idx, @JsonProperty("uri") String uri) {
+    public StatusListClaim(long idx, String uri) {
         this.idx = idx;
         this.uri = uri;
     }
@@ -54,30 +62,22 @@ public class StatusListClaim {
         this(idx, uri.toString());
     }
 
-    /**
-     * Returns the index of the token in the status list. Used by Jackson for serialization and by
-     * other components (e.g., Status class) to access the index.
-     *
-     * @return The index as a string.
-     */
     public long getIdx() {
         return idx;
     }
 
-    /**
-     * Returns the URI of the status list resource. Used by Jackson for serialization and by other
-     * components (e.g., Status class) to access the URI.
-     *
-     * @return The URI as a string.
-     */
+    public StatusListClaim setIdx(long idx) {
+        this.idx = idx;
+        return this;
+    }
+
     public String getUri() {
         return uri;
     }
 
-    public Map<String, Object> toMap() {
-        return Map.of(
-                "idx", idx,
-                "uri", uri);
+    public StatusListClaim setUri(String uri) {
+        this.uri = uri;
+        return this;
     }
 
     @Override
@@ -90,5 +90,10 @@ public class StatusListClaim {
     @Override
     public int hashCode() {
         return Objects.hash(idx, uri);
+    }
+
+    @Override
+    public String toString() {
+        return JsonSerialization.valueAsString(this);
     }
 }
