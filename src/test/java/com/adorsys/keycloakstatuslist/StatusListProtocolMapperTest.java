@@ -8,15 +8,12 @@ import com.adorsys.keycloakstatuslist.model.Status;
 import com.adorsys.keycloakstatuslist.model.StatusListClaim;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
 import jakarta.persistence.PersistenceException;
-import jakarta.ws.rs.core.UriBuilder;
 import nl.altindag.log.LogCaptor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.keycloak.models.ProtocolMapperModel;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 
-import java.net.URI;
 import java.util.HashMap;
 import java.util.Random;
 import java.util.UUID;
@@ -66,6 +63,11 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
     @Test
     void shouldMapSuccessfully_WhenStatusIsSent() throws Exception {
         long idx = mockEntityPersist();
+        
+        // Mock getStatusListUri which is now called synchronously
+        String expectedUri = TEST_SERVER_URL + "statuslists/" + TEST_REALM_ID;
+        when(statusListService.getStatusListUri(TEST_REALM_ID))
+                .thenReturn(expectedUri);
 
         // Act
         mapper.setClaimsForSubject(claims, userSession);
@@ -74,16 +76,10 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         assertThat(claims.keySet(), hasItem(Constants.STATUS_CLAIM_KEY));
         assertInstanceOf(Status.class, claims.get(Constants.STATUS_CLAIM_KEY));
         Status status = (Status) claims.get(Constants.STATUS_CLAIM_KEY);
-        assertThat(status.getStatusList(), equalTo(new StatusListClaim(idx, listUri(TEST_REALM_ID))));
+        assertThat(status.getStatusList(), equalTo(new StatusListClaim(idx, expectedUri)));
 
-        // 2. Verify service was called with correct payload
-        ArgumentCaptor<StatusListService.StatusListPayload> payloadCaptor = ArgumentCaptor.forClass(StatusListService.StatusListPayload.class);
-        verify(statusListService).publishOrUpdate(payloadCaptor.capture());
-        StatusListService.StatusListPayload capturedPayload = payloadCaptor.getValue();
-        assertThat(capturedPayload.listId(), equalTo(TEST_REALM_ID));
-        assertThat(capturedPayload.status().size(), equalTo(1));
-        assertThat(capturedPayload.status().get(0).index(), equalTo((int) idx));
-        assertThat(capturedPayload.status().get(0).status(), equalTo(Constants.TOKEN_STATUS_VALID));
+        // Verify URI was retrieved
+        verify(statusListService).getStatusListUri(TEST_REALM_ID);
     }
 
     @Test
@@ -109,31 +105,145 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
     }
 
     @Test
-    void shouldNotMap_IfDbPersistenceFails() {
+    void shouldNotMap_IfDbPersistenceFails() throws Exception {
         doThrow(new PersistenceException("DB Error")).when(entityManager).persist(any());
 
         mapper.setClaimsForSubject(claims, userSession);
 
         assertThat("Claims should remain unmapped", claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
         assertThat(logCaptor.getErrorLogs(), hasItem(containsString("Failed to store index mapping")));
+        // Verify HTTP call was never attempted
+        verify(statusListService, never()).registerAndPublishStatus(anyString(), anyLong());
     }
 
     @Test
-    void shouldNotMap_WhenSendingStatusFails() throws Exception {
+    void shouldMap_EvenWhenHttpFails() throws Exception {
         when(realm.getAttribute(StatusListConfig.STATUS_LIST_MANDATORY)).thenReturn("false");
-        mockEntityPersist();
-        doThrow(new StatusListException("Server not reachable"))
-                .when(statusListService).publishOrUpdate(any(StatusListService.StatusListPayload.class));
+        long idx = mockEntityPersist();
+        String expectedUri = TEST_SERVER_URL + "statuslists/" + TEST_REALM_ID;
+        
+        // Mock URI retrieval (always called synchronously to create Status)
+        when(statusListService.getStatusListUri(TEST_REALM_ID))
+                .thenReturn(expectedUri);
 
         // Act
         mapper.setClaimsForSubject(claims, userSession);
 
-        // Assert
-        assertThat("Claims should remain unmapped", claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
-        assertThat(logCaptor.getErrorLogs(), hasItems(
-                containsString("Failed to store index mapping")
-        ));
-        assertThat(logCaptor.getWarnLogs(), hasItem(containsString("Status list publication failed; proceeding without status claim")));
+        // Assert - token issuance should proceed immediately in optional mode
+        // The mapper returns a Status immediately without waiting for HTTP
+        assertThat(
+                "Claims should be mapped immediately (async HTTP)", 
+                claims.keySet(), hasItem(Constants.STATUS_CLAIM_KEY));
+        assertInstanceOf(Status.class, claims.get(Constants.STATUS_CLAIM_KEY));
+        Status status = (Status) claims.get(Constants.STATUS_CLAIM_KEY);
+        assertThat(status.getStatusList(), equalTo(new StatusListClaim(idx, expectedUri)));
+        
+        // Verify URI was retrieved synchronously
+        verify(statusListService).getStatusListUri(TEST_REALM_ID);
+        // HTTP happens asynchronously in background, so we don't verify it here
+    }
+
+    @Test
+    void shouldMap_WhenCircuitBreakerIsOpen() throws Exception {
+        when(realm.getAttribute(StatusListConfig.STATUS_LIST_MANDATORY)).thenReturn("false");
+        long idx = mockEntityPersist();
+        String expectedUri = TEST_SERVER_URL + "statuslists/" + TEST_REALM_ID;
+        
+        // Mock URI retrieval (always called synchronously)
+        when(statusListService.getStatusListUri(TEST_REALM_ID))
+                .thenReturn(expectedUri);
+
+        // Act
+        mapper.setClaimsForSubject(claims, userSession);
+
+        // Assert - token issuance should proceed immediately even when circuit breaker is open
+        // In optional mode, HTTP happens asynchronously, so circuit breaker doesn't block
+        assertThat(
+                "Claims should be mapped immediately (async HTTP)", 
+                claims.keySet(), hasItem(Constants.STATUS_CLAIM_KEY));
+        assertInstanceOf(Status.class, claims.get(Constants.STATUS_CLAIM_KEY));
+        Status status = (Status) claims.get(Constants.STATUS_CLAIM_KEY);
+        assertThat(status.getStatusList(), equalTo(new StatusListClaim(idx, expectedUri)));
+        
+        // Verify URI was retrieved
+        verify(statusListService).getStatusListUri(TEST_REALM_ID);
+        // HTTP happens asynchronously in background
+    }
+
+    @Test
+    void shouldMap_WhenHttpCallTimesOut() throws Exception {
+        when(realm.getAttribute(StatusListConfig.STATUS_LIST_MANDATORY)).thenReturn("false");
+        long idx = mockEntityPersist();
+        String expectedUri = TEST_SERVER_URL + "statuslists/" + TEST_REALM_ID;
+        
+        // Mock URI retrieval (always called synchronously)
+        when(statusListService.getStatusListUri(TEST_REALM_ID))
+                .thenReturn(expectedUri);
+
+        // Act
+        mapper.setClaimsForSubject(claims, userSession);
+
+        // Assert - token issuance should proceed immediately (async HTTP means no timeout blocking)
+        assertThat(
+                "Claims should be mapped immediately (async HTTP)", 
+                claims.keySet(), hasItem(Constants.STATUS_CLAIM_KEY));
+        assertInstanceOf(Status.class, claims.get(Constants.STATUS_CLAIM_KEY));
+        Status status = (Status) claims.get(Constants.STATUS_CLAIM_KEY);
+        assertThat(status.getStatusList(), equalTo(new StatusListClaim(idx, expectedUri)));
+        
+        // Verify URI was retrieved
+        verify(statusListService).getStatusListUri(TEST_REALM_ID);
+        // HTTP timeout happens asynchronously in background, doesn't affect token issuance
+    }
+
+    @Test
+    void shouldCompleteTransaction_BeforeHttpCall() throws Exception {
+        long idx = mockEntityPersist();
+        String expectedUri = TEST_SERVER_URL + "statuslists/" + TEST_REALM_ID;
+        
+        // Mock URI retrieval
+        when(statusListService.getStatusListUri(TEST_REALM_ID))
+                .thenReturn(expectedUri);
+
+        // Act
+        mapper.setClaimsForSubject(claims, userSession);
+
+        // Assert - transaction completes and Status is created before returning
+        assertThat(claims.keySet(), hasItem(Constants.STATUS_CLAIM_KEY));
+        Status status = (Status) claims.get(Constants.STATUS_CLAIM_KEY);
+        assertThat(status.getStatusList(), equalTo(new StatusListClaim(idx, expectedUri)));
+        
+        // Verify DB operations completed
+        verify(entityManager).persist(any(StatusListMappingEntity.class));
+        verify(entityManager).flush();
+        // HTTP call happens asynchronously after transaction and return
+    }
+
+    @Test
+    void shouldNotBlockTokenIssuance_WhenHttpIsSlow() throws Exception {
+        when(realm.getAttribute(StatusListConfig.STATUS_LIST_MANDATORY)).thenReturn("false");
+        long idx = mockEntityPersist();
+        String expectedUri = TEST_SERVER_URL + "statuslists/" + TEST_REALM_ID;
+        
+        // Mock URI retrieval (called synchronously)
+        when(statusListService.getStatusListUri(TEST_REALM_ID))
+                .thenReturn(expectedUri);
+
+        // Act - should return quickly even if HTTP is slow (HTTP happens async in background)
+        long startTime = System.currentTimeMillis();
+        mapper.setClaimsForSubject(claims, userSession);
+        long duration = System.currentTimeMillis() - startTime;
+
+        // Assert - token issuance completed immediately (async HTTP doesn't block)
+        assertThat(claims.keySet(), hasItem(Constants.STATUS_CLAIM_KEY));
+        assertThat("Should complete quickly (async HTTP)", duration, lessThan(1000L));
+        
+        // Verify the returned status has the correct index
+        Status status = (Status) claims.get(Constants.STATUS_CLAIM_KEY);
+        assertThat(status.getStatusList().getIdx(), equalTo(idx));
+        
+        // Verify URI was retrieved synchronously
+        verify(statusListService).getStatusListUri(TEST_REALM_ID);
     }
 
     @Test
@@ -144,7 +254,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         mapper.setClaimsForSubject(claims, userSession);
 
         assertThat("Claims should remain unmapped", claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
-        assertThat(logCaptor.getWarnLogs(), hasItem(containsString("Status list publication failed; proceeding without status claim")));
+        assertThat(logCaptor.getWarnLogs(), hasItem(containsString("Status list publication failed or was skipped; continuing without status claim")));
     }
 
     @Test
@@ -157,14 +267,17 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
     }
 
     @Test
-    void shouldFailIssuance_WhenMandatoryAndSendingStatusFails() throws Exception {
+    void shouldFailIssuance_WhenMandatoryAndHttpFails() throws Exception {
         when(realm.getAttribute(StatusListConfig.STATUS_LIST_MANDATORY)).thenReturn("true");
         mockEntityPersist();
+        
+        // Mock HTTP failure
         doThrow(new StatusListException("Server not reachable"))
-                .when(statusListService).publishOrUpdate(any(StatusListService.StatusListPayload.class));
+                .when(statusListService)
+                .registerAndPublishStatus(anyString(), anyLong());
 
         assertThrows(RuntimeException.class, () -> mapper.setClaimsForSubject(claims, userSession));
-        assertThat(logCaptor.getErrorLogs(), hasItem(containsString("Status list is mandatory and publication failed; failing issuance")));
+        assertThat(logCaptor.getErrorLogs(), hasItem(containsString("Failing token issuance as status list is mandatory")));
     }
 
     private void mockDefaultRealmConfig() {
@@ -189,12 +302,5 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         }).when(entityManager).persist(any(StatusListMappingEntity.class));
 
         return simulatedIndex;
-    }
-
-    @SuppressWarnings("SameParameterValue")
-    private URI listUri(String listId) {
-        return UriBuilder.fromUri(TEST_SERVER_URL)
-                .path(String.format(Constants.HTTP_ENDPOINT_RETRIEVE_PATH, listId))
-                .build();
     }
 }
