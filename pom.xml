@@ -11,7 +11,7 @@
     <description>A Keycloak plugin that publishes token status to a statuslist server</description>
 
     <properties>
-        <revision>0.1.0</revision>
+        <revision>1.0.0-SNAPSHOT</revision>
         <keycloak.version>26.4.5</keycloak.version>
         <jackson.version>2.15.2</jackson.version>
         <mockito.version>5.15.2</mockito.version>

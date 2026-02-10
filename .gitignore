@@ -1,5 +1,6 @@
 # Maven target directory
 target/
+.flattened-pom.xml
 
 # IDE files
 .vscode/
@@ -21,4 +22,3 @@ target/
 
 # Docker Compose local override file
 docker-compose.local.yml
-.flattened-pom.xml
