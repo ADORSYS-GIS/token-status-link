@@ -5,6 +5,7 @@ import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationResponse;
 import com.adorsys.keycloakstatuslist.service.CredentialRevocationService;
+import jakarta.ws.rs.Path;
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.MultivaluedMap;
@@ -36,17 +37,27 @@ public class CredentialRevocationEndpoint extends TokenRevocationEndpoint {
      *
      * @param session           Keycloak session
      * @param event             EventBuilder for logging
-     * @param revocationService Credential revocation service (can be injected for testing)
+     * @param revocationService Credential revocation service (can be injected fortesting)
      */
     public CredentialRevocationEndpoint(
             KeycloakSession session,
             EventBuilder event,
-            CredentialRevocationService revocationService
-    ) {
+            CredentialRevocationService revocationService) {
         super(session, event);
         this.session = session;
         this.revocationService = revocationService;
         this.headers = session.getContext().getRequestHeaders();
+    }
+
+    /**
+     * Provides the challenge sub-resource for the revocation endpoint.
+     * Handles: GET /protocol/openid-connect/revoke/challenge
+     * 
+     * @return RevocationChallengeResource instance for handling challenge requests
+     */
+    @Path("challenge")
+    public Object challenge() {
+        return new RevocationChallengeResource(this.session);
     }
 
     @Override
@@ -122,8 +133,8 @@ public class CredentialRevocationEndpoint extends TokenRevocationEndpoint {
     }
 
     /**
-     * Gets the HTTP headers, handling both injected and constructor-provided headers. Made protected
-     * for testability.
+     * Gets the HTTP headers, handling both injected and constructor-provided
+     * headers. Made protected for testability.
      */
     protected HttpHeaders getHeaders() {
         if (headers == null) {
@@ -134,13 +145,13 @@ public class CredentialRevocationEndpoint extends TokenRevocationEndpoint {
     }
 
     /**
-     * Gets the revocation service, handling both injected and constructor-provided services. Made
-     * protected for testability.
+     * Gets the revocation service, handling both injected and constructor-provided
+     * services. Made protected for testability.
      */
     protected CredentialRevocationService getRevocationService() {
         return revocationService;
     }
-    
+
     /**
      * Checks if the credential revocation service is enabled for the current realm.
      */
@@ -161,10 +172,10 @@ public class CredentialRevocationEndpoint extends TokenRevocationEndpoint {
         try {
             RealmModel realm = session.getContext().getRealm();
             StatusListConfig config = new StatusListConfig(realm);
-            
+
             // Check if the service is enabled and has a valid server URL
             return config.isEnabled() && StringUtil.isNotBlank(config.getServerUrl());
-            
+
         } catch (Exception e) {
             logger.warn("Error checking service configuration", e);
             return false;

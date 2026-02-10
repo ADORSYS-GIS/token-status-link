@@ -1,5 +1,6 @@
 package com.adorsys.keycloakstatuslist.model;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 
@@ -30,7 +31,8 @@ public class Status {
      * @param statusList The StatusListClaim containing the `idx` and `uri` for the token's status
      *                   list entry.
      */
-    public Status(StatusListClaim statusList) {
+    @JsonCreator
+    public Status(@JsonProperty("status_list") StatusListClaim statusList) {
         this.statusList = statusList;
     }
 

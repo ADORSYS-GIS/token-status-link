@@ -33,8 +33,8 @@ import static com.adorsys.keycloakstatuslist.service.StatusListService.StatusLis
 import static com.adorsys.keycloakstatuslist.service.StatusListService.StatusListPayload;
 
 /**
- * Main service for handling credential revocation requests. Orchestrates the revocation process
- * using specialized service classes.
+ * Main service for handling credential revocation requests. Orchestrates the
+ * revocation process using specialized service classes.
  */
 public class CredentialRevocationService {
 
@@ -69,11 +69,10 @@ public class CredentialRevocationService {
             StatusListConfig config = new StatusListConfig(realm);
             CryptoIdentityService cryptoIdentityService = new CryptoIdentityService(session);
             HttpClient httpClient = new CloseableHttpClientAdapter(CustomHttpClient.getHttpClient());
-            this.statusListService =
-                    new StatusListService(
-                            config.getServerUrl(),
-                            cryptoIdentityService.getJwtToken(config),
-                            httpClient);
+            this.statusListService = new StatusListService(
+                    config.getServerUrl(),
+                    cryptoIdentityService.getJwtToken(config),
+                    httpClient);
         }
         return statusListService;
     }
@@ -98,13 +97,13 @@ public class CredentialRevocationService {
         try {
             // Step 1: Parse the SD-JWT VP (without full verification yet)
             SdJwtVP sdJwtVP = sdJwtVPValidationService.parseAndValidateSdJwtVP(sdJwtVpToken, requestId);
-            
+
             // Step 2: SECURITY - Validate nonce to prevent replay attacks
             RevocationChallenge challenge = validateNonce(sdJwtVP, requestId);
-            
+
             // Step 3: Verify the SD-JWT VP signature using the expected nonce from the challenge
             sdJwtVPValidationService.verifySdJwtVP(sdJwtVP, requestId, challenge.getNonce());
-            
+
             // Step 5: Publish revocation record
             StatusListPayload revocationPayload = buildRevocationPayload(sdJwtVP);
             getStatusListService().updateStatusList(revocationPayload, requestId);
@@ -115,8 +114,7 @@ public class CredentialRevocationService {
 
             return CredentialRevocationResponse.success(
                     revokedAt,
-                    request.getRevocationReason()
-            );
+                    request.getRevocationReason());
 
         } catch (StatusListServerException e) {
             logger.errorf("Status list server error. RequestId: %s, StatusCode: %d, Error: %s",
@@ -132,50 +130,49 @@ public class CredentialRevocationService {
             throw new StatusListException("Failed to process credential revocation: " + e.getMessage(), e);
         }
     }
-    
+
     /**
      * Validates the nonce from the Key Binding JWT to prevent replay attacks.
      * This is a critical security check that ensures each revocation request uses a fresh, one-time nonce.
      * 
-     * @param sdJwtVP the SD-JWT VP token
+     * @param sdJwtVP   the SD-JWT VP token
      * @param requestId the request ID for logging
      * @return the validated RevocationChallenge containing the expected nonce
      * @throws StatusListException if nonce validation fails
      */
     private RevocationChallenge validateNonce(SdJwtVP sdJwtVP, String requestId)
             throws StatusListException {
-        
+
         // Extract nonce from Key Binding JWT
         String presentedNonce = sdJwtVPValidationService.extractNonceFromKeyBindingJWT(sdJwtVP);
-        
+
         if (presentedNonce == null || presentedNonce.trim().isEmpty()) {
             logger.errorf("Missing nonce in Key Binding JWT. RequestId: %s",
-                         requestId);
+                    requestId);
             throw new StatusListException("Invalid or missing nonce in Key Binding JWT", 401);
         }
-        
+
         // Get nonce service provider via RealmResourceProvider
         NonceCacheProvider nonceService = (NonceCacheProvider) session.getProvider(
-                RealmResourceProvider.class, NonceCacheServiceProviderFactory.PROVIDER_ID
-        );
+                RealmResourceProvider.class, NonceCacheServiceProviderFactory.PROVIDER_ID);
 
         if (nonceService == null) {
             logger.errorf("NonceCacheProvider not available. RequestId: %s", requestId);
             throw new StatusListException("Nonce validation service not available", 500);
         }
-        
+
         // Consume the nonce (one-time use)
         RevocationChallenge challenge = nonceService.consumeNonce(presentedNonce);
-        
+
         if (challenge == null) {
             logger.errorf("Invalid, expired, or replayed nonce. RequestId: %s, Nonce: %s",
-                         requestId, presentedNonce);
+                    requestId, presentedNonce);
             throw new StatusListException("Invalid, expired, or replayed nonce", 401);
         }
-        
+
         logger.infof("Nonce validated successfully. RequestId: %s, Nonce: %s",
-                    requestId, presentedNonce);
-        
+                requestId, presentedNonce);
+
         return challenge;
     }
 

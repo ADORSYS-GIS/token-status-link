@@ -2,58 +2,78 @@ package com.adorsys.keycloakstatuslist.model;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 
-import java.time.Instant;
-
 /**
  * Response model for the revocation challenge endpoint.
- * Contains the nonce, audience, and expiration time for the wallet to use in the revocation request.
+ * Contains the nonce, audience, and expiration time for the wallet to use in
+ * the revocation request.
  */
 public class RevocationChallenge {
-    
+
     @JsonProperty("nonce")
     private String nonce;
-    
+
     @JsonProperty("aud")
     private String audience;
-    
-    @JsonProperty("expires_at")
-    private long expiresAt;
-    
+
+    @JsonProperty("expires_in")
+    private int expiresIn;
+
+    private final long issuedAt;
+
     public RevocationChallenge() {
-        // Default constructor for JSON serialization
+        this.issuedAt = System.currentTimeMillis();
     }
-    
-    public RevocationChallenge(String nonce, String audience, long expiresAt) {
+
+    public RevocationChallenge(String nonce, String audience, int expiresIn) {
         this.nonce = nonce;
         this.audience = audience;
-        this.expiresAt = expiresAt;
+        this.expiresIn = expiresIn;
+        this.issuedAt = System.currentTimeMillis();
     }
-    
+
+    /**
+     * Checks if the challenge has expired based on its issued timestamp and
+     * lifetime.
+     */
+    public boolean isExpired() {
+        return System.currentTimeMillis() > getExpiresAt();
+    }
+
+    /**
+     * Gets the absolute expiration timestamp in milliseconds.
+     */
+    public long getExpiresAt() {
+        return issuedAt + (expiresIn * 1000L);
+    }
+
+    /**
+     * Gets the timestamp when the challenge was issued.
+     */
+    public long getIssuedAt() {
+        return issuedAt;
+    }
+
     public String getNonce() {
         return nonce;
     }
-    
+
     public void setNonce(String nonce) {
         this.nonce = nonce;
     }
-    
+
     public String getAudience() {
         return audience;
     }
-    
+
     public void setAudience(String audience) {
         this.audience = audience;
     }
 
-    public long getExpiresAt() {
-        return expiresAt;
+    public int getExpiresIn() {
+        return expiresIn;
     }
 
-    public void setExpiresAt(int expiresAt) {
-        this.expiresAt = expiresAt;
-    }
-
-    public boolean isExpired() {
-        return Instant.now().isAfter(Instant.ofEpochSecond(expiresAt));
+    public void setExpiresIn(int expiresIn) {
+        this.expiresIn = expiresIn;
     }
 }

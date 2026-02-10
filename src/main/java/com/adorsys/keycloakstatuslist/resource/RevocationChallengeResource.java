@@ -17,38 +17,35 @@ import java.util.Map;
  * REST resource for issuing nonce challenges for credential revocation.
  * Implements the first step of the secure 2-step revocation flow.
  */
-@Path("/revoke/challenge")
-public class RevocationChallengeResource implements RealmResourceProvider {
-    
+public class RevocationChallengeResource {
+
     private static final Logger logger = Logger.getLogger(RevocationChallengeResource.class);
     private static final int NONCE_EXPIRATION_SECONDS = 600; // 10 minutes
-    
+
     private final KeycloakSession session;
-    
+
     public RevocationChallengeResource(KeycloakSession session) {
         this.session = session;
     }
-    
+
     /**
      * Issues a nonce challenge for credential revocation.
      *
      * @return a RevocationChallengeResponse with nonce, audience, and expiration
      */
-    @POST
+    @GET
     @Produces(MediaType.APPLICATION_JSON)
     public Response getChallenge() {
         try {
             // Build the expected audience (revocation endpoint URL)
             String audience = Urls.realmIssuer(
-                session.getContext().getUri().getBaseUri(),
-                session.getContext().getRealm().getName()
-            ) + "/protocol/openid-connect/revoke";
-            
+                    session.getContext().getUri().getBaseUri(),
+                    session.getContext().getRealm().getName()) + "/protocol/openid-connect/revoke";
+
             // Get the nonce service provider via RealmResourceProvider
             logger.debugf("Attempting to get NonceCacheService from session");
             NonceCacheProvider nonceService = (NonceCacheProvider) session.getProvider(
-                RealmResourceProvider.class, NonceCacheServiceProviderFactory.PROVIDER_ID
-            );
+                    RealmResourceProvider.class, NonceCacheServiceProviderFactory.PROVIDER_ID);
             if (nonceService == null) {
                 logger.error("NonceCacheProvider not available - service not registered. ");
                 return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
@@ -56,13 +53,13 @@ public class RevocationChallengeResource implements RealmResourceProvider {
                         .build();
             }
             logger.debugf("Successfully obtained NonceCacheProvider instance");
-            
+
             // Issue the nonce
             RevocationChallenge challenge = nonceService.issueNonce(audience);
             logger.infof("Issued revocation challenge. nonce: %s", challenge.getNonce());
-            
+
             return Response.ok(challenge).build();
-            
+
         } catch (Exception e) {
             logger.errorf(e, "Failed to issue revocation challenge");
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
@@ -71,12 +68,4 @@ public class RevocationChallengeResource implements RealmResourceProvider {
         }
     }
 
-    @Override
-    public Object getResource() {
-        return this;
-    }
-
-    @Override
-    public void close() {
-    }
 }
