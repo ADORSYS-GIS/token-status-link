@@ -12,11 +12,10 @@
 
     <properties>
         <revision>1.0.0-SNAPSHOT</revision>
-        <keycloak.version>26.4.5</keycloak.version>
+        <keycloak.version>26.5.0</keycloak.version>
         <jackson.version>2.15.2</jackson.version>
         <mockito.version>5.15.2</mockito.version>
-        <maven.compiler.source>17</maven.compiler.source>
-        <maven.compiler.target>17</maven.compiler.target>
+        <maven.compiler.release>17</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
@@ -135,6 +134,12 @@
             <version>2.19.2</version>
             <scope>provided</scope>
         </dependency>
+        <!-- Caffeine Cache for nonce management -->
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+            <version>3.1.8</version>
+        </dependency>
     </dependencies>
 
     <repositories>
@@ -169,8 +174,7 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.15.0</version>
                 <configuration>
-                    <source>${maven.compiler.source}</source>
-                    <target>${maven.compiler.target}</target>
+                    <release>${maven.compiler.release}</release>
                 </configuration>
             </plugin>
             <plugin>

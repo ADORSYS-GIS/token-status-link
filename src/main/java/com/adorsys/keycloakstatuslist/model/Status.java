@@ -1,9 +1,10 @@
 package com.adorsys.keycloakstatuslist.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import org.keycloak.util.JsonSerialization;
 
-import java.util.Map;
+import java.util.Objects;
 
 /**
  * Represents a status claim for inclusion in an OAuth 2.0 or OpenID Connect token, as defined in
@@ -15,14 +16,23 @@ import java.util.Map;
  * annotations for automatic JSON serialization, similar to Rust's serde library, to produce the
  * required claim structure: `{ "status_list": { "idx": <index>, "uri": <uri> } }`.
  */
-@JsonSerialize // Ensures Jackson serializes the class to JSON
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class Status {
+
     /**
      * The status list claim containing the index and URI, mapped to the `status_list` key in the JSON
      * output.
      */
-    @JsonProperty("status_list") // Maps this field to the "status_list" key in JSON
-    private final StatusListClaim statusList;
+    @JsonProperty("status_list")
+    private StatusListClaim statusList;
+
+    /**
+     * Default constructor for JSON deserialization. Required by Jackson to create an instance of this
+     * class when deserializing from JSON.
+     */
+    public Status() {
+        // Default constructor for JSON deserialization
+    }
 
     /**
      * Constructs a Status object with the provided status list reference.
@@ -34,28 +44,29 @@ public class Status {
         this.statusList = statusList;
     }
 
-    /**
-     * Returns the status list claim for serialization by Jackson. This getter is used by Jackson to
-     * access the `status_list` field during serialization.
-     *
-     * @return The StatusListClaim object containing `idx` and `uri`.
-     */
     public StatusListClaim getStatusList() {
         return statusList;
     }
 
-    /**
-     * Converts the status claim to a map representation for inclusion in a token's claims. This
-     * method is retained for compatibility with existing code (e.g., StatusListProtocolMapper),
-     * delegating to Jackson for serialization to ensure consistency with the IETF specification.
-     *
-     * @return A map representing the status claim with the structure: `{ "status_list": { "idx":
-     * <index>, "uri": <uri> } }`.
-     * @throws RuntimeException if serialization fails.
-     */
-    public Map<String, Object> toMap() {
-        return Map.of(
-                "status_list", statusList != null ? statusList.toMap() : null
-        );
+    public Status setStatusList(StatusListClaim statusList) {
+        this.statusList = statusList;
+        return this;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (o == null || getClass() != o.getClass()) return false;
+        Status status = (Status) o;
+        return Objects.equals(getStatusList(), status.getStatusList());
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hashCode(getStatusList());
+    }
+
+    @Override
+    public String toString() {
+        return JsonSerialization.valueAsString(this);
     }
 }

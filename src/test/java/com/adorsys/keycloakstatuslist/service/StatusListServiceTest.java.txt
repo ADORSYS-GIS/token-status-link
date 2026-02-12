@@ -7,7 +7,7 @@ import static org.mockito.Mockito.*;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.exception.StatusListServerException;
 import com.adorsys.keycloakstatuslist.model.TokenStatus;
-import com.adorsys.keycloakstatuslist.model.TokenStatusRecord;
+import com.adorsys.keycloakstatuslist.model.IssuerRegistrationPayload;
 
 import java.io.IOException;
 import java.time.Instant;
@@ -50,7 +50,7 @@ class StatusListServiceTest {
     @BeforeEach
     void setUp() {
         httpClient = new CloseableHttpClientAdapter(closeableHttpClient);
-        statusListService = new StatusListService(SERVER_URL, null, httpClient);
+        statusListService = new StatusListService(SERVER_URL, "auth.token.jwt", httpClient);
     }
 
     private void setupResponse(int statusCode) throws IOException {
@@ -96,14 +96,14 @@ class StatusListServiceTest {
         assertDoesNotThrow(
                 () -> {
                     reset(closeableHttpClient);
-                    final TokenStatusRecord record = createTestRecord();
+                    final IssuerRegistrationPayload record = createTestRecord();
                     setupSuccessfulResponse();
                     statusListService.publishRecord(record);
                     verifyHttpClientCall();
                 });
 
         // Test publish record with auth token
-        final TokenStatusRecord record = createTestRecord();
+        final IssuerRegistrationPayload record = createTestRecord();
         reset(closeableHttpClient);
         statusListService = new StatusListService(SERVER_URL, "test-token", httpClient);
         setupSuccessfulResponse();
@@ -113,7 +113,7 @@ class StatusListServiceTest {
 
     @Test
     void responseBodyScenarios() throws IOException {
-        final TokenStatusRecord record = createTestRecord();
+        final IssuerRegistrationPayload record = createTestRecord();
 
         // Test empty response body
         setupResponse(200, "");
@@ -163,21 +163,21 @@ class StatusListServiceTest {
     @Test
     void publishRecord_ValidationScenarios() {
         // Test missing credential ID
-        final TokenStatusRecord record1 = createTestRecord();
+        final IssuerRegistrationPayload record1 = createTestRecord();
         record1.setCredentialId(null);
         StatusListException exception =
                 assertThrows(StatusListException.class, () -> statusListService.publishRecord(record1));
         assertTrue(exception.getMessage().contains("Credential ID (sub) is required"));
 
         // Test missing issuer ID
-        final TokenStatusRecord record2 = createTestRecord();
+        final IssuerRegistrationPayload record2 = createTestRecord();
         record2.setIssuerId(null);
         exception =
                 assertThrows(StatusListException.class, () -> statusListService.publishRecord(record2));
         assertTrue(exception.getMessage().contains("Issuer ID (iss) is required"));
 
         // Test missing public key
-        final TokenStatusRecord record3 = createTestRecord();
+        final IssuerRegistrationPayload record3 = createTestRecord();
         record3.setPublicKey(null);
         exception =
                 assertThrows(StatusListException.class, () -> statusListService.publishRecord(record3));
@@ -188,11 +188,11 @@ class StatusListServiceTest {
     void publishRecord_DefaultValues() throws IOException {
         // Test default status
         assertDoesNotThrow(() -> {
-            final TokenStatusRecord record1 = createTestRecord();
-            record1.setStatus(TokenStatus.REVOKED);
+            final IssuerRegistrationPayload record1 = createTestRecord();
+            record1.setStatus(TokenStatus.INVALID);
             setupSuccessfulResponse();
             statusListService.publishRecord(record1);
-            assertEquals(TokenStatus.REVOKED.getValue(), record1.getStatus());
+            assertEquals(TokenStatus.INVALID.getValue(), record1.getStatus());
             verifyHttpClientCall();
         });
 
@@ -200,7 +200,7 @@ class StatusListServiceTest {
         assertDoesNotThrow(
                 () -> {
                     reset(closeableHttpClient);
-                    final TokenStatusRecord record2 = createTestRecord();
+                    final IssuerRegistrationPayload record2 = createTestRecord();
                     record2.setCredentialType(null);
                     setupSuccessfulResponse();
                     statusListService.publishRecord(record2);
@@ -211,7 +211,7 @@ class StatusListServiceTest {
 
     @Test
     void publishRecord_StatusCodeHandling() throws IOException {
-        TokenStatusRecord record = createTestRecord();
+        IssuerRegistrationPayload record = createTestRecord();
 
         // Test 200 OK
         assertDoesNotThrow(() -> {
@@ -264,7 +264,7 @@ class StatusListServiceTest {
     void publishRecord_RecordFieldHandling() throws IOException {
         // Test issuer field is set from issuerId
         assertDoesNotThrow(() -> {
-            final TokenStatusRecord record1 = createTestRecord();
+            final IssuerRegistrationPayload record1 = createTestRecord();
             record1.setIssuer(null);
             record1.setIssuerId(ISSUER_ID);
             setupSuccessfulResponse();
@@ -277,7 +277,7 @@ class StatusListServiceTest {
         assertDoesNotThrow(
                 () -> {
                     reset(closeableHttpClient);
-                    final TokenStatusRecord record2 = createTestRecord();
+                    final IssuerRegistrationPayload record2 = createTestRecord();
                     record2.setIndex(0L);
                     setupSuccessfulResponse();
                     statusListService.publishRecord(record2);
@@ -289,17 +289,17 @@ class StatusListServiceTest {
         assertDoesNotThrow(
                 () -> {
                     reset(closeableHttpClient);
-                    final TokenStatusRecord record3 = createTestRecord();
-                    record3.setStatus(TokenStatus.REVOKED);
+                    final IssuerRegistrationPayload record3 = createTestRecord();
+                    record3.setStatus(TokenStatus.INVALID);
                     setupSuccessfulResponse();
                     statusListService.publishRecord(record3);
-                    assertEquals(TokenStatus.REVOKED.getValue(), record3.getStatus());
+                    assertEquals(TokenStatus.INVALID.getValue(), record3.getStatus());
                     verifyHttpClientCall();
                 });
     }
 
-    private TokenStatusRecord createTestRecord() {
-        TokenStatusRecord record = new TokenStatusRecord();
+    private IssuerRegistrationPayload createTestRecord() {
+        IssuerRegistrationPayload record = new IssuerRegistrationPayload();
         record.setCredentialId(UUID.randomUUID().toString());
         record.setIssuer(ISSUER_ID);
         record.setIssuerId(ISSUER_ID);
