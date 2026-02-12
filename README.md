@@ -21,11 +21,11 @@ The status list server should implement the OAuth 2.0 Status List pattern.
 
 The plugin can be configured at the realm level with the following properties:
 
-| Property                          | Description                                 | Default Value                          |
-|-----------------------------------|---------------------------------------------|----------------------------------------|
-| `status-list-enabled`             | Enables or disables the status list service | `true`                                 |
-| `status-list-server-url`          | URL of the status list server               | `https://statuslist.eudi-adorsys.com/` |
-| `status-list-token-issuer-prefix` | Prefix for building the Token Issuer ID     | `Generated UUID`                       |
+| Property                          | Description                                                                                                               | Default Value                          |
+|-----------------------------------|---------------------------------------------------------------------------------------------------------------------------|----------------------------------------|
+| `status-list-enabled`             | Enables or disables the status list service                                                                               | `true`                                 |
+| `status-list-server-url`          | URL of the status list server                                                                                             | `https://statuslist.eudi-adorsys.com/` |
+| `status-list-token-issuer-prefix` | Prefix for building the Token Issuer ID                                                                                   | `Generated UUID`                       |
 | `status-list-mandatory`           | If true, publication failures block issuance; if false, failures are logged and issuance continues without a status claim | `false`                                |
 
 ## Installation
@@ -34,11 +34,13 @@ The plugin can be configured at the realm level with the following properties:
     ```bash
     ./mvnw clean package
     ```
-2. Copy the resulting JAR file `target/keycloak-token-status-plugin-1.0.0-SNAPSHOT.jar` to Keycloak's `providers` directory.
+2. Copy the resulting JAR file `target/keycloak-token-status-plugin-1.0.0-SNAPSHOT.jar` to Keycloak's `providers`
+   directory.
 
 3. Restart Keycloak to load the plugin.
 
-4. Configure the plugin using the realm attributes described in the [Configuration Properties Section](README.md#configuration-properties)
+4. Configure the plugin using the realm attributes described in
+   the [Configuration Properties Section](README.md#configuration-properties)
 
 ### Configuring Keycloak's credential issuance to use the Status List protocol mapper
 
@@ -69,22 +71,30 @@ corresponding to a specific credential's configuration. Below is a sample such c
 
 ## Revocation Protocol
 
-Revocation requires a pre-issued server challenge to ensure proper Verifiable Presentation (VP) verification. 
-Before submitting a revocation request, clients must first obtain a challenge from the `/challenge` endpoint. 
-This challenge includes a cryptographically strong nonce, the audience (revocation endpoint URL), and an 
+Revocation requires a pre-issued server challenge to ensure proper Verifiable Presentation (VP) verification.
+Before submitting a revocation request, clients must first obtain a challenge from the `/revoke/challenge` endpoint.
+This challenge includes a cryptographically strong nonce, the audience (revocation endpoint URL), and an
 expiration timestamp.
 
 The revocation plugin strictly validates the incoming VP against these server-issued values:
 
-- The `nonce` in the VP must exactly match the issued nonce.
+- The `nonce` in the VP must exactly match the issued nonce. It must neither be expired nor replayed (it is a one-time
+  use value).
 - The `aud` (audience) in the VP must exactly match the configured revocation endpoint URL.
-- The `nonce` must not be expired.
-- The `nonce` must not be replayed (it is a one-time use value).
 
-Failure to meet these validation requirements will result in specific error responses:
+After obtaining the challenge, the next step is to submit the prepared SD-JWT VP token of the credential to the
+`/revoke` endpoint. The request payload must include both the token (as authorization bearer token) and a body payload
+indicating the `credential_revocation` mode and a revocation reason. For example:
 
-- `400 Bad Request`: For malformed VPs or invalid challenge parameters.
-- `401 Unauthorized`: For invalid holder proofs (e.g., incorrect nonce, audience mismatch, expired or replayed nonce).
+```json
+{
+  "mode": "credential_revocation",
+  "reason": "some reason"
+}
+```
+
+The `mode` parameter is required to ensure that the plugin’s credential revocation logic is used instead of Keycloak’s
+default revocation behavior.
 
 ## Development and Testing
 
@@ -121,3 +131,7 @@ For manual testing with a local status list server:
 - Fix test execution failing with coverage
 - Improve test coverage (StatusListService, RevocationEndpoint, NonceCacheService)
 - Ensure nonce cache logic is compatible with clustered environments
+- Document the plugin's HTTP endpoints and expected request/response formats in more detail
+- Improve realm registration robustness. Consider implementing a background retry task or lazy registration to make up
+  for potential transient failures during startup, maybe due to network issues or the status list server being
+  temporarily unavailable.
