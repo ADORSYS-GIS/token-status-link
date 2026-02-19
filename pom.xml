@@ -12,7 +12,7 @@
 
     <properties>
         <revision>1.0.0-SNAPSHOT</revision>
-        <keycloak.version>26.5.0</keycloak.version>
+        <keycloak.version>26.5.3</keycloak.version>
         <jackson.version>2.15.2</jackson.version>
         <mockito.version>5.15.2</mockito.version>
         <maven.compiler.release>17</maven.compiler.release>
