@@ -1,7 +1,6 @@
 package com.adorsys.keycloakstatuslist.config;
 
 import java.util.UUID;
-
 import org.jboss.logging.Logger;
 import org.keycloak.models.RealmModel;
 
@@ -74,8 +73,7 @@ public class StatusListConfig {
             prefix = UUID.randomUUID().toString();
             realm.setAttribute(STATUS_LIST_TOKEN_ISSUER_PREFIX, prefix);
             logger.warnf(
-                    "No token issuer prefix configured for realm %s. Using generated: %s",
-                    realm.getName(), prefix);
+                    "No token issuer prefix configured for realm %s. Using generated: %s", realm.getName(), prefix);
         }
 
         return String.format("%s::%s", prefix, realm.getName());

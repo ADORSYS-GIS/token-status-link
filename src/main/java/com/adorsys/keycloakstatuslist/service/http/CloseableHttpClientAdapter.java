@@ -1,13 +1,12 @@
 package com.adorsys.keycloakstatuslist.service.http;
 
+import java.io.IOException;
 import org.apache.hc.client5.http.classic.methods.HttpGet;
 import org.apache.hc.client5.http.classic.methods.HttpPatch;
 import org.apache.hc.client5.http.classic.methods.HttpPost;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.core5.http.ClassicHttpRequest;
 import org.apache.hc.core5.http.io.HttpClientResponseHandler;
-
-import java.io.IOException;
 
 /**
  * Adapter that wraps Apache HttpClient's CloseableHttpClient to implement our HttpClient interface.
@@ -22,20 +21,17 @@ public class CloseableHttpClientAdapter implements HttpClient {
     }
 
     @Override
-    public <T> T execute(HttpGet request, HttpClientResponseHandler<? extends T> responseHandler)
-            throws IOException {
+    public <T> T execute(HttpGet request, HttpClientResponseHandler<? extends T> responseHandler) throws IOException {
         return httpClient.execute(request, responseHandler);
     }
 
     @Override
-    public <T> T execute(HttpPost request, HttpClientResponseHandler<? extends T> responseHandler)
-            throws IOException {
+    public <T> T execute(HttpPost request, HttpClientResponseHandler<? extends T> responseHandler) throws IOException {
         return httpClient.execute(request, responseHandler);
     }
 
     @Override
-    public <T> T execute(HttpPatch request, HttpClientResponseHandler<? extends T> responseHandler)
-            throws IOException {
+    public <T> T execute(HttpPatch request, HttpClientResponseHandler<? extends T> responseHandler) throws IOException {
         return httpClient.execute(request, responseHandler);
     }
 
@@ -45,4 +41,3 @@ public class CloseableHttpClientAdapter implements HttpClient {
         return httpClient.execute(request, responseHandler);
     }
 }
-

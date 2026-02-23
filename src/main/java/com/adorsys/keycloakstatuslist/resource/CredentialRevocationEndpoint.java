@@ -1,7 +1,11 @@
 package com.adorsys.keycloakstatuslist.resource;
 
-import com.adorsys.keycloakstatuslist.exception.StatusListException;
+import static com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest.CREDENTIAL_REVOCATION_MODE;
+import static com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest.REVOCATION_MODE_KEY;
+import static com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest.REVOCATION_REASON_KEY;
+
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
+import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationResponse;
 import com.adorsys.keycloakstatuslist.service.CredentialRevocationService;
@@ -10,18 +14,13 @@ import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.MultivaluedMap;
 import jakarta.ws.rs.core.Response;
+import java.util.Objects;
 import org.jboss.logging.Logger;
 import org.keycloak.events.EventBuilder;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.protocol.oidc.endpoints.TokenRevocationEndpoint;
 import org.keycloak.utils.StringUtil;
-
-import java.util.Objects;
-
-import static com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest.CREDENTIAL_REVOCATION_MODE;
-import static com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest.REVOCATION_MODE_KEY;
-import static com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest.REVOCATION_REASON_KEY;
 
 public class CredentialRevocationEndpoint extends TokenRevocationEndpoint {
 
@@ -40,9 +39,7 @@ public class CredentialRevocationEndpoint extends TokenRevocationEndpoint {
      * @param revocationService Credential revocation service (can be injected fortesting)
      */
     public CredentialRevocationEndpoint(
-            KeycloakSession session,
-            EventBuilder event,
-            CredentialRevocationService revocationService) {
+            KeycloakSession session, EventBuilder event, CredentialRevocationService revocationService) {
         super(session, event);
         this.session = session;
         this.revocationService = revocationService;
@@ -52,7 +49,7 @@ public class CredentialRevocationEndpoint extends TokenRevocationEndpoint {
     /**
      * Provides the challenge sub-resource for the revocation endpoint.
      * Handles: GET /protocol/openid-connect/revoke/challenge
-     * 
+     *
      * @return RevocationChallengeResource instance for handling challenge requests
      */
     @Path("challenge")
@@ -62,7 +59,8 @@ public class CredentialRevocationEndpoint extends TokenRevocationEndpoint {
 
     @Override
     public Response revoke() {
-        MultivaluedMap<String, String> form = session.getContext().getHttpRequest().getDecodedFormParameters();
+        MultivaluedMap<String, String> form =
+                session.getContext().getHttpRequest().getDecodedFormParameters();
         String authorizationHeader = getHeaders().getHeaderString(HttpHeaders.AUTHORIZATION);
 
         if (!Objects.equals(CREDENTIAL_REVOCATION_MODE, form.getFirst(REVOCATION_MODE_KEY))) {
@@ -74,14 +72,14 @@ public class CredentialRevocationEndpoint extends TokenRevocationEndpoint {
             logger.debug("Will fail because credential revocation service is disabled");
             // In a RealmResourceProvider, we don't have a super.revoke().
             // We should return an error or handle it differently.
-            return createErrorResponse(Response.Status.INTERNAL_SERVER_ERROR,
-                    "Credential revocation service is disabled");
+            return createErrorResponse(
+                    Response.Status.INTERNAL_SERVER_ERROR, "Credential revocation service is disabled");
         }
 
         if (!isServiceConfigured()) {
             logger.warn("Will fail because credential revocation service is not configured");
-            return createErrorResponse(Response.Status.INTERNAL_SERVER_ERROR,
-                    "Credential revocation service is not configured");
+            return createErrorResponse(
+                    Response.Status.INTERNAL_SERVER_ERROR, "Credential revocation service is not configured");
         }
 
         if (authorizationHeader == null || authorizationHeader.trim().isEmpty()) {
@@ -91,9 +89,7 @@ public class CredentialRevocationEndpoint extends TokenRevocationEndpoint {
 
         String[] authParts = authorizationHeader.trim().split("\\s+", 2);
         if (authParts.length != 2 || !BEARER_PREFIX.equalsIgnoreCase(authParts[0])) {
-            logger.debugf(
-                    "Invalid authorization header format: %s, returning error",
-                    authorizationHeader);
+            logger.debugf("Invalid authorization header format: %s, returning error", authorizationHeader);
             return createErrorResponse(Response.Status.BAD_REQUEST, "Invalid authorization header format");
         }
 
@@ -106,7 +102,8 @@ public class CredentialRevocationEndpoint extends TokenRevocationEndpoint {
             request.setRevocationMode(form.getFirst(REVOCATION_MODE_KEY));
             request.setRevocationReason(form.getFirst(REVOCATION_REASON_KEY));
 
-            CredentialRevocationResponse revocationResponse = getRevocationService().revokeCredential(request, token);
+            CredentialRevocationResponse revocationResponse =
+                    getRevocationService().revokeCredential(request, token);
             logger.infof("Successfully revoked credential via status list.");
 
             return Response.ok(revocationResponse)

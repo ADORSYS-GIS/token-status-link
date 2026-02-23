@@ -3,17 +3,15 @@ package com.adorsys.keycloakstatuslist.service;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.exception.StatusListServerException;
 import com.adorsys.keycloakstatuslist.model.IssuerRegistrationPayload;
+import com.adorsys.keycloakstatuslist.service.http.HttpClient;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
-
-import com.adorsys.keycloakstatuslist.service.http.HttpClient;
 import org.apache.hc.client5.http.classic.methods.HttpGet;
 import org.apache.hc.client5.http.classic.methods.HttpPatch;
 import org.apache.hc.client5.http.classic.methods.HttpPost;
@@ -45,8 +43,7 @@ public class StatusListService {
 
     public void registerIssuer(String issuerId, JWK publicKey) throws StatusListException {
         String requestId = UUID.randomUUID().toString();
-        logger.infof(
-                "Request ID: %s, Registering issuer: %s with server: %s", requestId, issuerId, serverUrl);
+        logger.infof("Request ID: %s, Registering issuer: %s with server: %s", requestId, issuerId, serverUrl);
 
         // Create a simple record with just the required fields for issuer registration
         IssuerRegistrationPayload issuerRecord = new IssuerRegistrationPayload();
@@ -55,11 +52,7 @@ public class StatusListService {
 
         try {
             String jsonPayload = objectMapper.writeValueAsString(issuerRecord);
-            logger.debugf(
-                    "Request ID: %s, Registering issuer: %s, Payload: %s",
-                    requestId,
-                    issuerId,
-                    jsonPayload);
+            logger.debugf("Request ID: %s, Registering issuer: %s, Payload: %s", requestId, issuerId, jsonPayload);
 
             HttpPost httpPost = new HttpPost(serverUrl + "credentials");
             httpPost.setHeader("Content-Type", "application/json");
@@ -73,36 +66,26 @@ public class StatusListService {
 
                 logger.debugf(
                         "Request ID: %s, Received response: Status code: %d, Headers: %s, Body: %s",
-                        requestId,
-                        statusCode,
-                        responseHeaders,
-                        responseBody);
+                        requestId, statusCode, responseHeaders, responseBody);
 
                 if (statusCode >= HttpStatus.SC_OK && statusCode < 300 || statusCode == HttpStatus.SC_CONFLICT) {
                     logger.infof(
                             "Request ID: %s, Successfully registered issuer: %s%s",
-                            requestId,
-                            issuerId,
-                            statusCode == HttpStatus.SC_CONFLICT ? " (already registered)" : "");
+                            requestId, issuerId, statusCode == HttpStatus.SC_CONFLICT ? " (already registered)" : "");
                     return Boolean.TRUE; // Success
                 } else {
                     throw new StatusListServerException(
-                            "Failed to register issuer: " + issuerId +
-                                    ", Status code: " + statusCode +
-                                    ", Response: " + responseBody,
+                            "Failed to register issuer: " + issuerId + ", Status code: "
+                                    + statusCode + ", Response: "
+                                    + responseBody,
                             statusCode);
                 }
             });
         } catch (IOException e) {
             logger.errorf(
                     "Request ID: %s, Failed to register issuer: %s: %s, Server URL: %s",
-                    requestId,
-                    issuerId,
-                    e.getMessage(),
-                    serverUrl,
-                    e);
-            throw new StatusListException(
-                    "Failed to register issuer: " + issuerId + ", Server URL: " + serverUrl, e);
+                    requestId, issuerId, e.getMessage(), serverUrl, e);
+            throw new StatusListException("Failed to register issuer: " + issuerId + ", Server URL: " + serverUrl, e);
         }
     }
 
@@ -126,22 +109,14 @@ public class StatusListService {
                     String responseBody = EntityUtils.toString(response.getEntity());
                     logger.errorf(
                             "Request ID: %s, Failed to check status list %s. Status code: %d, Response: %s",
-                            requestId,
-                            statusListId,
-                            statusCode,
-                            responseBody);
+                            requestId, statusListId, statusCode, responseBody);
                     throw new StatusListServerException(
-                            "Failed to check status list " + statusListId + ". Status code: " + statusCode,
-                            statusCode);
+                            "Failed to check status list " + statusListId + ". Status code: " + statusCode, statusCode);
                 }
             });
         } catch (IOException e) {
             logger.errorf(
-                    "Request ID: %s, Error checking status list %s: %s",
-                    requestId,
-                    statusListId,
-                    e.getMessage(),
-                    e);
+                    "Request ID: %s, Error checking status list %s: %s", requestId, statusListId, e.getMessage(), e);
             throw new StatusListException("Error checking status list " + statusListId, e);
         }
     }
@@ -160,16 +135,12 @@ public class StatusListService {
         } catch (StatusListException e) {
             logger.errorf(
                     "Request ID: %s, Failed to publish or update status list %s: %s",
-                    requestId,
-                    listId,
-                    e.getMessage(),
-                    e);
+                    requestId, listId, e.getMessage(), e);
             throw e;
         }
     }
 
-    private void publishStatusList(StatusListPayload payload, String requestId)
-            throws StatusListException {
+    private void publishStatusList(StatusListPayload payload, String requestId) throws StatusListException {
         String listId = payload.listId();
         logger.debugf("Request ID: %s, Publishing new status list: %s", requestId, listId);
 
@@ -195,28 +166,18 @@ public class StatusListService {
                     String responseBody = EntityUtils.toString(response.getEntity());
                     logger.errorf(
                             "Request ID: %s, Failed to publish status list %s. Status code: %d, Response: %s",
-                            requestId,
-                            listId,
-                            statusCode,
-                            responseBody);
+                            requestId, listId, statusCode, responseBody);
                     throw new StatusListServerException(
-                            "Failed to publish status list " + listId + ". Status code: " + statusCode,
-                            statusCode);
+                            "Failed to publish status list " + listId + ". Status code: " + statusCode, statusCode);
                 }
             });
         } catch (IOException e) {
-            logger.errorf(
-                    "Request ID: %s, Error publishing status list %s: %s",
-                    requestId,
-                    listId,
-                    e.getMessage(),
-                    e);
+            logger.errorf("Request ID: %s, Error publishing status list %s: %s", requestId, listId, e.getMessage(), e);
             throw new StatusListException("Error publishing status list " + listId, e);
         }
     }
 
-    public void updateStatusList(StatusListPayload payload, String requestId)
-            throws StatusListException {
+    public void updateStatusList(StatusListPayload payload, String requestId) throws StatusListException {
         String listId = payload.listId();
         logger.debugf("Request ID: %s, Updating existing status list: %s", requestId, listId);
 
@@ -242,22 +203,13 @@ public class StatusListService {
                     String responseBody = EntityUtils.toString(response.getEntity());
                     logger.errorf(
                             "Request ID: %s, Failed to update status list %s. Status code: %d, Response: %s",
-                            requestId,
-                            listId,
-                            statusCode,
-                            responseBody);
+                            requestId, listId, statusCode, responseBody);
                     throw new StatusListServerException(
-                            "Failed to update status list " + listId + ". Status code: " + statusCode,
-                            statusCode);
+                            "Failed to update status list " + listId + ". Status code: " + statusCode, statusCode);
                 }
             });
         } catch (IOException e) {
-            logger.errorf(
-                    "Request ID: %s, Error updating status list %s: %s",
-                    requestId,
-                    listId,
-                    e.getMessage(),
-                    e);
+            logger.errorf("Request ID: %s, Error updating status list %s: %s", requestId, listId, e.getMessage(), e);
             throw new StatusListException("Error updating status list " + listId, e);
         }
     }
@@ -275,30 +227,23 @@ public class StatusListService {
         httpGet.setHeader("X-Request-ID", requestId);
 
         try {
-            return httpClient.execute(
-                    httpGet,
-                    response -> {
-                        int statusCode = response.getCode();
-                        if (statusCode >= HttpStatus.SC_OK && statusCode < 300) {
-                            logger.infof("Request ID: %s, Server health check successful.", requestId);
-                            return true;
-                        }
+            return httpClient.execute(httpGet, response -> {
+                int statusCode = response.getCode();
+                if (statusCode >= HttpStatus.SC_OK && statusCode < 300) {
+                    logger.infof("Request ID: %s, Server health check successful.", requestId);
+                    return true;
+                }
 
-                        logger.warnf(
-                                "Request ID: %s, Server health check failed. Status code: %d",
-                                requestId, statusCode);
-                        return false;
-                    });
+                logger.warnf("Request ID: %s, Server health check failed. Status code: %d", requestId, statusCode);
+                return false;
+            });
         } catch (IOException e) {
             logger.errorf(e, "Request ID: %s, Error during server health check", requestId);
             return false;
         }
     }
 
-    public record StatusListPayload(
-            @JsonProperty("list_id") String listId,
-            List<StatusEntry> status) {
-        public record StatusEntry(long index, String status) {
-        }
+    public record StatusListPayload(@JsonProperty("list_id") String listId, List<StatusEntry> status) {
+        public record StatusEntry(long index, String status) {}
     }
 }

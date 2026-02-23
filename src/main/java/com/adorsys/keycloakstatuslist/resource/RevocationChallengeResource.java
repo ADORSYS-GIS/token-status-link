@@ -3,15 +3,15 @@ package com.adorsys.keycloakstatuslist.resource;
 import com.adorsys.keycloakstatuslist.model.RevocationChallenge;
 import com.adorsys.keycloakstatuslist.service.nonce.NonceCacheProvider;
 import com.adorsys.keycloakstatuslist.service.nonce.NonceCacheServiceProviderFactory;
-import jakarta.ws.rs.*;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import java.util.Map;
 import org.jboss.logging.Logger;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.services.Urls;
 import org.keycloak.services.resource.RealmResourceProvider;
-
-import java.util.Map;
 
 /**
  * REST resource for issuing nonce challenges for credential revocation.
@@ -38,13 +38,14 @@ public class RevocationChallengeResource {
         try {
             // Build the expected audience (revocation endpoint URL)
             String audience = Urls.realmIssuer(
-                    session.getContext().getUri().getBaseUri(),
-                    session.getContext().getRealm().getName()) + "/protocol/openid-connect/revoke";
+                            session.getContext().getUri().getBaseUri(),
+                            session.getContext().getRealm().getName())
+                    + "/protocol/openid-connect/revoke";
 
             // Get the nonce service provider via RealmResourceProvider
             logger.debugf("Attempting to get NonceCacheService from session");
-            NonceCacheProvider nonceService = (NonceCacheProvider) session.getProvider(
-                    RealmResourceProvider.class, NonceCacheServiceProviderFactory.PROVIDER_ID);
+            NonceCacheProvider nonceService = (NonceCacheProvider)
+                    session.getProvider(RealmResourceProvider.class, NonceCacheServiceProviderFactory.PROVIDER_ID);
             if (nonceService == null) {
                 logger.error("NonceCacheProvider not available - service not registered. ");
                 return Response.status(Response.Status.INTERNAL_SERVER_ERROR)

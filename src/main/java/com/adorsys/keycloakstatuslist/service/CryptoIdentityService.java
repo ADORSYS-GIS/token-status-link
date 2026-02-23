@@ -1,15 +1,13 @@
 package com.adorsys.keycloakstatuslist.service;
 
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
-
+import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import java.security.PublicKey;
 import java.security.interfaces.ECPublicKey;
 import java.security.interfaces.RSAPublicKey;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
-
-import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import org.jboss.logging.Logger;
 import org.keycloak.common.util.Time;
 import org.keycloak.crypto.Algorithm;
@@ -63,21 +61,19 @@ public class CryptoIdentityService {
         payload.put("exp", Time.currentTime() + DEFAULT_AUTH_TOKEN_LIFETIME);
 
         // Build and sign JWT
-        return new JWSBuilder()
-                .jsonContent(payload)
-                .sign(new AsymmetricSignatureSignerContext(keyWrapper));
+        return new JWSBuilder().jsonContent(payload).sign(new AsymmetricSignatureSignerContext(keyWrapper));
     }
 
     /**
      * Gets the realm's active signing key and converts it to JWK. Supports RSA and EC. accessible by
      * CredentialRevocationResourceProviderFactory.
      */
-    public static KeyData getRealmKeyData(KeycloakSession session, RealmModel realm)
-            throws StatusListException {
+    public static KeyData getRealmKeyData(KeycloakSession session, RealmModel realm) throws StatusListException {
         try {
             KeyManager keyManager = session.keys();
 
-            String algorithm = Optional.ofNullable(realm.getDefaultSignatureAlgorithm()).orElse(Algorithm.ES256);
+            String algorithm =
+                    Optional.ofNullable(realm.getDefaultSignatureAlgorithm()).orElse(Algorithm.ES256);
 
             KeyWrapper activeKey = keyManager.getActiveKey(realm, KeyUse.SIG, algorithm);
 
@@ -97,9 +93,7 @@ public class CryptoIdentityService {
             PublicKey pubKey = (PublicKey) activeKey.getPublicKey();
             String finalAlg = activeKey.getAlgorithm() != null ? activeKey.getAlgorithm() : algorithm;
 
-            JWKBuilder builder = JWKBuilder.create()
-                    .kid(activeKey.getKid())
-                    .algorithm(finalAlg);
+            JWKBuilder builder = JWKBuilder.create().kid(activeKey.getKid()).algorithm(finalAlg);
 
             JWK jwk;
             if (pubKey instanceof RSAPublicKey) {
@@ -107,11 +101,10 @@ public class CryptoIdentityService {
             } else if (pubKey instanceof ECPublicKey) {
                 jwk = builder.ec(pubKey);
             } else {
-                throw new StatusListException(
-                        "Unsupported key type for realm "
-                                + realm.getName()
-                                + ": "
-                                + pubKey.getClass().getName());
+                throw new StatusListException("Unsupported key type for realm "
+                        + realm.getName()
+                        + ": "
+                        + pubKey.getClass().getName());
             }
 
             logger.debugf("Retrieved JWK and algorithm for realm %s: %s", realm.getName(), finalAlg);
@@ -125,6 +118,5 @@ public class CryptoIdentityService {
         }
     }
 
-    public record KeyData(JWK jwk, String algorithm) {
-    }
+    public record KeyData(JWK jwk, String algorithm) {}
 }

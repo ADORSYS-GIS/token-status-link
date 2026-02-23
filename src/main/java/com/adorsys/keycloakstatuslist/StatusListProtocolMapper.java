@@ -1,5 +1,7 @@
 package com.adorsys.keycloakstatuslist;
 
+import static com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity.MappingStatus;
+
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
@@ -14,6 +16,14 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import jakarta.persistence.TypedQuery;
 import jakarta.ws.rs.core.UriBuilder;
+import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.function.Consumer;
 import org.apache.commons.collections4.ListUtils;
 import org.jboss.logging.Logger;
 import org.keycloak.connections.jpa.JpaConnectionProvider;
@@ -25,17 +35,6 @@ import org.keycloak.protocol.ProtocolMapper;
 import org.keycloak.protocol.oid4vc.issuance.mappers.OID4VCMapper;
 import org.keycloak.protocol.oid4vc.model.VerifiableCredential;
 import org.keycloak.provider.ProviderConfigProperty;
-
-import java.io.IOException;
-import java.net.URI;
-import java.net.URISyntaxException;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
-import java.util.function.Consumer;
-
-import static com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity.MappingStatus;
 
 /**
  * Protocol mapper for adding `status_list` claims to issued Verifiable
@@ -65,8 +64,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         this.statusListService = new StatusListService(
                 config.getServerUrl(),
                 cryptoIdentityService.getJwtToken(config),
-                new CloseableHttpClientAdapter(CustomHttpClient.getHttpClient())
-        );
+                new CloseableHttpClientAdapter(CustomHttpClient.getHttpClient()));
     }
 
     @Override
@@ -154,8 +152,8 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         // mapperConfig.getOrDefault(Constants.CONFIG_LIST_ID_PROPERTY, realmId);
         String listId = UUID.randomUUID().toString();
         URI uri = UriBuilder.fromUri(serverUrl)
-            .path(String.format(Constants.HTTP_ENDPOINT_RETRIEVE_PATH, listId))
-            .build();
+                .path(String.format(Constants.HTTP_ENDPOINT_RETRIEVE_PATH, listId))
+                .build();
         logger.debugf("Configuration: listId=%s, uri=%s", listId, uri);
 
         // Get credential ID
@@ -171,7 +169,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
 
         if (status == null) {
             if (config.isMandatory()) {
-                    logger.error("Status list is mandatory and publication failed; failing issuance");
+                logger.error("Status list is mandatory and publication failed; failing issuance");
                 throw new RuntimeException("Status list publication failed and is mandatory");
             }
 
@@ -211,7 +209,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
      * prevent race conditions. Must be run within a transaction.
      */
     private Long getNextIndex(EntityManager em, String statusListId) {
-        String q = """                
+        String q = """
                 SELECT m FROM StatusListMappingEntity m
                 WHERE m.statusListId = :listId ORDER BY m.idx DESC
                 """;
@@ -228,9 +226,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
     /**
      * Send status to server to create status list entry and store index mapping in database.
      */
-    public Status sendStatusAndStoreIndexMapping(
-            String statusListId, String uri, String userId, String tokenId
-    ) {
+    public Status sendStatusAndStoreIndexMapping(String statusListId, String uri, String userId, String tokenId) {
         StatusListMappingEntity mapping = new StatusListMappingEntity();
         mapping.setStatusListId(statusListId);
         mapping.setUserId(userId);
@@ -238,7 +234,8 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         mapping.setRealmId(session.getContext().getRealm().getId());
 
         try {
-            logger.debugf("Booking next index for status list mapping: status_list_id=%s, userId=%s, tokenId=%s",
+            logger.debugf(
+                    "Booking next index for status list mapping: status_list_id=%s, userId=%s, tokenId=%s",
                     statusListId, userId, tokenId);
 
             withEntityManagerInTransaction(session, em -> {
@@ -282,12 +279,9 @@ public class StatusListProtocolMapper extends OID4VCMapper {
 
     private void sendStatusToServer(long idx, String statusListId) throws IOException, StatusListException {
         // Prepare payload
-        StatusListService.StatusListPayload payload =
-                new StatusListService.StatusListPayload(
-                        statusListId,
-                        List.of(
-                                new StatusListService.StatusListPayload.StatusEntry(
-                                        idx, TokenStatus.VALID.getValue())));
+        StatusListService.StatusListPayload payload = new StatusListService.StatusListPayload(
+                statusListId,
+                List.of(new StatusListService.StatusListPayload.StatusEntry(idx, TokenStatus.VALID.getValue())));
 
         // Publish or update status list on server
         statusListService.publishOrUpdate(payload);
