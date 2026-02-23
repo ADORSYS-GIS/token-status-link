@@ -10,7 +10,6 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
-
 import java.util.Objects;
 
 @Entity
@@ -106,7 +105,13 @@ public class StatusListMappingEntity {
     public boolean equals(Object o) {
         if (o == null || getClass() != o.getClass()) return false;
         StatusListMappingEntity that = (StatusListMappingEntity) o;
-        return Objects.equals(getId(), that.getId()) && Objects.equals(getIdx(), that.getIdx()) && Objects.equals(getStatusListId(), that.getStatusListId()) && Objects.equals(getUserId(), that.getUserId()) && Objects.equals(getTokenId(), that.getTokenId()) && Objects.equals(getRealmId(), that.getRealmId()) && getStatus() == that.getStatus();
+        return Objects.equals(getId(), that.getId())
+                && Objects.equals(getIdx(), that.getIdx())
+                && Objects.equals(getStatusListId(), that.getStatusListId())
+                && Objects.equals(getUserId(), that.getUserId())
+                && Objects.equals(getTokenId(), that.getTokenId())
+                && Objects.equals(getRealmId(), that.getRealmId())
+                && getStatus() == that.getStatus();
     }
 
     @Override
@@ -115,6 +120,8 @@ public class StatusListMappingEntity {
     }
 
     public enum MappingStatus {
-        INIT, SUCCESS, FAILURE
+        INIT,
+        SUCCESS,
+        FAILURE
     }
 }

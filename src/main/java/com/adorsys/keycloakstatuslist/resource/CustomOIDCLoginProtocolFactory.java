@@ -8,12 +8,10 @@ import com.adorsys.keycloakstatuslist.service.CryptoIdentityService;
 import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
 import com.adorsys.keycloakstatuslist.service.http.CloseableHttpClientAdapter;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-
 import org.jboss.logging.Logger;
 import org.keycloak.events.EventBuilder;
 import org.keycloak.models.KeycloakSession;
@@ -55,12 +53,11 @@ public class CustomOIDCLoginProtocolFactory extends OIDCLoginProtocolFactory {
         // Initialize realms directly since we're already in the postInit phase
         // which means Keycloak's database is ready
         try {
-            factory.register(
-                    event -> {
-                        if (event instanceof PostMigrationEvent) {
-                            initializeRealms(factory);
-                        }
-                    });
+            factory.register(event -> {
+                if (event instanceof PostMigrationEvent) {
+                    initializeRealms(factory);
+                }
+            });
         } catch (Exception e) {
             logger.error("Error during initialization", e);
         }
@@ -109,28 +106,23 @@ public class CustomOIDCLoginProtocolFactory extends OIDCLoginProtocolFactory {
             session.getTransactionManager().commit();
 
             // Report results based on registration outcomes
-            logger.info(
-                    "Registration results - Total: "
-                            + totalRealms
-                            + ", Successful: "
-                            + successfulRegistrations
-                            + ", Failed: "
-                            + failedRegistrations
-                            + ", Skipped: "
-                            + skippedRegistrations);
+            logger.info("Registration results - Total: "
+                    + totalRealms
+                    + ", Successful: "
+                    + successfulRegistrations
+                    + ", Failed: "
+                    + failedRegistrations
+                    + ", Skipped: "
+                    + skippedRegistrations);
 
             if (failedRegistrations == 0 && skippedRegistrations == 0) {
-                logger.info(
-                        "Successfully completed realm initialization - all "
-                                + totalRealms
-                                + " realms registered");
+                logger.info("Successfully completed realm initialization - all " + totalRealms + " realms registered");
                 initialized = true;
             } else if (successfulRegistrations == 0 && failedRegistrations > 0) {
-                logger.error(
-                        "Realm initialization failed - all "
-                                + totalRealms
-                                + " realms failed to register. Failed realms: "
-                                + String.join(", ", failedRealmNames));
+                logger.error("Realm initialization failed - all "
+                        + totalRealms
+                        + " realms failed to register. Failed realms: "
+                        + String.join(", ", failedRealmNames));
             } else {
                 if (skippedRegistrations > 0) {
                     logger.warn(
@@ -142,13 +134,12 @@ public class CustomOIDCLoginProtocolFactory extends OIDCLoginProtocolFactory {
                                     + String.join(", ", skippedRealmNames));
                 }
                 if (failedRegistrations > 0) {
-                    logger.warn(
-                            "Realm initialization completed with some failures - "
-                                    + successfulRegistrations
-                                    + " successful, "
-                                    + failedRegistrations
-                                    + " failed. Failed realms: "
-                                    + String.join(", ", failedRealmNames));
+                    logger.warn("Realm initialization completed with some failures - "
+                            + successfulRegistrations
+                            + " successful, "
+                            + failedRegistrations
+                            + " failed. Failed realms: "
+                            + String.join(", ", failedRealmNames));
                 }
                 initialized = true;
             }
@@ -175,19 +166,15 @@ public class CustomOIDCLoginProtocolFactory extends OIDCLoginProtocolFactory {
                 keyData = CryptoIdentityService.getRealmKeyData(session, realm);
             } catch (StatusListException e) {
                 logger.warn(
-                        "Could not retrieve valid signing key for realm: "
-                                + realm.getName()
-                                + ". "
-                                + e.getMessage());
+                        "Could not retrieve valid signing key for realm: " + realm.getName() + ". " + e.getMessage());
                 return false;
             }
 
             CryptoIdentityService cryptoIdentityService = new CryptoIdentityService(session);
-            StatusListService statusListService =
-                    new StatusListService(
-                            config.getServerUrl(),
-                            cryptoIdentityService.getJwtToken(config),
-                            new CloseableHttpClientAdapter(CustomHttpClient.getHttpClient()));
+            StatusListService statusListService = new StatusListService(
+                    config.getServerUrl(),
+                    cryptoIdentityService.getJwtToken(config),
+                    new CloseableHttpClientAdapter(CustomHttpClient.getHttpClient()));
 
             // Check if the status list server is reachable
             if (!statusListService.checkServerHealth()) {
@@ -203,10 +190,7 @@ public class CustomOIDCLoginProtocolFactory extends OIDCLoginProtocolFactory {
         } catch (StatusListServerException e) {
             logger.errorf(
                     "Failed to register realm as issuer: %s. Server returned status code: %d, message: %s",
-                    realm.getName(),
-                    e.getStatusCode(),
-                    e.getMessage(),
-                    e);
+                    realm.getName(), e.getStatusCode(), e.getMessage(), e);
             return false;
         } catch (StatusListException e) {
             logger.error("Failed to register realm as issuer: " + realm.getName(), e);

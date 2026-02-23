@@ -13,8 +13,8 @@
     <properties>
         <revision>1.0.0-SNAPSHOT</revision>
         <keycloak.version>26.5.3</keycloak.version>
-        <jackson.version>2.15.2</jackson.version>
-        <mockito.version>5.15.2</mockito.version>
+        <jackson.version>2.19.2</jackson.version>
+        <mockito.version>5.20.0</mockito.version>
         <maven.compiler.release>17</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
@@ -54,7 +54,7 @@
         <dependency>
             <groupId>org.apache.httpcomponents.client5</groupId>
             <artifactId>httpclient5</artifactId>
-            <version>5.2.1</version>
+            <version>5.5.2</version>
         </dependency>
         <dependency>
             <groupId>org.hamcrest</groupId>
@@ -77,19 +77,19 @@
         <dependency>
             <groupId>org.jboss.resteasy</groupId>
             <artifactId>resteasy-core</artifactId>
-            <version>6.2.8.Final</version>
+            <version>6.2.15.Final</version>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter-api</artifactId>
-            <version>5.11.4</version>
+            <version>5.12.2</version>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.apache.httpcomponents.core5</groupId>
             <artifactId>httpcore5</artifactId>
-            <version>5.2</version>
+            <version>5.4</version>
             <scope>compile</scope>
         </dependency>
         <dependency>
@@ -119,7 +119,7 @@
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-annotations</artifactId>
-            <version>2.19.2</version>
+            <version>${jackson.version}</version>
             <scope>provided</scope>
         </dependency>
         <dependency>
@@ -131,7 +131,7 @@
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
-            <version>2.19.2</version>
+            <version>${jackson.version}</version>
             <scope>provided</scope>
         </dependency>
         <!-- Caffeine Cache for nonce management -->
@@ -180,7 +180,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
-                <version>3.5.4</version>
+                <version>3.5.5</version>
                 <configuration>
                     <forkCount>1</forkCount>
                     <reuseForks>true</reuseForks>
@@ -199,7 +199,13 @@
                 <version>3.2.1</version>
                 <configuration>
                     <java>
-                        <removeUnusedImports />
+                        <palantirJavaFormat/>
+                        <removeUnusedImports/>
+                        <trimTrailingWhitespace/>
+                        <endWithNewline/>
+                        <forbidWildcardImports/>
+                        <forbidModuleImports/>
+                        <formatAnnotations/>
                     </java>
                 </configuration>
             </plugin>

@@ -1,7 +1,6 @@
 package com.adorsys.keycloakstatuslist.model;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-
 import java.time.Instant;
 
 /**
@@ -25,11 +24,7 @@ public class CredentialRevocationResponse {
         // Default constructor for JSON serialization
     }
 
-    public CredentialRevocationResponse(
-            boolean success,
-            Instant revokedAt,
-            String revocationReason,
-            String message) {
+    public CredentialRevocationResponse(boolean success, Instant revokedAt, String revocationReason, String message) {
         this.success = success;
         this.revokedAt = revokedAt;
         this.revocationReason = revocationReason;
@@ -37,8 +32,7 @@ public class CredentialRevocationResponse {
     }
 
     public static CredentialRevocationResponse success(Instant revokedAt, String revocationReason) {
-        return new CredentialRevocationResponse(
-                true, revokedAt, revocationReason, "Credential revoked successfully");
+        return new CredentialRevocationResponse(true, revokedAt, revocationReason, "Credential revoked successfully");
     }
 
     public static CredentialRevocationResponse error(String message) {

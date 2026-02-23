@@ -1,25 +1,5 @@
 package com.adorsys.keycloakstatuslist;
 
-import com.adorsys.keycloakstatuslist.config.StatusListConfig;
-import com.adorsys.keycloakstatuslist.exception.StatusListException;
-import com.adorsys.keycloakstatuslist.helpers.MockKeycloakTest;
-import com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
-import com.adorsys.keycloakstatuslist.model.Status;
-import com.adorsys.keycloakstatuslist.model.TokenStatus;
-import com.adorsys.keycloakstatuslist.service.StatusListService;
-import jakarta.persistence.PersistenceException;
-import jakarta.persistence.TypedQuery;
-import nl.altindag.log.LogCaptor;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.keycloak.models.ProtocolMapperModel;
-import org.mockito.ArgumentCaptor;
-import org.mockito.Mock;
-
-import java.util.HashMap;
-import java.util.List;
-import java.util.concurrent.ThreadLocalRandom;
-
 import static com.adorsys.keycloakstatuslist.StatusListProtocolMapper.Constants;
 import static com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity.MappingStatus;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -40,6 +20,25 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+
+import com.adorsys.keycloakstatuslist.config.StatusListConfig;
+import com.adorsys.keycloakstatuslist.exception.StatusListException;
+import com.adorsys.keycloakstatuslist.helpers.MockKeycloakTest;
+import com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
+import com.adorsys.keycloakstatuslist.model.Status;
+import com.adorsys.keycloakstatuslist.model.TokenStatus;
+import com.adorsys.keycloakstatuslist.service.StatusListService;
+import jakarta.persistence.PersistenceException;
+import jakarta.persistence.TypedQuery;
+import java.util.HashMap;
+import java.util.List;
+import java.util.concurrent.ThreadLocalRandom;
+import nl.altindag.log.LogCaptor;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.keycloak.models.ProtocolMapperModel;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mock;
 
 class StatusListProtocolMapperTest extends MockKeycloakTest {
 
@@ -77,7 +76,8 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
     @Test
     void testGetMetadataAttributePath() {
-        assertEquals(Constants.STATUS_CLAIM_KEY, mapper.getMetadataAttributePath().get(0));
+        assertEquals(
+                Constants.STATUS_CLAIM_KEY, mapper.getMetadataAttributePath().get(0));
     }
 
     @Test
@@ -96,7 +96,8 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         assertEquals(idx, status.getStatusList().getIdx());
 
         // 2. Verify service was called with correct payload
-        ArgumentCaptor<StatusListService.StatusListPayload> payloadCaptor = ArgumentCaptor.forClass(StatusListService.StatusListPayload.class);
+        ArgumentCaptor<StatusListService.StatusListPayload> payloadCaptor =
+                ArgumentCaptor.forClass(StatusListService.StatusListPayload.class);
         verify(statusListService).publishOrUpdate(payloadCaptor.capture());
         StatusListService.StatusListPayload capturedPayload = payloadCaptor.getValue();
         // TODO(status-list-server#128): Uncomment next line
@@ -116,8 +117,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
     @Test
     void shouldNotMap_IfFeatureDisabled() {
-        when(realm.getAttribute(StatusListConfig.STATUS_LIST_ENABLED))
-                .thenReturn("false");
+        when(realm.getAttribute(StatusListConfig.STATUS_LIST_ENABLED)).thenReturn("false");
 
         mapper.setClaim(claims, userSession);
 
@@ -127,8 +127,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
     @Test
     void shouldNotMap_IfInvalidStatusServerUrl() {
-        when(realm.getAttribute(StatusListConfig.STATUS_LIST_SERVER_URL))
-                .thenReturn("invalid-url");
+        when(realm.getAttribute(StatusListConfig.STATUS_LIST_SERVER_URL)).thenReturn("invalid-url");
 
         mapper.setClaim(claims, userSession);
 
@@ -143,8 +142,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
         mapper.setClaim(claims, userSession);
 
-        assertThat(
-                "Claims should remain unmapped", claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
+        assertThat("Claims should remain unmapped", claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
         assertThat(logCaptor.getErrorLogs(), hasItem(containsString("Failed to initiate index mapping")));
     }
 
@@ -155,10 +153,8 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
         mapper.setClaim(claims, userSession);
 
-        assertThat("Claims should be mapped regardless", claims.keySet(),
-                hasItem(Constants.STATUS_CLAIM_KEY));
-        assertThat(logCaptor.getErrorLogs(),
-                hasItem(containsString("Failed to persist completion mapping status")));
+        assertThat("Claims should be mapped regardless", claims.keySet(), hasItem(Constants.STATUS_CLAIM_KEY));
+        assertThat(logCaptor.getErrorLogs(), hasItem(containsString("Failed to persist completion mapping status")));
     }
 
     @Test
@@ -166,19 +162,18 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         mockGetNextIndex();
         when(realm.getAttribute(StatusListConfig.STATUS_LIST_MANDATORY)).thenReturn("false");
         doThrow(new StatusListException("Server not reachable"))
-                .when(statusListService).publishOrUpdate(any(StatusListService.StatusListPayload.class));
+                .when(statusListService)
+                .publishOrUpdate(any(StatusListService.StatusListPayload.class));
 
         // Act
         mapper.setClaim(claims, userSession);
 
         // Assert
-        assertThat("Claims should remain unmapped", claims.keySet(),
-                not(hasItem(Constants.STATUS_CLAIM_KEY)));
-        assertThat(logCaptor.getErrorLogs(),
-                hasItems(containsString("Failed to send token status")));
-        assertThat(logCaptor.getDebugLogs(),
-                hasItems(containsString("Persisting completion mapping status: FAILURE")));
-        assertThat(logCaptor.getWarnLogs(),
+        assertThat("Claims should remain unmapped", claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
+        assertThat(logCaptor.getErrorLogs(), hasItems(containsString("Failed to send token status")));
+        assertThat(logCaptor.getDebugLogs(), hasItems(containsString("Persisting completion mapping status: FAILURE")));
+        assertThat(
+                logCaptor.getWarnLogs(),
                 hasItem(containsString("Status list publication failed; proceeding without status claim")));
     }
 
@@ -191,7 +186,9 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         mapper.setClaim(claims, userSession);
 
         assertThat("Claims should remain unmapped", claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
-        assertThat(logCaptor.getWarnLogs(), hasItem(containsString("Status list publication failed; proceeding without status claim")));
+        assertThat(
+                logCaptor.getWarnLogs(),
+                hasItem(containsString("Status list publication failed; proceeding without status claim")));
     }
 
     @Test
@@ -201,7 +198,9 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         doThrow(new PersistenceException("DB Error")).when(entityManager).persist(any());
 
         assertThrows(RuntimeException.class, () -> mapper.setClaim(claims, userSession));
-        assertThat(logCaptor.getErrorLogs(), hasItem(containsString("Status list is mandatory and publication failed; failing issuance")));
+        assertThat(
+                logCaptor.getErrorLogs(),
+                hasItem(containsString("Status list is mandatory and publication failed; failing issuance")));
     }
 
     @Test
@@ -209,16 +208,23 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         mockGetNextIndex();
         when(realm.getAttribute(StatusListConfig.STATUS_LIST_MANDATORY)).thenReturn("true");
         doThrow(new StatusListException("Server not reachable"))
-                .when(statusListService).publishOrUpdate(any(StatusListService.StatusListPayload.class));
+                .when(statusListService)
+                .publishOrUpdate(any(StatusListService.StatusListPayload.class));
 
         assertThrows(RuntimeException.class, () -> mapper.setClaim(claims, userSession));
-        assertThat(logCaptor.getErrorLogs(), hasItem(containsString("Status list is mandatory and publication failed; failing issuance")));
+        assertThat(
+                logCaptor.getErrorLogs(),
+                hasItem(containsString("Status list is mandatory and publication failed; failing issuance")));
     }
 
     private void mockDefaultRealmConfig() {
         lenient().when(realm.getAttribute(StatusListConfig.STATUS_LIST_ENABLED)).thenReturn("true");
-        lenient().when(realm.getAttribute(StatusListConfig.STATUS_LIST_SERVER_URL)).thenReturn(TEST_SERVER_URL);
-        lenient().when(realm.getAttribute(StatusListConfig.STATUS_LIST_MANDATORY)).thenReturn("false");
+        lenient()
+                .when(realm.getAttribute(StatusListConfig.STATUS_LIST_SERVER_URL))
+                .thenReturn(TEST_SERVER_URL);
+        lenient()
+                .when(realm.getAttribute(StatusListConfig.STATUS_LIST_MANDATORY))
+                .thenReturn("false");
     }
 
     @SuppressWarnings("unchecked")
@@ -226,7 +232,8 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         long nextIndex = ThreadLocalRandom.current().nextLong(Long.MAX_VALUE);
         var query = mock(TypedQuery.class);
 
-        when(entityManager.createQuery(anyString(), eq(StatusListMappingEntity.class))).thenReturn(query);
+        when(entityManager.createQuery(anyString(), eq(StatusListMappingEntity.class)))
+                .thenReturn(query);
         when(query.getResultList()).thenAnswer(invocation -> {
             var entity = new StatusListMappingEntity();
             entity.setIdx(nextIndex - 1);

@@ -3,11 +3,10 @@ package com.adorsys.keycloakstatuslist.service.nonce;
 import com.adorsys.keycloakstatuslist.model.RevocationChallenge;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import java.time.Duration;
 import org.jboss.logging.Logger;
 import org.keycloak.common.util.SecretGenerator;
 import org.keycloak.services.resource.RealmResourceProvider;
-
-import java.time.Duration;
 
 /**
  * Service for managing nonce challenges in credential revocation.
@@ -45,7 +44,7 @@ public class NonceCacheService implements NonceCacheProvider, RealmResourceProvi
     /**
      * Consumes a nonce, validating and removing it from the cache.
      * This ensures one-time use - subsequent calls with the same nonce will fail.
-     * 
+     *
      * @param nonce the nonce to consume
      * @return the RevocationChallenge if valid and not expired, null otherwise
      */
@@ -78,7 +77,7 @@ public class NonceCacheService implements NonceCacheProvider, RealmResourceProvi
 
     /**
      * Gets the current cache size for monitoring purposes.
-     * 
+     *
      * @return the number of active nonces in the cache
      */
     @Override
