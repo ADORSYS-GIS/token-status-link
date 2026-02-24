@@ -3,14 +3,19 @@ package com.adorsys.keycloakstatuslist;
 import com.adorsys.keycloakstatuslist.client.ApacheHttpStatusListClient;
 import com.adorsys.keycloakstatuslist.client.StatusListHttpClient;
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
+import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
 import com.adorsys.keycloakstatuslist.model.Status;
 import com.adorsys.keycloakstatuslist.model.StatusListClaim;
+import com.adorsys.keycloakstatuslist.model.TokenStatus;
 import com.adorsys.keycloakstatuslist.service.CircuitBreaker;
 import com.adorsys.keycloakstatuslist.service.CryptoIdentityService;
 import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
+import jakarta.persistence.TypedQuery;
+import org.apache.commons.collections4.ListUtils;
 import org.jboss.logging.Logger;
 import org.keycloak.connections.jpa.JpaConnectionProvider;
 import org.keycloak.models.KeycloakSession;
@@ -22,15 +27,17 @@ import org.keycloak.protocol.oid4vc.issuance.mappers.OID4VCMapper;
 import org.keycloak.protocol.oid4vc.model.VerifiableCredential;
 import org.keycloak.provider.ProviderConfigProperty;
 
+import java.io.IOException;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+
+import static com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity.MappingStatus;
 
 /**
  * Protocol mapper for adding `status_list` claims to issued Verifiable
@@ -48,7 +55,6 @@ public class StatusListProtocolMapper extends OID4VCMapper {
     private static final Map<String, StatusListService> serviceCache = new ConcurrentHashMap<>();
 
     private final KeycloakSession session;
-    private final CryptoIdentityService cryptoIdentityService;
     private final StatusListService statusListService;
 
     protected interface Constants {
@@ -58,25 +64,26 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         String ID_CLAIM_KEY = "id";
         String STATUS_CLAIM_KEY = "status";
         String TOKEN_STATUS_VALID = "VALID";
+
+        String HTTP_ENDPOINT_RETRIEVE_PATH = "/statuslists/%s";
     }
 
     public StatusListProtocolMapper() {
         // An empty mapper constructor is required by Keycloak
         this.session = null;
-        this.cryptoIdentityService = null;
         this.statusListService = null;
     }
 
     public StatusListProtocolMapper(KeycloakSession session) {
         this.session = session;
-        this.cryptoIdentityService = new CryptoIdentityService(session);
-        
+        CryptoIdentityService cryptoIdentityService = new CryptoIdentityService(session);
+
         // Get or create cached StatusListService for this realm
         // This ensures circuit breaker is shared across all token issuance requests
         String realmId = session.getContext().getRealm().getId();
         this.statusListService = serviceCache.computeIfAbsent(realmId, key -> {
             StatusListConfig config = new StatusListConfig(session.getContext().getRealm());
-            
+
             // Create circuit breaker if enabled
             CircuitBreaker circuitBreaker = null;
             if (config.isCircuitBreakerEnabled()) {
@@ -88,7 +95,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
                         config.getCircuitBreakerCooldownSeconds()
                 );
             }
-            
+
             // Create HTTP client with custom timeouts for issuance path
             StatusListHttpClient httpClient = new ApacheHttpStatusListClient(
                     config.getServerUrl(),
@@ -99,10 +106,14 @@ public class StatusListProtocolMapper extends OID4VCMapper {
                     ),
                     circuitBreaker
             );
-            
+
             return new StatusListService(httpClient);
         });
+    }
 
+    @Override
+    public List<String> getMetadataAttributePath() {
+        return ListUtils.union(getAttributePrefix(), List.of(Constants.STATUS_CLAIM_KEY));
     }
 
     @Override
@@ -148,12 +159,12 @@ public class StatusListProtocolMapper extends OID4VCMapper {
     }
 
     @Override
-    public void setClaimsForCredential(VerifiableCredential verifiableCredential, UserSessionModel userSessionModel) {
+    public void setClaim(VerifiableCredential verifiableCredential, UserSessionModel userSessionModel) {
         // No-op. W3C Verifiable Credentials are not supported by this mapper.
     }
 
     @Override
-    public void setClaimsForSubject(Map<String, Object> claims, UserSessionModel userSessionModel) {
+    public void setClaim(Map<String, Object> claims, UserSessionModel userSessionModel) {
         logger.debugf("Adding status list data to credential claims (TokenStatusList)");
         if (session == null) {
             logger.error("Keycloak session is not available.");
@@ -185,7 +196,6 @@ public class StatusListProtocolMapper extends OID4VCMapper {
 
         logger.debugf("Configuration: listId=%s", listId);
 
-
         // Get credential ID
         String tokenId = null;
         if (claims.get(Constants.ID_CLAIM_KEY) instanceof String id) {
@@ -195,16 +205,20 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         UserSessionModel userSession = session.getContext().getUserSession();
         String userId = userSession != null ? userSession.getUser().getId() : null;
 
-        // Store index mapping and publish status - service handles HTTP details
-        Status status = storeIndexMappingAndPublish(listId, userId, tokenId, session);
+        String statusListUri = statusListService.getStatusListUri(listId);
+        Status status = sendStatusAndStoreIndexMapping(listId, statusListUri, userId, tokenId);
 
         if (status == null) {
+            if (config.isMandatory()) {
+                    logger.error("Status list is mandatory and publication failed; failing issuance");
+                throw new RuntimeException("Status list publication failed and is mandatory");
+            }
 
-            logger.warn("Status list publication failed or was skipped; continuing without status claim");
+            logger.warn("Status list publication failed; proceeding without status claim");
             return;
         }
 
-        logger.infof("Adding status claim of value: %s", status.toMap());
+        logger.infof("Adding status claim of value: %s", status);
         claims.put(Constants.STATUS_CLAIM_KEY, status);
     }
 
@@ -231,113 +245,88 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         });
     }
 
-    private Status storeIndexMappingAndPublish(String statusListId, String userId, String tokenId,
-                                             KeycloakSession session) {
-        logger.debugf("Storing index mapping: status_list_id=%s, userId=%s, tokenId=%s",
-                statusListId, userId, tokenId);
-        AtomicReference<Long> generatedIdx = new AtomicReference<>();
-        StatusListConfig config = getStatusListConfig(session.getContext().getRealm());
+    /**
+     * Get the next available index for the given status list ID, using a pessimistic lock to
+     * prevent race conditions. Must be run within a transaction.
+     */
+    private Long getNextIndex(EntityManager em, String statusListId) {
+        String q = """                
+                SELECT m FROM StatusListMappingEntity m
+                WHERE m.statusListId = :listId ORDER BY m.idx DESC
+                """;
 
-        try {
-            withEntityManagerInTransaction(
-                    session,
-                    em -> {
-                        try {
-                            StatusListMappingEntity mapping = new StatusListMappingEntity();
-                            mapping.setStatusListId(statusListId);
-                            mapping.setUserId(userId);
-                            mapping.setTokenId(tokenId);
-                            mapping.setRealmId(session.getContext().getRealm().getId());
+        TypedQuery<StatusListMappingEntity> query = em.createQuery(q, StatusListMappingEntity.class);
+        query.setParameter("listId", statusListId);
+        query.setMaxResults(1);
+        query.setLockMode(LockModeType.PESSIMISTIC_WRITE);
 
-                            em.persist(mapping);
-                            em.flush();
-
-                            Long idx = mapping.getIdx();
-                            logger.debugf("Stored mapping with generated index: %d", idx);
-                            generatedIdx.set(idx);
-                        } catch (Exception e) {
-                            logger.error("Failed to store index mapping", e);
-                            session.getTransactionManager().setRollbackOnly();
-                            throw e;
-                        }
-                    });
-        } catch (Exception e) {
-            logger.error("Failed to store index mapping and publish status", e);
-            if (config.isMandatory()) {
-                logger.error("Status list is mandatory and publication failed; failing issuance");
-                throw new RuntimeException("Status list publication failed and is mandatory", e);
-            }
-            return null;
-        }
-
-        long index = generatedIdx.get();
-        String uri = statusListService.getStatusListUri(statusListId);
-        
-        StatusListClaim statusList = new StatusListClaim(index, uri);
-        Status status = new Status(statusList);
-
-        if (config.isMandatory()) {
-            return publishStatusSynchronously(statusListId, index, status, config);
-        } else {
-            publishStatusAsynchronously(statusListId, index);
-            return status;
-        }
+        List<StatusListMappingEntity> max = query.getResultList();
+        return (max.isEmpty()) ? 0 : max.get(0).getIdx() + 1;
     }
 
     /**
-     * Publishes status synchronously with timeout for mandatory mode.
-     * This ensures we wait for HTTP but with a reasonable timeout.
+     * Send status to server to create status list entry and store index mapping in database.
      */
-    private Status publishStatusSynchronously(String statusListId, long index, Status fallbackStatus, 
-                                            StatusListConfig config) {
+    public Status sendStatusAndStoreIndexMapping(
+            String statusListId, String uri, String userId, String tokenId
+    ) {
+        StatusListMappingEntity mapping = new StatusListMappingEntity();
+        mapping.setStatusListId(statusListId);
+        mapping.setUserId(userId);
+        mapping.setTokenId(tokenId);
+        mapping.setRealmId(session.getContext().getRealm().getId());
+
         try {
-            CompletableFuture<Status> future = CompletableFuture.supplyAsync(() -> {
-                try {
-                    return statusListService.registerAndPublishStatus(statusListId, index);
-                } catch (Exception e) {
-                    throw new RuntimeException(e);
-                }
+            logger.debugf("Booking next index for status list mapping: status_list_id=%s, userId=%s, tokenId=%s",
+                    statusListId, userId, tokenId);
+
+            withEntityManagerInTransaction(session, em -> {
+                Long idx = getNextIndex(em, statusListId);
+                logger.debugf("Next available index is: %d", idx);
+
+                mapping.setIdx(getNextIndex(em, statusListId));
+                mapping.setStatus(MappingStatus.INIT);
+
+                em.persist(mapping);
+                em.flush();
             });
-
-            Status publishedStatus = future.get(5, TimeUnit.SECONDS);
-            logger.debugf("Successfully published status synchronously for mandatory mode: listId=%s, index=%d", 
-                    statusListId, index);
-            return publishedStatus;
-            
         } catch (Exception e) {
-            logger.errorf(e,
-                    "Failed to publish status synchronously for listId: %s, index: %d (mandatory mode). " +
-                    "Failing token issuance as status list is mandatory.",
-                    statusListId, index);
-            throw new RuntimeException("Status list publication failed and is mandatory", e);
-        }
-    }
-
-    /**
-     * Publishes status asynchronously without blocking token issuance.
-     * Errors are logged but don't affect token issuance.
-     */
-    private void publishStatusAsynchronously(String statusListId, long index) {
-        CompletableFuture.runAsync(() -> {
-            try {
-                statusListService.registerAndPublishStatus(statusListId, index);
-                logger.debugf("Successfully published status asynchronously: listId=%s, index=%d", 
-                        statusListId, index);
-            } catch (Exception e) {
-                logger.warnf(e,
-                        "Failed to publish status asynchronously for listId: %s, index: %d. " +
-                        "Index is stored in DB. Status list server can sync later. Error: %s",
-                        statusListId, index, e.getMessage());
-            }
-        }).exceptionally(throwable -> {
-            logger.errorf(throwable,
-                    "Unexpected error in async status publication for listId: %s, index: %d",
-                    statusListId, index);
+            logger.error("Failed to initiate index mapping", e);
             return null;
-        });
-        
-        logger.debugf("Async status publication queued for listId=%s, index=%d. Token issuance proceeding immediately.",
-                statusListId, index);
+        }
+
+        Status status = null;
+
+        try {
+            logger.debugf("Sending token status for generated index: %d", mapping.getIdx());
+
+            sendStatusToServer(mapping.getIdx(), statusListId);
+            mapping.setStatus(MappingStatus.SUCCESS);
+
+            status = new Status(new StatusListClaim(mapping.getIdx(), uri));
+        } catch (StatusListException | IOException e) {
+            logger.error("Failed to send token status", e);
+            mapping.setStatus(MappingStatus.FAILURE);
+        }
+
+        try {
+            logger.debugf("Persisting completion mapping status: %s", mapping.getStatus());
+            withEntityManagerInTransaction(session, em -> em.merge(mapping));
+        } catch (Exception e) {
+            logger.error("Failed to persist completion mapping status", e);
+        }
+
+        return status;
     }
 
+    private void sendStatusToServer(long idx, String statusListId) throws IOException, StatusListException {
+        // Prepare payload
+        StatusListService.StatusListPayload.StatusEntry entry =
+                new StatusListService.StatusListPayload.StatusEntry(idx, TokenStatus.VALID.getValue());
+        StatusListService.StatusListPayload payload =
+                new StatusListService.StatusListPayload(statusListId, Collections.singletonList(entry));
+
+        // Publish or update status list on server
+        statusListService.publishOrUpdate(payload);
+    }
 }

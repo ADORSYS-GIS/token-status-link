@@ -7,8 +7,8 @@ import static org.mockito.Mockito.*;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.service.CryptoIdentityService;
 import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
-import com.adorsys.keycloakstatuslist.service.RevocationRecordService;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
+import jakarta.persistence.EntityManager;
 
 import java.io.IOException;
 import java.util.stream.Stream;
@@ -23,6 +23,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.keycloak.events.EventBuilder;
 import org.keycloak.jose.jwk.JWK;
+import org.keycloak.connections.jpa.JpaConnectionProvider;
 import org.keycloak.models.*;
 import org.keycloak.models.utils.PostMigrationEvent;
 import org.keycloak.provider.ProviderEventListener;
@@ -30,16 +31,17 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.MockedConstruction;
 import org.mockito.MockedStatic;
 
-@SuppressWarnings("unchecked")
-class CredentialRevocationResourceProviderFactoryTest {
+class CustomOIDCLoginProtocolFactoryTest {
 
-    private CredentialRevocationResourceProviderFactory factory;
+    private CustomOIDCLoginProtocolFactory factory;
     private KeycloakSessionFactory sessionFactory;
     private KeycloakSession session;
     private KeycloakTransactionManager transactionManager;
     private RealmModel realm;
+    private JpaConnectionProvider jpaConnectionProvider;
+    private EntityManager entityManager;
 
-    private MockedStatic<RevocationRecordService> mockedRevocationService;
+    private MockedStatic<CryptoIdentityService> mockedRevocationService;
     private MockedStatic<CustomHttpClient> mockedHttpClient;
 
     private MockedConstruction<StatusListService> mockedStatusListServiceConstruction;
@@ -47,13 +49,15 @@ class CredentialRevocationResourceProviderFactoryTest {
 
     @BeforeEach
     void setUp() {
-        factory = new CredentialRevocationResourceProviderFactory();
+        factory = new CustomOIDCLoginProtocolFactory();
         sessionFactory = mock(KeycloakSessionFactory.class);
         session = mock(KeycloakSession.class);
         KeycloakContext context1 = mock(KeycloakContext.class);
         transactionManager = mock(KeycloakTransactionManager.class);
         RealmProvider realmProvider = mock(RealmProvider.class);
         realm = mock(RealmModel.class);
+        jpaConnectionProvider = mock(JpaConnectionProvider.class);
+        entityManager = mock(EntityManager.class);
 
         when(session.getContext()).thenReturn(context1);
         lenient().when(context1.getRealm()).thenReturn(realm);
@@ -61,13 +65,15 @@ class CredentialRevocationResourceProviderFactoryTest {
         when(sessionFactory.create()).thenReturn(session);
         when(session.getTransactionManager()).thenReturn(transactionManager);
         when(session.realms()).thenReturn(realmProvider);
+        when(session.getProvider(eq(JpaConnectionProvider.class))).thenReturn(jpaConnectionProvider);
+        when(jpaConnectionProvider.getEntityManager()).thenReturn(entityManager);
         when(realmProvider.getRealmsStream()).thenAnswer(i -> Stream.of(realm));
 
         when(realm.getName()).thenReturn("test-realm");
         when(realm.getAttribute("status-list-enabled")).thenReturn("true");
         when(realm.getAttribute("status-list-server-url")).thenReturn("http://localhost:8080");
 
-        mockedRevocationService = mockStatic(RevocationRecordService.class);
+        mockedRevocationService = mockStatic(CryptoIdentityService.class);
         mockedHttpClient = mockStatic(CustomHttpClient.class);
 
         mockedStatusListServiceConstruction =
@@ -114,9 +120,9 @@ class CredentialRevocationResourceProviderFactoryTest {
                         });
 
         JWK mockJwk = mock(JWK.class);
-        RevocationRecordService.KeyData keyData = new RevocationRecordService.KeyData(mockJwk, "RS256");
+        CryptoIdentityService.KeyData keyData = new CryptoIdentityService.KeyData(mockJwk, "RS256");
         mockedRevocationService
-                .when(() -> RevocationRecordService.getRealmKeyData(session, realm))
+                .when(() -> CryptoIdentityService.getRealmKeyData(session, realm))
                 .thenReturn(keyData);
 
         ArgumentCaptor<ProviderEventListener> listenerCaptor =
@@ -177,7 +183,7 @@ class CredentialRevocationResourceProviderFactoryTest {
         setupSuccessfulHealthCheck();
 
         mockedRevocationService
-                .when(() -> RevocationRecordService.getRealmKeyData(session, realm))
+                .when(() -> CryptoIdentityService.getRealmKeyData(session, realm))
                 .thenThrow(
                         new com.adorsys.keycloakstatuslist.exception.StatusListException("Key not found"));
 
@@ -189,10 +195,10 @@ class CredentialRevocationResourceProviderFactoryTest {
     @Test
     void testInitializeRealms_HandlesAlreadyRegisteredMap() {
         setupSuccessfulHealthCheck();
-        RevocationRecordService.KeyData keyData =
-                new RevocationRecordService.KeyData(mock(JWK.class), "RS256");
+        CryptoIdentityService.KeyData keyData =
+                new CryptoIdentityService.KeyData(mock(JWK.class), "RS256");
         mockedRevocationService
-                .when(() -> RevocationRecordService.getRealmKeyData(session, realm))
+                .when(() -> CryptoIdentityService.getRealmKeyData(session, realm))
                 .thenReturn(keyData);
 
         triggerInitialization();
@@ -206,8 +212,8 @@ class CredentialRevocationResourceProviderFactoryTest {
     void testInitializeRealms_GracefulFailureOnServiceException() {
         setupSuccessfulHealthCheck();
 
-        RevocationRecordService.KeyData keyData = new RevocationRecordService.KeyData(mock(JWK.class), "RS256");
-        mockedRevocationService.when(() -> RevocationRecordService.getRealmKeyData(session, realm))
+        CryptoIdentityService.KeyData keyData = new CryptoIdentityService.KeyData(mock(JWK.class), "RS256");
+        mockedRevocationService.when(() -> CryptoIdentityService.getRealmKeyData(session, realm))
                 .thenReturn(keyData);
 
         triggerInitialization();

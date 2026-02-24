@@ -1,5 +1,6 @@
 # Maven target directory
 target/
+.flattened-pom.xml
 
 # IDE files
 .vscode/

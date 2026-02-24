@@ -4,13 +4,10 @@ import com.adorsys.keycloakstatuslist.client.StatusListHttpClient;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.model.Status;
 import com.adorsys.keycloakstatuslist.model.StatusListClaim;
-import com.adorsys.keycloakstatuslist.model.TokenStatus;
-import com.adorsys.keycloakstatuslist.model.TokenStatusRecord;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import org.jboss.logging.Logger;
 import org.keycloak.jose.jwk.JWK;
 
-import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -29,76 +26,8 @@ public class StatusListService {
         logger.info("Initialized StatusListService with HTTP client: " + httpClient.getClass().getSimpleName());
     }
 
-    public void publishRecord(TokenStatusRecord statusRecord) throws StatusListException {
-        validateStatusRecord(statusRecord);
-        httpClient.publishRecord(statusRecord);
-    }
-
-    public void updateRecord(TokenStatusRecord statusRecord) throws StatusListException {
-        validateStatusRecord(statusRecord);
-        httpClient.updateRecord(statusRecord);
-    }
-
     public void registerIssuer(String issuerId, JWK publicKey) throws StatusListException {
         httpClient.registerIssuer(issuerId, publicKey);
-    }
-
-    private void validateStatusRecord(TokenStatusRecord statusRecord) throws StatusListException {
-        String credentialId = statusRecord.getCredentialId() != null ? statusRecord.getCredentialId() : "unknown";
-
-        // Check required fields according to the specification
-        if (statusRecord.getCredentialId() == null || statusRecord.getCredentialId().isEmpty()) {
-            throw new StatusListException(
-                    "Credential ID (sub) is required for credentialId: " + credentialId);
-        }
-
-        // Ensure both iss and issuer fields are set
-        if (statusRecord.getIssuerId() == null || statusRecord.getIssuerId().isEmpty()) {
-            throw new StatusListException(
-                    "Issuer ID (iss) is required for credentialId: " + credentialId);
-        }
-
-        // Make sure issuer field is set if not already
-        if (statusRecord.getIssuer() == null || statusRecord.getIssuer().isEmpty()) {
-            statusRecord.setIssuer(statusRecord.getIssuerId());
-        }
-
-        // Require public_key to be set by the caller
-        if (statusRecord.getPublicKey() == null) {
-            throw new StatusListException(
-                    "Public key is required and must be retrieved from Keycloak's KeyManager for credentialId: "
-                            + credentialId);
-        }
-
-        if (statusRecord.getStatus() == -1) {
-            statusRecord.setStatus(TokenStatus.VALID);
-        }
-
-        // Optional fields that should be null if not explicitly set
-        if (statusRecord.getIndex() != null && statusRecord.getIndex() == 0L) {
-            statusRecord.setIndex(null);
-        }
-
-        if (statusRecord.getCredentialType() == null || statusRecord.getCredentialType().isEmpty()) {
-            statusRecord.setCredentialType("oauth2");
-        }
-
-        if (statusRecord.getStatus() == TokenStatus.REVOKED.getValue()) {
-            if (statusRecord.getRevokedAt() == null) {
-                statusRecord.setRevokedAt(Instant.now());
-            }
-            if (statusRecord.getStatusReason() == null || statusRecord.getStatusReason().isEmpty()) {
-                statusRecord.setStatusReason("Token revoked");
-            }
-        }
-
-        if (statusRecord.getIssuedAt() == null) {
-            statusRecord.setIssuedAt(Instant.now());
-        }
-
-        if (statusRecord.getExpiresAt() == null) {
-            statusRecord.setExpiresAt(Instant.now().plusSeconds(3600));
-        }
     }
 
     public boolean checkStatusListExists(String statusListId) throws StatusListException {
@@ -112,7 +41,7 @@ public class StatusListService {
         try {
             boolean exists = checkStatusListExists(listId);
             if (exists) {
-                updateStatusList(payload, requestId);
+                doUpdateStatusList(payload, requestId);
             } else {
                 publishStatusList(payload, requestId);
             }
@@ -131,8 +60,19 @@ public class StatusListService {
         httpClient.publishStatusList(payload, requestId);
     }
 
-    private void updateStatusList(StatusListPayload payload, String requestId) throws StatusListException {
+    private void doUpdateStatusList(StatusListPayload payload, String requestId) throws StatusListException {
         httpClient.updateStatusList(payload, requestId);
+    }
+
+    /**
+     * Updates an existing status list on the server. Used by revocation flow.
+     *
+     * @param payload   the status list payload
+     * @param requestId correlation ID for tracking
+     * @throws StatusListException if the operation fails
+     */
+    public void updateStatusList(StatusListPayload payload, String requestId) throws StatusListException {
+        doUpdateStatusList(payload, requestId);
     }
 
     /**
@@ -180,7 +120,7 @@ public class StatusListService {
     public record StatusListPayload(
             @JsonProperty("list_id") String listId,
             List<StatusEntry> status) {
-        public record StatusEntry(int index, String status) {
+        public record StatusEntry(long index, String status) {
         }
     }
 }

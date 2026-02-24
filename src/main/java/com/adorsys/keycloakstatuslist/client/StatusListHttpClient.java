@@ -1,7 +1,6 @@
 package com.adorsys.keycloakstatuslist.client;
 
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
-import com.adorsys.keycloakstatuslist.model.TokenStatusRecord;
 import com.adorsys.keycloakstatuslist.service.StatusListService.StatusListPayload;
 import org.keycloak.jose.jwk.JWK;
 
@@ -9,23 +8,7 @@ import org.keycloak.jose.jwk.JWK;
  * Interface for HTTP client operations to the status list server.
  */
 public interface StatusListHttpClient {
-    
-    /**
-     * Publishes a new token status record to the server.
-     *
-     * @param statusRecord the status record to publish
-     * @throws StatusListException if the operation fails
-     */
-    void publishRecord(TokenStatusRecord statusRecord) throws StatusListException;
-    
-    /**
-     * Updates an existing token status record on the server.
-     *
-     * @param statusRecord the status record to update
-     * @throws StatusListException if the operation fails
-     */
-    void updateRecord(TokenStatusRecord statusRecord) throws StatusListException;
-    
+
     /**
      * Registers an issuer with the server.
      *

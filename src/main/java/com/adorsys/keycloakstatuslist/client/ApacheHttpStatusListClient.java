@@ -2,10 +2,10 @@ package com.adorsys.keycloakstatuslist.client;
 
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.exception.StatusListServerException;
-import com.adorsys.keycloakstatuslist.model.TokenStatusRecord;
+import com.adorsys.keycloakstatuslist.model.IssuerRegistrationPayload;
 import com.adorsys.keycloakstatuslist.service.CircuitBreaker;
 import com.adorsys.keycloakstatuslist.service.StatusListService.StatusListPayload;
-import com.adorsys.keycloakstatuslist.util.HttpStatusCode;
+import org.apache.hc.core5.http.HttpStatus;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
@@ -65,67 +65,13 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
     }
     
     @Override
-    public void publishRecord(TokenStatusRecord statusRecord) throws StatusListException {
-        checkCircuitBreaker();
-        
-        String requestId = UUID.randomUUID().toString();
-        String credentialId = statusRecord.getCredentialId();
-        
-        try {
-            String jsonPayload = objectMapper.writeValueAsString(statusRecord);
-            logger.debugf("Request ID: %s, Publishing record for credentialId: %s", requestId, credentialId);
-            
-            HttpPost httpPost = new HttpPost(serverUrl + CREDENTIALS_PATH);
-            configureJsonRequest(httpPost, requestId, jsonPayload);
-            
-            httpClient.execute(httpPost, response -> handleResponse(
-                    response, requestId,
-                    "Successfully published record for credentialId: " + credentialId,
-                    "Failed to publish record for credentialId: " + credentialId,
-                    true));
-            
-        } catch (IOException | StatusListServerException e) {
-            handleException(e, requestId,
-                    "Timeout publishing record for credentialId: " + credentialId,
-                    "Failed to publish record for credentialId: " + credentialId);
-        }
-    }
-    
-    @Override
-    public void updateRecord(TokenStatusRecord statusRecord) throws StatusListException {
-        checkCircuitBreaker();
-        
-        String requestId = UUID.randomUUID().toString();
-        String credentialId = statusRecord.getCredentialId();
-        
-        try {
-            String jsonPayload = objectMapper.writeValueAsString(statusRecord);
-            logger.debugf("Request ID: %s, Updating record for credentialId: %s", requestId, credentialId);
-            
-            HttpPatch httpPatch = new HttpPatch(serverUrl + CREDENTIALS_PATH);
-            configureJsonRequest(httpPatch, requestId, jsonPayload);
-            
-            httpClient.execute(httpPatch, response -> handleResponse(
-                    response, requestId,
-                    "Successfully updated record for credentialId: " + credentialId,
-                    "Failed to update record for credentialId: " + credentialId,
-                    false));
-            
-        } catch (IOException | StatusListServerException e) {
-            handleException(e, requestId,
-                    "Timeout updating record for credentialId: " + credentialId,
-                    "Failed to update record for credentialId: " + credentialId);
-        }
-    }
-    
-    @Override
     public void registerIssuer(String issuerId, JWK publicKey) throws StatusListException {
         checkCircuitBreaker();
         
         String requestId = UUID.randomUUID().toString();
         logger.infof("Request ID: %s, Registering issuer: %s with server: %s", requestId, issuerId, serverUrl);
         
-        TokenStatusRecord issuerRecord = new TokenStatusRecord();
+        IssuerRegistrationPayload issuerRecord = new IssuerRegistrationPayload();
         issuerRecord.setIssuer(issuerId);
         issuerRecord.setPublicKey(publicKey);
         
@@ -239,7 +185,7 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
         try {
             return httpClient.execute(httpGet, response -> {
                 int statusCode = response.getCode();
-                if (HttpStatusCode.isSuccess(statusCode)) {
+                if (statusCode >= HttpStatus.SC_OK && statusCode < 300) {
                     logger.infof("Request ID: %s, Server health check successful.", requestId);
                     return true;
                 }
@@ -284,12 +230,12 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
             responseBody = "Unable to read response body: " + e.getMessage();
         }
         
-        boolean isSuccess = HttpStatusCode.isSuccess(statusCode) || 
-                           (acceptConflict && statusCode == HttpStatusCode.CONFLICT.getCode());
+        boolean isSuccess = (statusCode >= HttpStatus.SC_OK && statusCode < 300) || 
+                           (acceptConflict && statusCode == HttpStatus.SC_CONFLICT);
         
         if (isSuccess) {
             String fullMessage = successMessage;
-            if (acceptConflict && statusCode == HttpStatusCode.CONFLICT.getCode()) {
+            if (acceptConflict && statusCode == HttpStatus.SC_CONFLICT) {
                 fullMessage += " (already registered)";
             }
             logger.infof("Request ID: %s, %s", requestId, fullMessage);
@@ -317,11 +263,11 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
                                                   String requestId, String statusListId) {
         int statusCode = response.getCode();
         
-        if (statusCode == HttpStatusCode.OK.getCode()) {
+        if (statusCode == HttpStatus.SC_OK) {
             logger.infof("Request ID: %s, Status list %s exists.", requestId, statusListId);
             recordSuccess();
             return true;
-        } else if (statusCode == HttpStatusCode.NOT_FOUND.getCode()) {
+        } else if (statusCode == HttpStatus.SC_NOT_FOUND) {
             logger.infof("Request ID: %s, Status list %s does not exist.", requestId, statusListId);
             recordSuccess();
             return false;

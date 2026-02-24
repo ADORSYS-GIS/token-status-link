@@ -3,7 +3,6 @@ package com.adorsys.keycloakstatuslist.service;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
-import java.security.PublicKey;
 import java.util.List;
 import java.util.stream.Stream;
 
@@ -56,35 +55,10 @@ class JwksServiceTest {
     }
 
     @Test
-    void testGetAllIssuerPublicKeys_NoKeys() throws Exception {
-        when(keyManager.getKeysStream(realm)).thenReturn(Stream.empty());
-        List<PublicKey> result = service.getAllIssuerPublicKeys(sdJwtVP, "issuer", "req");
-        assertNotNull(result);
-        assertTrue(result.isEmpty());
-    }
-
-    @Test
-    void testGetAllIssuerPublicKeys_WithOneKey() throws Exception {
-        KeyWrapper key = mock(KeyWrapper.class);
-        PublicKey publicKey = mock(PublicKey.class);
-        when(key.getUse()).thenReturn(KeyUse.SIG);
-        when(key.getPublicKey()).thenReturn(publicKey);
-        when(key.getKid()).thenReturn("kid1");
-        when(key.getAlgorithm()).thenReturn("RS256");
-
-        when(keyManager.getKeysStream(realm)).thenReturn(Stream.of(key));
-
-        List<PublicKey> result = service.getAllIssuerPublicKeys(sdJwtVP, "issuer", "req");
-        assertNotNull(result);
-        assertEquals(1, result.size());
-        assertSame(publicKey, result.get(0));
-    }
-
-    @Test
     void testGetSignatureVerifierContexts_NoKeys() throws Exception {
         when(keyManager.getKeysStream(realm)).thenReturn(Stream.empty());
         List<SignatureVerifierContext> result =
-                service.getSignatureVerifierContexts(sdJwtVP, "issuer", "req");
+                service.getSignatureVerifierContexts(sdJwtVP, "issuer");
         assertNotNull(result);
         assertTrue(result.isEmpty());
     }
@@ -93,8 +67,6 @@ class JwksServiceTest {
     void testGetSignatureVerifierContexts_WithOneKey() throws Exception {
         KeyWrapper key = mock(KeyWrapper.class);
         when(key.getUse()).thenReturn(KeyUse.SIG);
-        when(key.getKid()).thenReturn("kid1");
-        when(key.getAlgorithm()).thenReturn("RS256");
         when(key.getAlgorithmOrDefault()).thenReturn("RS256");
 
         when(keyManager.getKeysStream(realm)).thenReturn(Stream.of(key));
@@ -102,7 +74,7 @@ class JwksServiceTest {
         when(signatureProvider.verifier(key)).thenReturn(verifierContext);
 
         List<SignatureVerifierContext> result =
-                service.getSignatureVerifierContexts(sdJwtVP, "issuer", "req");
+                service.getSignatureVerifierContexts(sdJwtVP, "issuer");
         assertNotNull(result);
         assertEquals(1, result.size());
         assertSame(verifierContext, result.get(0));

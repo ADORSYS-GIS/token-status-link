@@ -12,9 +12,6 @@ public class CredentialRevocationResponse {
     @JsonProperty("success")
     private boolean success;
 
-    @JsonProperty("credential_id")
-    private String credentialId;
-
     @JsonProperty("revoked_at")
     private Instant revokedAt;
 
@@ -30,25 +27,22 @@ public class CredentialRevocationResponse {
 
     public CredentialRevocationResponse(
             boolean success,
-            String credentialId,
             Instant revokedAt,
             String revocationReason,
             String message) {
         this.success = success;
-        this.credentialId = credentialId;
         this.revokedAt = revokedAt;
         this.revocationReason = revocationReason;
         this.message = message;
     }
 
-    public static CredentialRevocationResponse success(
-            String credentialId, Instant revokedAt, String revocationReason) {
+    public static CredentialRevocationResponse success(Instant revokedAt, String revocationReason) {
         return new CredentialRevocationResponse(
-                true, credentialId, revokedAt, revocationReason, "Credential revoked successfully");
+                true, revokedAt, revocationReason, "Credential revoked successfully");
     }
 
     public static CredentialRevocationResponse error(String message) {
-        return new CredentialRevocationResponse(false, null, null, null, message);
+        return new CredentialRevocationResponse(false, null, null, message);
     }
 
     public boolean isSuccess() {
@@ -57,14 +51,6 @@ public class CredentialRevocationResponse {
 
     public void setSuccess(boolean success) {
         this.success = success;
-    }
-
-    public String getCredentialId() {
-        return credentialId;
-    }
-
-    public void setCredentialId(String credentialId) {
-        this.credentialId = credentialId;
     }
 
     public Instant getRevokedAt() {
