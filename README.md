@@ -128,7 +128,6 @@ For manual testing with a local status list server:
 
 ## TODO
 
-- Address TODO(status-list-server#128), related to issue with hanging list retrieval
 - Fix test execution failing with coverage
 - Improve test coverage (StatusListService, RevocationEndpoint, NonceCacheService)
 - Ensure nonce cache logic is compatible with clustered environments
