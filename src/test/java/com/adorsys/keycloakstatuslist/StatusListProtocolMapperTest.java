@@ -5,10 +5,12 @@ import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.helpers.MockKeycloakTest;
 import com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
 import com.adorsys.keycloakstatuslist.model.Status;
+import com.adorsys.keycloakstatuslist.model.StatusListClaim;
 import com.adorsys.keycloakstatuslist.model.TokenStatus;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
 import jakarta.persistence.PersistenceException;
 import jakarta.persistence.TypedQuery;
+import jakarta.ws.rs.core.UriBuilder;
 import nl.altindag.log.LogCaptor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -16,6 +18,7 @@ import org.keycloak.models.ProtocolMapperModel;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 
+import java.net.URI;
 import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
@@ -91,16 +94,14 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         assertThat(claims.keySet(), hasItem(Constants.STATUS_CLAIM_KEY));
         assertInstanceOf(Status.class, claims.get(Constants.STATUS_CLAIM_KEY));
         Status status = (Status) claims.get(Constants.STATUS_CLAIM_KEY);
-        // TODO(status-list-server#128): Uncomment next line
-        // assertThat(status.getStatusList(), equalTo(new StatusListClaim(idx, listUri(TEST_REALM_ID))));
+        assertThat(status.getStatusList(), equalTo(new StatusListClaim(idx, listUri(TEST_REALM_ID))));
         assertEquals(idx, status.getStatusList().getIdx());
 
         // 2. Verify service was called with correct payload
         ArgumentCaptor<StatusListService.StatusListPayload> payloadCaptor = ArgumentCaptor.forClass(StatusListService.StatusListPayload.class);
         verify(statusListService).publishOrUpdate(payloadCaptor.capture());
         StatusListService.StatusListPayload capturedPayload = payloadCaptor.getValue();
-        // TODO(status-list-server#128): Uncomment next line
-        // assertThat(capturedPayload.listId(), equalTo(TEST_REALM_ID));
+        assertThat(capturedPayload.listId(), equalTo(TEST_REALM_ID));
         assertThat(capturedPayload.status().size(), equalTo(1));
         assertThat(capturedPayload.status().get(0).index(), equalTo(idx));
         assertThat(capturedPayload.status().get(0).status(), equalTo(TokenStatus.VALID.getValue()));
@@ -234,5 +235,12 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         });
 
         return nextIndex;
+    }
+
+    @SuppressWarnings("SameParameterValue")
+    private URI listUri(String listId) {
+        return UriBuilder.fromUri(TEST_SERVER_URL)
+                .path(String.format(Constants.HTTP_ENDPOINT_RETRIEVE_PATH, listId))
+                .build();
     }
 }

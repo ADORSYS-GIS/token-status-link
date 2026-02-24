@@ -27,6 +27,7 @@ The plugin can be configured at the realm level with the following properties:
 | `status-list-server-url`          | URL of the status list server                                                                                             | `https://statuslist.eudi-adorsys.com/` |
 | `status-list-token-issuer-prefix` | Prefix for building the Token Issuer ID                                                                                   | `Generated UUID`                       |
 | `status-list-mandatory`           | If true, publication failures block issuance; if false, failures are logged and issuance continues without a status claim | `false`                                |
+| `status-list-max-entries`         | Maximum number of entries to publish under the same status list                                                           | `10000`                                |
 
 ## Installation
 

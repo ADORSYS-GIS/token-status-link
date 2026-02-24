@@ -10,6 +10,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import org.keycloak.common.util.Time;
 
 import java.util.Objects;
 
@@ -42,6 +43,9 @@ public class StatusListMappingEntity {
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
     private MappingStatus status = MappingStatus.INIT;
+
+    @Column(name = "created_timestamp", nullable = false, updatable = false)
+    private final Long createdTimestamp = Time.currentTimeMillis();
 
     // --- Getters and Setters ---
 
@@ -102,16 +106,20 @@ public class StatusListMappingEntity {
         return this;
     }
 
+    public Long getCreatedTimestamp() {
+        return createdTimestamp;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (o == null || getClass() != o.getClass()) return false;
         StatusListMappingEntity that = (StatusListMappingEntity) o;
-        return Objects.equals(getId(), that.getId()) && Objects.equals(getIdx(), that.getIdx()) && Objects.equals(getStatusListId(), that.getStatusListId()) && Objects.equals(getUserId(), that.getUserId()) && Objects.equals(getTokenId(), that.getTokenId()) && Objects.equals(getRealmId(), that.getRealmId()) && getStatus() == that.getStatus();
+        return Objects.equals(getId(), that.getId()) && Objects.equals(getIdx(), that.getIdx()) && Objects.equals(getStatusListId(), that.getStatusListId()) && Objects.equals(getUserId(), that.getUserId()) && Objects.equals(getTokenId(), that.getTokenId()) && Objects.equals(getRealmId(), that.getRealmId()) && getStatus() == that.getStatus() && Objects.equals(getCreatedTimestamp(), that.getCreatedTimestamp());
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(getId(), getIdx(), getStatusListId(), getUserId(), getTokenId(), getRealmId(), getStatus());
+        return Objects.hash(getId(), getIdx(), getStatusListId(), getUserId(), getTokenId(), getRealmId(), getStatus(), getCreatedTimestamp());
     }
 
     public enum MappingStatus {
