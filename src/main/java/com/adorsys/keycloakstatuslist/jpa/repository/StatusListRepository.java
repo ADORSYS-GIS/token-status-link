@@ -66,6 +66,7 @@ public class StatusListRepository {
      */
     public String getNextStatusListId(String realmId, int maxEntries) {
         StatusListMappingEntity latest = getLatestMapping(realmId);
+        logger.debug(latest);
         if (latest == null || latest.getIdx() + 1 >= maxEntries) {
             logger.debugf("Running status list has reached max entries (%d), generating new list ID", maxEntries);
             return KeycloakModelUtils.generateId();
@@ -77,7 +78,7 @@ public class StatusListRepository {
     /**
      * Get the latest mapping recorded for the given realm.
      */
-    private StatusListMappingEntity getLatestMapping(String realmId) {
+    public StatusListMappingEntity getLatestMapping(String realmId) {
         AtomicReference<StatusListMappingEntity> result = new AtomicReference<>();
 
         withEntityManagerInTransaction(em -> {

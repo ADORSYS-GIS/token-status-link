@@ -4,12 +4,12 @@ import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.helpers.MockKeycloakTest;
 import com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
+import com.adorsys.keycloakstatuslist.jpa.repository.StatusListRepository;
 import com.adorsys.keycloakstatuslist.model.Status;
 import com.adorsys.keycloakstatuslist.model.StatusListClaim;
 import com.adorsys.keycloakstatuslist.model.TokenStatus;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
 import jakarta.persistence.PersistenceException;
-import jakarta.persistence.TypedQuery;
 import jakarta.ws.rs.core.UriBuilder;
 import nl.altindag.log.LogCaptor;
 import org.junit.jupiter.api.BeforeEach;
@@ -20,7 +20,6 @@ import org.mockito.Mock;
 
 import java.net.URI;
 import java.util.HashMap;
-import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
 import static com.adorsys.keycloakstatuslist.StatusListProtocolMapper.Constants;
@@ -37,18 +36,17 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.anyString;
 import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.lenient;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class StatusListProtocolMapperTest extends MockKeycloakTest {
 
-    LogCaptor logCaptor = LogCaptor.forClass(StatusListProtocolMapper.class);
+    LogCaptor logCaptor = LogCaptor.forName("com.adorsys.keycloakstatuslist");
 
     protected static final String TEST_SERVER_URL = "https://example.com";
+    protected static final String TEST_LIST_ID = "test-list-id";
 
     @Mock
     ProtocolMapperModel mapperModel;
@@ -58,6 +56,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
     StatusListProtocolMapper mapper;
     HashMap<String, Object> claims;
+    StatusListRepository statusListRepository;
 
     @BeforeEach
     void setup() {
@@ -71,6 +70,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
         // Run mocks
         mockDefaultRealmConfig();
+        mockStatusListRepository(0L);
     }
 
     @Test
@@ -94,14 +94,14 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         assertThat(claims.keySet(), hasItem(Constants.STATUS_CLAIM_KEY));
         assertInstanceOf(Status.class, claims.get(Constants.STATUS_CLAIM_KEY));
         Status status = (Status) claims.get(Constants.STATUS_CLAIM_KEY);
-        assertThat(status.getStatusList(), equalTo(new StatusListClaim(idx, listUri(TEST_REALM_ID))));
+        assertThat(status.getStatusList(), equalTo(new StatusListClaim(idx, listUri(TEST_LIST_ID))));
         assertEquals(idx, status.getStatusList().getIdx());
 
         // 2. Verify service was called with correct payload
         ArgumentCaptor<StatusListService.StatusListPayload> payloadCaptor = ArgumentCaptor.forClass(StatusListService.StatusListPayload.class);
         verify(statusListService).publishOrUpdate(payloadCaptor.capture());
         StatusListService.StatusListPayload capturedPayload = payloadCaptor.getValue();
-        assertThat(capturedPayload.listId(), equalTo(TEST_REALM_ID));
+        assertThat(capturedPayload.listId(), equalTo(TEST_LIST_ID));
         assertThat(capturedPayload.status().size(), equalTo(1));
         assertThat(capturedPayload.status().get(0).index(), equalTo(idx));
         assertThat(capturedPayload.status().get(0).status(), equalTo(TokenStatus.VALID.getValue()));
@@ -113,6 +113,22 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         assertEquals(idx, capturedEntity.getIdx());
         assertEquals(TEST_REALM_ID, capturedEntity.getRealmId());
         assertEquals(MappingStatus.SUCCESS, capturedEntity.getStatus());
+    }
+
+    @Test
+    void shouldMapSuccessfully_WhenSwitchingToNewList() {
+        // Force running status list to be at max capacity to trigger creation of new list ID
+        mockStatusListRepository(StatusListConfig.DEFAULT_MAX_ENTRIES);
+        mockGetNextIndex();
+
+        // Act
+        mapper.setClaim(claims, userSession);
+
+        // Assertions
+        assertThat(claims.keySet(), hasItem(Constants.STATUS_CLAIM_KEY));
+        assertThat(logCaptor.getDebugLogs(), hasItem(containsString(String.format(
+                "Running status list has reached max entries (%d), generating new list ID",
+                StatusListConfig.DEFAULT_MAX_ENTRIES))));
     }
 
     @Test
@@ -217,22 +233,37 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
     }
 
     private void mockDefaultRealmConfig() {
-        lenient().when(realm.getAttribute(StatusListConfig.STATUS_LIST_ENABLED)).thenReturn("true");
-        lenient().when(realm.getAttribute(StatusListConfig.STATUS_LIST_SERVER_URL)).thenReturn(TEST_SERVER_URL);
-        lenient().when(realm.getAttribute(StatusListConfig.STATUS_LIST_MANDATORY)).thenReturn("false");
+        lenient().when(realm.getAttribute(StatusListConfig.STATUS_LIST_ENABLED))
+                .thenReturn(String.valueOf(StatusListConfig.DEFAULT_ENABLED));
+        lenient().when(realm.getAttribute(StatusListConfig.STATUS_LIST_SERVER_URL))
+                .thenReturn(TEST_SERVER_URL);
+        lenient().when(realm.getAttribute(StatusListConfig.STATUS_LIST_MANDATORY))
+                .thenReturn(String.valueOf(StatusListConfig.DEFAULT_MANDATORY));
+        lenient().when(realm.getAttribute(StatusListConfig.STATUS_LIST_MAX_ENTRIES))
+                .thenReturn(String.valueOf(StatusListConfig.DEFAULT_MAX_ENTRIES));
     }
 
-    @SuppressWarnings("unchecked")
-    private long mockGetNextIndex() {
-        long nextIndex = ThreadLocalRandom.current().nextLong(Long.MAX_VALUE);
-        var query = mock(TypedQuery.class);
+    private void mockStatusListRepository(long maxIdx) {
+        statusListRepository = spy(new StatusListRepository(session));
+        setPrivateField(statusListRepository, "session", session);
+        setPrivateField(mapper, "statusListRepository", statusListRepository);
 
-        when(entityManager.createQuery(anyString(), eq(StatusListMappingEntity.class))).thenReturn(query);
-        when(query.getResultList()).thenAnswer(invocation -> {
-            var entity = new StatusListMappingEntity();
-            entity.setIdx(nextIndex - 1);
-            return List.of(entity);
-        });
+        var mapping = new StatusListMappingEntity();
+        mapping.setStatusListId(TEST_LIST_ID);
+        mapping.setIdx(maxIdx);
+
+        lenient().doReturn(mapping)
+                .when(statusListRepository)
+                .getLatestMapping(anyString());
+    }
+
+    private long mockGetNextIndex() {
+        long nextIndex = ThreadLocalRandom.current()
+                .nextLong(StatusListConfig.DEFAULT_MAX_ENTRIES - 1);
+
+        lenient().doReturn(nextIndex)
+                .when(statusListRepository)
+                .getNextIndex(any(), anyString());
 
         return nextIndex;
     }
