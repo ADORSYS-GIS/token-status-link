@@ -1,5 +1,7 @@
 package com.adorsys.keycloakstatuslist.service;
 
+import com.adorsys.keycloakstatuslist.client.ApacheHttpStatusListClient;
+import com.adorsys.keycloakstatuslist.client.StatusListHttpClient;
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.exception.StatusListServerException;
@@ -8,8 +10,6 @@ import com.adorsys.keycloakstatuslist.model.CredentialRevocationResponse;
 import com.adorsys.keycloakstatuslist.model.RevocationChallenge;
 import com.adorsys.keycloakstatuslist.model.Status;
 import com.adorsys.keycloakstatuslist.model.TokenStatus;
-import com.adorsys.keycloakstatuslist.service.http.CloseableHttpClientAdapter;
-import com.adorsys.keycloakstatuslist.service.http.HttpClient;
 import com.adorsys.keycloakstatuslist.service.nonce.NonceCacheProvider;
 import com.adorsys.keycloakstatuslist.service.nonce.NonceCacheServiceProviderFactory;
 import com.adorsys.keycloakstatuslist.service.validation.SdJwtVPValidationService;
@@ -68,11 +68,13 @@ public class CredentialRevocationService {
             RealmModel realm = session.getContext().getRealm();
             StatusListConfig config = new StatusListConfig(realm);
             CryptoIdentityService cryptoIdentityService = new CryptoIdentityService(session);
-            HttpClient httpClient = new CloseableHttpClientAdapter(CustomHttpClient.getHttpClient());
-            this.statusListService = new StatusListService(
+
+            StatusListHttpClient httpClient = new ApacheHttpStatusListClient(
                     config.getServerUrl(),
                     cryptoIdentityService.getJwtToken(config),
-                    httpClient);
+                    CustomHttpClient.getHttpClient(),
+                    null);
+            this.statusListService = new StatusListService(httpClient);
         }
         return statusListService;
     }

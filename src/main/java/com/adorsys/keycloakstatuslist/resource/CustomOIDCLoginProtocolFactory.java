@@ -1,5 +1,7 @@
 package com.adorsys.keycloakstatuslist.resource;
 
+import com.adorsys.keycloakstatuslist.client.ApacheHttpStatusListClient;
+import com.adorsys.keycloakstatuslist.client.StatusListHttpClient;
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.exception.StatusListServerException;
@@ -7,7 +9,6 @@ import com.adorsys.keycloakstatuslist.service.CredentialRevocationService;
 import com.adorsys.keycloakstatuslist.service.CryptoIdentityService;
 import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
-import com.adorsys.keycloakstatuslist.service.http.CloseableHttpClientAdapter;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -183,11 +184,14 @@ public class CustomOIDCLoginProtocolFactory extends OIDCLoginProtocolFactory {
             }
 
             CryptoIdentityService cryptoIdentityService = new CryptoIdentityService(session);
-            StatusListService statusListService =
-                    new StatusListService(
-                            config.getServerUrl(),
-                            cryptoIdentityService.getJwtToken(config),
-                            new CloseableHttpClientAdapter(CustomHttpClient.getHttpClient()));
+            
+            StatusListHttpClient httpClient = new ApacheHttpStatusListClient(
+                    config.getServerUrl(),
+                    cryptoIdentityService.getJwtToken(config),
+                    CustomHttpClient.getHttpClient(),
+                    null
+            );
+            StatusListService statusListService = new StatusListService(httpClient);
 
             // Check if the status list server is reachable
             if (!statusListService.checkServerHealth()) {
