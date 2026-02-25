@@ -5,6 +5,7 @@ import com.adorsys.keycloakstatuslist.client.StatusListHttpClient;
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
+import com.adorsys.keycloakstatuslist.jpa.repository.StatusListRepository;
 import com.adorsys.keycloakstatuslist.model.Status;
 import com.adorsys.keycloakstatuslist.model.StatusListClaim;
 import com.adorsys.keycloakstatuslist.model.TokenStatus;
@@ -12,16 +13,14 @@ import com.adorsys.keycloakstatuslist.service.CircuitBreaker;
 import com.adorsys.keycloakstatuslist.service.CryptoIdentityService;
 import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.LockModeType;
-import jakarta.persistence.TypedQuery;
+
+import com.adorsys.keycloakstatuslist.service.http.CloseableHttpClientAdapter;
+import jakarta.ws.rs.core.UriBuilder;
 import org.apache.commons.collections4.ListUtils;
 import org.jboss.logging.Logger;
-import org.keycloak.connections.jpa.JpaConnectionProvider;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserSessionModel;
-import org.keycloak.models.utils.KeycloakModelUtils;
 import org.keycloak.protocol.ProtocolMapper;
 import org.keycloak.protocol.oid4vc.issuance.mappers.OID4VCMapper;
 import org.keycloak.protocol.oid4vc.model.VerifiableCredential;
@@ -33,8 +32,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.net.URI;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Consumer;
 
 import static com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity.MappingStatus;
 
@@ -55,26 +54,20 @@ public class StatusListProtocolMapper extends OID4VCMapper {
 
     private final KeycloakSession session;
     private final StatusListService statusListService;
+    private final StatusListRepository statusListRepository;
 
-    protected interface Constants {
-        String MAPPER_ID = "oid4vc-status-list-claim-mapper";
-        String CONFIG_LIST_ID_PROPERTY = "status.list.list_id";
-
-        String ID_CLAIM_KEY = "id";
-        String STATUS_CLAIM_KEY = "status";
-        String TOKEN_STATUS_VALID = "VALID";
-
-        String HTTP_ENDPOINT_RETRIEVE_PATH = "/statuslists/%s";
-    }
+    
 
     public StatusListProtocolMapper() {
         // An empty mapper constructor is required by Keycloak
         this.session = null;
         this.statusListService = null;
+        this.statusListRepository = null;
     }
 
     public StatusListProtocolMapper(KeycloakSession session) {
         this.session = session;
+        this.statusListRepository = new StatusListRepository(session);
         CryptoIdentityService cryptoIdentityService = new CryptoIdentityService(session);
 
         // Get or create cached StatusListService for this realm
@@ -189,11 +182,12 @@ public class StatusListProtocolMapper extends OID4VCMapper {
             return;
         }
 
-        // Get list ID from mapper config
-        Map<String, String> mapperConfig = mapperModel.getConfig();
-        String listId = mapperConfig.getOrDefault(Constants.CONFIG_LIST_ID_PROPERTY, realmId);
-
-        logger.debugf("Configuration: listId=%s", listId);
+        // Build URI for status list
+        String listId = statusListRepository.getNextStatusListId(realmId, config.getStatusListMaxEntries());
+        URI uri = UriBuilder.fromUri(serverUrl)
+                .path(String.format(Constants.HTTP_ENDPOINT_RETRIEVE_PATH, listId))
+                .build();
+        logger.debugf("Configuration: listId=%s, uri=%s", listId, uri);
 
         // Get credential ID
         String tokenId = null;
@@ -204,12 +198,11 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         UserSessionModel userSession = session.getContext().getUserSession();
         String userId = userSession != null ? userSession.getUser().getId() : null;
 
-        String statusListUri = statusListService.getStatusListUri(listId);
-        Status status = sendStatusAndStoreIndexMapping(listId, statusListUri, userId, tokenId);
+        Status status = sendStatusAndStoreIndexMapping(listId, uri.toString(), userId, tokenId);
 
         if (status == null) {
             if (config.isMandatory()) {
-                    logger.error("Status list is mandatory and publication failed; failing issuance");
+                logger.error("Status list is mandatory and publication failed; failing issuance");
                 throw new RuntimeException("Status list publication failed and is mandatory");
             }
 
@@ -232,37 +225,6 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         }
     }
 
-    private static void withEntityManagerInTransaction(KeycloakSession session, Consumer<EntityManager> action) {
-        KeycloakModelUtils.runJobInTransaction(session.getKeycloakSessionFactory(), s -> {
-            EntityManager em = s.getProvider(JpaConnectionProvider.class).getEntityManager();
-            if (em == null) {
-                logger.error("EntityManager is null for JpaConnectionProvider");
-                s.getTransactionManager().setRollbackOnly();
-                return;
-            }
-            action.accept(em);
-        });
-    }
-
-    /**
-     * Get the next available index for the given status list ID, using a pessimistic lock to
-     * prevent race conditions. Must be run within a transaction.
-     */
-    private Long getNextIndex(EntityManager em, String statusListId) {
-        String q = """                
-                SELECT m FROM StatusListMappingEntity m
-                WHERE m.statusListId = :listId ORDER BY m.idx DESC
-                """;
-
-        TypedQuery<StatusListMappingEntity> query = em.createQuery(q, StatusListMappingEntity.class);
-        query.setParameter("listId", statusListId);
-        query.setMaxResults(1);
-        query.setLockMode(LockModeType.PESSIMISTIC_WRITE);
-
-        List<StatusListMappingEntity> max = query.getResultList();
-        return (max.isEmpty()) ? 0 : max.get(0).getIdx() + 1;
-    }
-
     /**
      * Send status to server to create status list entry and store index mapping in database.
      */
@@ -279,11 +241,11 @@ public class StatusListProtocolMapper extends OID4VCMapper {
             logger.debugf("Booking next index for status list mapping: status_list_id=%s, userId=%s, tokenId=%s",
                     statusListId, userId, tokenId);
 
-            withEntityManagerInTransaction(session, em -> {
-                Long idx = getNextIndex(em, statusListId);
+            statusListRepository.withEntityManagerInTransaction(em -> {
+                Long idx = statusListRepository.getNextIndex(em, statusListId);
                 logger.debugf("Next available index is: %d", idx);
 
-                mapping.setIdx(getNextIndex(em, statusListId));
+                mapping.setIdx(idx);
                 mapping.setStatus(MappingStatus.INIT);
 
                 em.persist(mapping);
@@ -310,7 +272,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
 
         try {
             logger.debugf("Persisting completion mapping status: %s", mapping.getStatus());
-            withEntityManagerInTransaction(session, em -> em.merge(mapping));
+            statusListRepository.withEntityManagerInTransaction(em -> em.merge(mapping));
         } catch (Exception e) {
             logger.error("Failed to persist completion mapping status", e);
         }
@@ -327,5 +289,14 @@ public class StatusListProtocolMapper extends OID4VCMapper {
 
         // Publish or update status list on server
         statusListService.publishOrUpdate(payload);
+    }
+
+    public interface Constants {
+        String MAPPER_ID = "oid4vc-status-list-claim-mapper";
+
+        String ID_CLAIM_KEY = "id";
+        String STATUS_CLAIM_KEY = "status";
+
+        String HTTP_ENDPOINT_RETRIEVE_PATH = "/statuslists/%s";
     }
 }
