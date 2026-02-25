@@ -19,11 +19,13 @@ public class StatusListConfig {
     public static final String STATUS_LIST_SERVER_URL = "status-list-server-url";
     public static final String STATUS_LIST_TOKEN_ISSUER_PREFIX = "status-list-token-issuer-prefix";
     public static final String STATUS_LIST_MANDATORY = "status-list-mandatory";
+    public static final String STATUS_LIST_MAX_ENTRIES = "status-list-max-entries";
 
     // Default values
-    private static final boolean DEFAULT_ENABLED = true;
-    private static final String DEFAULT_SERVER_URL = "https://statuslist.eudi-adorsys.com/";
-    private static final boolean DEFAULT_MANDATORY = false;
+    public static final boolean DEFAULT_ENABLED = true;
+    public static final String DEFAULT_SERVER_URL = "https://statuslist.eudi-adorsys.com/";
+    public static final boolean DEFAULT_MANDATORY = false;
+    public static final int DEFAULT_MAX_ENTRIES = 10000;
 
     private final RealmModel realm;
 
@@ -79,5 +81,29 @@ public class StatusListConfig {
         }
 
         return String.format("%s::%s", prefix, realm.getName());
+    }
+
+    /**
+     * Gets the maximum number of entries allowed under the same status list.
+     *
+     * @return the maximum number of entries
+     */
+    public int getStatusListMaxEntries() {
+        String value = realm.getAttribute(STATUS_LIST_MAX_ENTRIES);
+        if (value == null) {
+            logger.warnf(
+                    "No max entries value configured for realm %s. Using default: %d",
+                    realm.getName(), DEFAULT_MAX_ENTRIES);
+            return DEFAULT_MAX_ENTRIES;
+        }
+
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException e) {
+            logger.warnf(
+                    "Invalid max entries value '%s' for realm %s. Using default: %d",
+                    value, realm.getName(), DEFAULT_MAX_ENTRIES);
+            return DEFAULT_MAX_ENTRIES;
+        }
     }
 }

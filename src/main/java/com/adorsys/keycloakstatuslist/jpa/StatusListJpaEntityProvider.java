@@ -1,9 +1,8 @@
 package com.adorsys.keycloakstatuslist.jpa;
 
-import com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
-
 import java.util.List;
 
+import com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
 import org.jboss.logging.Logger;
 import org.keycloak.connections.jpa.entityprovider.JpaEntityProvider;
 
