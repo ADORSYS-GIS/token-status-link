@@ -13,8 +13,6 @@ import com.adorsys.keycloakstatuslist.service.CircuitBreaker;
 import com.adorsys.keycloakstatuslist.service.CryptoIdentityService;
 import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
-
-import com.adorsys.keycloakstatuslist.service.http.CloseableHttpClientAdapter;
 import jakarta.ws.rs.core.UriBuilder;
 import org.apache.commons.collections4.ListUtils;
 import org.jboss.logging.Logger;
