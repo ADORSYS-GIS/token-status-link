@@ -69,11 +69,21 @@ public class CredentialRevocationService {
             StatusListConfig config = new StatusListConfig(realm);
             CryptoIdentityService cryptoIdentityService = new CryptoIdentityService(session);
 
+            // Create circuit breaker if timeout is positive (non-positive timeout disables circuit breaker)
+            CircuitBreaker circuitBreaker = null;
+            if (config.getIssuanceTimeout() > 0) {
+                int threshold = config.getCircuitBreakerFailureThreshold();
+                circuitBreaker = CircuitBreaker.getInstanceForRealm(realm.getId(), "CredentialRevocation",
+                        threshold,
+                        config.getCircuitBreakerWindowSeconds(),
+                        config.getCircuitBreakerCooldownSeconds());
+            }
+
             StatusListHttpClient httpClient = new ApacheHttpStatusListClient(
                     config.getServerUrl(),
                     cryptoIdentityService.getJwtToken(config),
-                    CustomHttpClient.getHttpClient(),
-                    null);
+                    CustomHttpClient.getHttpClient(config),
+                    circuitBreaker);
             this.statusListService = new StatusListService(httpClient);
         }
         return statusListService;

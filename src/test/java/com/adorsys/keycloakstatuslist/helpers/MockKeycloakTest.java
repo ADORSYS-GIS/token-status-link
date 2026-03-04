@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mockStatic;
 
+import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
 import jakarta.persistence.EntityManager;
 
@@ -139,7 +140,7 @@ public class MockKeycloakTest {
     @BeforeEach
     void httpSetUp() {
         mocked = mockStatic(CustomHttpClient.class);
-        mocked.when(CustomHttpClient::getHttpClient).thenReturn(httpClient);
+        mocked.when(() -> CustomHttpClient.getHttpClient(any(StatusListConfig.class))).thenReturn(httpClient);
     }
 
     @AfterEach

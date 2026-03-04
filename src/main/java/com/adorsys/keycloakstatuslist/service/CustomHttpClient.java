@@ -1,5 +1,7 @@
 package com.adorsys.keycloakstatuslist.service;
 
+import com.adorsys.keycloakstatuslist.config.StatusListConfig;
+
 import java.io.IOException;
 
 import org.apache.hc.client5.http.HttpRequestRetryStrategy;
@@ -17,22 +19,31 @@ public class CustomHttpClient {
 
     private static final Logger logger = Logger.getLogger(CustomHttpClient.class);
 
-    private static final int DEFAULT_CONNECT_TIMEOUT = 30000;
-    private static final int DEFAULT_READ_TIMEOUT = 60000;
+    public static final int DEFAULT_CONNECT_TIMEOUT = 30000;
+    public static final int DEFAULT_READ_TIMEOUT = 60000;
     private static final int DEFAULT_RETRY_COUNT = 0; // Retry disabled by default
 
-    public static CloseableHttpClient getHttpClient() {
-        return getHttpClient(DEFAULT_CONNECT_TIMEOUT, DEFAULT_READ_TIMEOUT);
+    /**
+     * Creates an HTTP client with timeout values from the configuration.
+     *
+     * @param config the status list configuration
+     * @return configured HTTP client
+     */
+    public static CloseableHttpClient getHttpClient(StatusListConfig config) {
+        int timeout = config.getIssuanceTimeout();
+        int timeoutMs = timeout > 0 ? timeout : DEFAULT_CONNECT_TIMEOUT;
+        return getHttpClient(timeoutMs, timeoutMs);
     }
     
     /**
      * Creates an HTTP client with custom timeout values.
+     * This method is kept for backward compatibility but should be avoided in favor of getHttpClient(StatusListConfig).
      *
      * @param connectTimeoutMs connection timeout in milliseconds
      * @param readTimeoutMs read timeout in milliseconds
      * @return configured HTTP client
      */
-    public static CloseableHttpClient getHttpClient(int connectTimeoutMs, int readTimeoutMs) {
+    private static CloseableHttpClient getHttpClient(int connectTimeoutMs, int readTimeoutMs) {
         RequestConfig requestConfig = getRequestConfig(connectTimeoutMs, readTimeoutMs);
         HttpRequestRetryStrategy retryStrategy = getHttpRequestRetryStrategy();
 

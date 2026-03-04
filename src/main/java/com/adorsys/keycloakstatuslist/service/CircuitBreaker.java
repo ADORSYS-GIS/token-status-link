@@ -2,6 +2,7 @@ package com.adorsys.keycloakstatuslist.service;
 
 import org.jboss.logging.Logger;
 
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -18,6 +19,7 @@ import java.util.concurrent.atomic.AtomicReference;
 public class CircuitBreaker {
     
     private static final Logger logger = Logger.getLogger(CircuitBreaker.class);
+    private static final ConcurrentHashMap<String, CircuitBreaker> INSTANCES = new ConcurrentHashMap<>();
     
     private enum State {
         CLOSED,
@@ -27,13 +29,11 @@ public class CircuitBreaker {
     
     private final String name;
     private final int failureThreshold;
-    private final int timeoutThreshold;
     private final long windowMillis;
     private final long cooldownMillis;
     
     private final AtomicReference<State> state = new AtomicReference<>(State.CLOSED);
     private final AtomicInteger failureCount = new AtomicInteger(0);
-    private final AtomicInteger timeoutCount = new AtomicInteger(0);
     private final AtomicLong windowStartTime = new AtomicLong(System.currentTimeMillis());
     private final AtomicLong lastFailureTime = new AtomicLong(0);
     
@@ -41,22 +41,48 @@ public class CircuitBreaker {
      * Creates a new circuit breaker.
      *
      * @param name identifier for logging
-     * @param failureThreshold number of failures before opening circuit
-     * @param timeoutThreshold number of timeouts before considering as failure
+     * @param failureThreshold number of failures/timeouts before opening circuit
      * @param windowSeconds time window for counting failures
      * @param cooldownSeconds time before attempting recovery
      */
-    public CircuitBreaker(String name, int failureThreshold, int timeoutThreshold, 
+    public CircuitBreaker(String name, int failureThreshold, 
                          int windowSeconds, int cooldownSeconds) {
         this.name = name;
         this.failureThreshold = failureThreshold;
-        this.timeoutThreshold = timeoutThreshold;
         this.windowMillis = windowSeconds * 1000L;
         this.cooldownMillis = cooldownSeconds * 1000L;
         
-        logger.infof("Circuit breaker '%s' initialized: failureThreshold=%d, timeoutThreshold=%d, " +
+        logger.infof("Circuit breaker '%s' initialized: failureThreshold=%d, " +
                 "window=%ds, cooldown=%ds", 
-                name, failureThreshold, timeoutThreshold, windowSeconds, cooldownSeconds);
+                name, failureThreshold, windowSeconds, cooldownSeconds);
+    }
+    
+    /**
+     * Returns a shared CircuitBreaker instance for the given name.
+     * If an instance with the same name already exists, it is reused.
+     */
+    public static CircuitBreaker getInstance(
+            String name, int failureThreshold, int windowSeconds, int cooldownSeconds) {
+        return INSTANCES.computeIfAbsent(
+                name,
+                key -> new CircuitBreaker(key, failureThreshold, windowSeconds, cooldownSeconds));
+    }
+
+    /**
+     * Returns a shared CircuitBreaker instance for the given realm and component.
+     * The instance is keyed by realm so that all callers for the same realm share the same circuit breaker.
+     *
+     * @param realmId           the realm identifier
+     * @param component         component name (e.g. "StatusList", "CredentialRevocation") used in the internal name
+     * @param failureThreshold   number of failures/timeouts before opening the circuit
+     * @param windowSeconds      time window for counting failures
+     * @param cooldownSeconds    time before attempting recovery
+     * @return the shared CircuitBreaker for this realm and component
+     */
+    public static CircuitBreaker getInstanceForRealm(String realmId, String component,
+            int failureThreshold, int windowSeconds, int cooldownSeconds) {
+        String name = component + "CircuitBreaker-" + realmId;
+        return getInstance(name, failureThreshold, windowSeconds, cooldownSeconds);
     }
     
     /**
@@ -110,7 +136,6 @@ public class CircuitBreaker {
                 resetCounters();
                 logger.infof("Circuit breaker '%s' transitioning to CLOSED after successful test", name);
             }
-        } else if (currentState == State.CLOSED) {
         }
     }
     
@@ -141,16 +166,11 @@ public class CircuitBreaker {
     }
     
     /**
-     * Records a timeout operation.
+     * Records a timeout operation. Timeouts are treated the same as failures.
      */
     public void recordTimeout() {
-        int timeouts = timeoutCount.incrementAndGet();
-        logger.debugf("Circuit breaker '%s' recorded timeout %d/%d", name, timeouts, timeoutThreshold);
-        
-        if (timeouts >= timeoutThreshold) {
-            recordFailure();
-            timeoutCount.set(0);
-        }
+        logger.debugf("Circuit breaker '%s' recorded timeout (treated as failure)", name);
+        recordFailure();
     }
     
     /**
@@ -160,7 +180,6 @@ public class CircuitBreaker {
         long now = System.currentTimeMillis();
         windowStartTime.set(now);
         failureCount.set(0);
-        timeoutCount.set(0);
         logger.debugf("Circuit breaker '%s' reset window", name);
     }
     
@@ -169,7 +188,6 @@ public class CircuitBreaker {
      */
     private void resetCounters() {
         failureCount.set(0);
-        timeoutCount.set(0);
         windowStartTime.set(System.currentTimeMillis());
     }
     
@@ -190,16 +208,7 @@ public class CircuitBreaker {
     public int getFailureCount() {
         return failureCount.get();
     }
-    
-    /**
-     * Gets the current timeout count.
-     *
-     * @return the timeout count
-     */
-    public int getTimeoutCount() {
-        return timeoutCount.get();
-    }
-    
+        
     /**
      * Exception thrown when circuit breaker is open.
      */

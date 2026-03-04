@@ -1,12 +1,13 @@
 package com.adorsys.keycloakstatuslist.service;
 
+import com.adorsys.keycloakstatuslist.client.ApacheHttpStatusListClient;
 import com.adorsys.keycloakstatuslist.client.StatusListHttpClient;
+import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
-import com.adorsys.keycloakstatuslist.model.Status;
-import com.adorsys.keycloakstatuslist.model.StatusListClaim;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import org.jboss.logging.Logger;
 import org.keycloak.jose.jwk.JWK;
+import org.keycloak.models.KeycloakSession;
 
 import java.util.List;
 import java.util.UUID;
@@ -26,6 +27,39 @@ public class StatusListService {
         logger.info("Initialized StatusListService with HTTP client: " + httpClient.getClass().getSimpleName());
     }
 
+    /**
+     * Factory method to create a StatusListService instance for the given Keycloak session.
+     * Handles configuration, circuit breaker creation, and HTTP client setup.
+     *
+     * @param session the Keycloak session
+     * @return a configured StatusListService instance
+     */
+    public static StatusListService create(KeycloakSession session) {
+        StatusListConfig config = new StatusListConfig(session.getContext().getRealm());
+        CryptoIdentityService cryptoIdentityService = new CryptoIdentityService(session);
+        String realmId = session.getContext().getRealm().getId();
+
+        // Create circuit breaker if timeout is positive (non-positive timeout disables circuit breaker)
+        CircuitBreaker circuitBreaker = null;
+        if (config.getIssuanceTimeout() > 0) {
+            int threshold = config.getCircuitBreakerFailureThreshold();
+            circuitBreaker = CircuitBreaker.getInstanceForRealm(realmId, "StatusList",
+                    threshold,
+                    config.getCircuitBreakerWindowSeconds(),
+                    config.getCircuitBreakerCooldownSeconds());
+        }
+
+        // Create HTTP client with custom timeout for issuance path
+        StatusListHttpClient httpClient = new ApacheHttpStatusListClient(
+                config.getServerUrl(),
+                cryptoIdentityService.getJwtToken(config),
+                CustomHttpClient.getHttpClient(config),
+                circuitBreaker
+        );
+
+        return new StatusListService(httpClient);
+    }
+
     public void registerIssuer(String issuerId, JWK publicKey) throws StatusListException {
         httpClient.registerIssuer(issuerId, publicKey);
     }
@@ -41,7 +75,7 @@ public class StatusListService {
         try {
             boolean exists = checkStatusListExists(listId);
             if (exists) {
-                doUpdateStatusList(payload, requestId);
+                updateStatusList(payload, requestId);
             } else {
                 publishStatusList(payload, requestId);
             }
@@ -60,10 +94,6 @@ public class StatusListService {
         httpClient.publishStatusList(payload, requestId);
     }
 
-    private void doUpdateStatusList(StatusListPayload payload, String requestId) throws StatusListException {
-        httpClient.updateStatusList(payload, requestId);
-    }
-
     /**
      * Updates an existing status list on the server. Used by revocation flow.
      *
@@ -72,7 +102,7 @@ public class StatusListService {
      * @throws StatusListException if the operation fails
      */
     public void updateStatusList(StatusListPayload payload, String requestId) throws StatusListException {
-        doUpdateStatusList(payload, requestId);
+        httpClient.updateStatusList(payload, requestId);
     }
 
     /**
@@ -84,6 +114,8 @@ public class StatusListService {
         return httpClient.checkServerHealth();
     }
 
+    private static final String STATUS_LISTS_PATH = "statuslists";
+    
     /**
      * Gets the URI for a status list without making any HTTP calls.
      *
@@ -91,30 +123,8 @@ public class StatusListService {
      * @return the URI string for the status list
      */
     public String getStatusListUri(String listId) {
-        return httpClient.getStatusListUri(listId);
-    }
-
-    /**
-     * Registers a status entry and publishes it to the server.
-     *
-     * @param listId the status list identifier
-     * @param index the index of the token in the status list
-     * @return Status object containing the index and URI
-     * @throws StatusListException if the operation fails
-     */
-    public Status registerAndPublishStatus(String listId, long index) throws StatusListException {
-        // Prepare payload
-        StatusListPayload payload = new StatusListPayload(
-                listId,
-                List.of(new StatusListPayload.StatusEntry((int) index, "VALID")));
-        
-        publishOrUpdate(payload);
-        
-        String uri = httpClient.getStatusListUri(listId);
-        
-        // Return Status with index and URI
-        StatusListClaim statusList = new StatusListClaim(index, uri);
-        return new Status(statusList);
+        String serverUrl = httpClient.getServerUrl();
+        return serverUrl + STATUS_LISTS_PATH + "/" + listId;
     }
 
     public record StatusListPayload(

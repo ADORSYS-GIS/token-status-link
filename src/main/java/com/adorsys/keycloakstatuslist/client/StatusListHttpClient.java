@@ -53,12 +53,11 @@ public interface StatusListHttpClient {
     boolean checkServerHealth();
     
     /**
-     * Gets the URI for retrieving a status list.
+     * Gets the base server URL configured for this client.
      *
-     * @param listId the status list identifier
-     * @return the URI string for the status list
+     * @return the server URL string
      */
-    String getStatusListUri(String listId);
+    String getServerUrl();
 }
 
 

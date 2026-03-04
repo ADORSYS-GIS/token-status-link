@@ -6,19 +6,18 @@ import com.adorsys.keycloakstatuslist.model.IssuerRegistrationPayload;
 import com.adorsys.keycloakstatuslist.service.CircuitBreaker;
 import com.adorsys.keycloakstatuslist.service.StatusListService.StatusListPayload;
 import org.apache.hc.core5.http.HttpStatus;
-import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.apache.hc.client5.http.classic.methods.HttpGet;
 import org.apache.hc.client5.http.classic.methods.HttpPatch;
 import org.apache.hc.client5.http.classic.methods.HttpPost;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.core5.http.ClassicHttpResponse;
+import org.apache.hc.core5.http.HttpRequest;
 import org.apache.hc.core5.http.ParseException;
 import org.apache.hc.core5.http.io.entity.EntityUtils;
 import org.apache.hc.core5.http.io.entity.StringEntity;
 import org.jboss.logging.Logger;
 import org.keycloak.jose.jwk.JWK;
+import org.keycloak.util.JsonSerialization;
 
 import java.io.IOException;
 import java.io.InterruptedIOException;
@@ -38,7 +37,6 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
     private final String serverUrl;
     private final String authToken;
     private final CloseableHttpClient httpClient;
-    private final ObjectMapper objectMapper;
     private final CircuitBreaker circuitBreaker;
     
     /**
@@ -56,9 +54,6 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
         this.authToken = authToken;
         this.httpClient = httpClient;
         this.circuitBreaker = circuitBreaker;
-        this.objectMapper = new ObjectMapper()
-                .registerModule(new JavaTimeModule())
-                .setSerializationInclusion(JsonInclude.Include.NON_NULL);
         
         logger.infof("Initialized ApacheHttpStatusListClient with serverUrl: %s, circuitBreaker: %s",
                 this.serverUrl, circuitBreaker != null ? "enabled" : "disabled");
@@ -76,7 +71,7 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
         issuerRecord.setPublicKey(publicKey);
         
         try {
-            String jsonPayload = objectMapper.writeValueAsString(issuerRecord);
+            String jsonPayload = JsonSerialization.mapper.writeValueAsString(issuerRecord);
             logger.debugf("Request ID: %s, Registering issuer: %s, Payload: %s", requestId, issuerId, jsonPayload);
             
             HttpPost httpPost = new HttpPost(serverUrl + CREDENTIALS_PATH);
@@ -132,7 +127,7 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
         logger.debugf("Request ID: %s, Publishing new status list: %s", requestId, listId);
         
         try {
-            String jsonPayload = objectMapper.writeValueAsString(payload);
+            String jsonPayload = JsonSerialization.mapper.writeValueAsString(payload);
             HttpPost httpPost = new HttpPost(serverUrl + STATUS_LISTS_PATH);
             configureJsonRequest(httpPost, requestId, jsonPayload);
             
@@ -157,7 +152,7 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
         logger.debugf("Request ID: %s, Updating existing status list: %s", requestId, listId);
         
         try {
-            String jsonPayload = objectMapper.writeValueAsString(payload);
+            String jsonPayload = JsonSerialization.mapper.writeValueAsString(payload);
             HttpPatch httpPatch = new HttpPatch(serverUrl + STATUS_LISTS_PATH + "/" + listId);
             configureJsonRequest(httpPatch, requestId, jsonPayload);
             
@@ -200,8 +195,8 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
     }
     
     @Override
-    public String getStatusListUri(String listId) {
-        return serverUrl + STATUS_LISTS_PATH + "/" + listId;
+    public String getServerUrl() {
+        return serverUrl;
     }
     
     /**
@@ -221,11 +216,9 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
         int statusCode = response.getCode();
         String responseBody;
         try {
-            if (response.getEntity() != null) {
-                responseBody = EntityUtils.toString(response.getEntity());
-            } else {
-                responseBody = "";
-            }
+            responseBody = response.getEntity() != null 
+                    ? EntityUtils.toString(response.getEntity()) 
+                    : "";
         } catch (IOException | ParseException e) {
             responseBody = "Unable to read response body: " + e.getMessage();
         }
@@ -274,11 +267,9 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
         } else {
             String responseBody;
             try {
-                if (response.getEntity() != null) {
-                    responseBody = EntityUtils.toString(response.getEntity());
-                } else {
-                    responseBody = "";
-                }
+                responseBody = response.getEntity() != null 
+                        ? EntityUtils.toString(response.getEntity()) 
+                        : "";
             } catch (IOException | ParseException e) {
                 responseBody = "Unable to read response body: " + e.getMessage();
             }
@@ -336,7 +327,7 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
      * @param request the HTTP request to configure
      * @param requestId the request ID to set in the X-Request-ID header
      */
-    private void configureCommonHeaders(org.apache.hc.core5.http.HttpRequest request, String requestId) {
+    private void configureCommonHeaders(HttpRequest request, String requestId) {
         request.setHeader("X-Request-ID", requestId);
         if (authToken != null && !authToken.isEmpty()) {
             request.setHeader("Authorization", "Bearer " + authToken);
@@ -350,7 +341,7 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
      * @param requestId the request ID to set in the X-Request-ID header
      * @param jsonPayload the JSON payload to set as the request entity
      */
-    private void configureJsonRequest(org.apache.hc.core5.http.HttpRequest request, String requestId, String jsonPayload) {
+    private void configureJsonRequest(HttpRequest request, String requestId, String jsonPayload) {
         request.setHeader("Content-Type", "application/json");
         configureCommonHeaders(request, requestId);
         if (request instanceof HttpPost) {
