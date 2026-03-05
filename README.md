@@ -21,13 +21,15 @@ The status list server should implement the OAuth 2.0 Status List pattern.
 
 The plugin can be configured at the realm level with the following properties:
 
-| Property                          | Description                                                                                                               | Default Value                          |
-|-----------------------------------|---------------------------------------------------------------------------------------------------------------------------|----------------------------------------|
-| `status-list-enabled`             | Enables or disables the status list service                                                                               | `true`                                 |
-| `status-list-server-url`          | URL of the status list server                                                                                             | `https://statuslist.eudi-adorsys.com/` |
-| `status-list-token-issuer-prefix` | Prefix for building the Token Issuer ID                                                                                   | `Generated UUID`                       |
-| `status-list-mandatory`           | If true, publication failures block issuance; if false, failures are logged and issuance continues without a status claim | `false`                                |
-| `status-list-max-entries`         | Maximum number of entries to publish under the same status list                                                           | `10000`                                |
+| Property                                  | Description                                                                                                               | Default Value                          |
+|-------------------------------------------|---------------------------------------------------------------------------------------------------------------------------|----------------------------------------|
+| `status-list-enabled`                     | Enables or disables the status list service                                                                               | `true`                                 |
+| `status-list-server-url`                  | URL of the status list server                                                                                             | `https://statuslist.eudi-adorsys.com/` |
+| `status-list-token-issuer-prefix`         | Prefix for building the Token Issuer ID                                                                                   | `Generated UUID`                       |
+| `status-list-issuance-timeout`            | Timeout in milliseconds for issuance operations (used for both connection and read). Non-positive values disable circuit breaker | `10000`                                |
+| `status-list-circuit-breaker-failure-threshold` | Number of failures/timeouts before opening the circuit breaker                                                          | `5`                                    |
+| `status-list-mandatory`                   | If true, publication failures block issuance; if false, failures are logged and issuance continues without a status claim | `false`                                |
+| `status-list-max-entries`                 | Maximum number of entries to publish under the same status list                                                           | `10000`                                |
 
 ## Installation
 
@@ -63,7 +65,8 @@ corresponding to a specific credential's configuration. Below is a sample such c
   implementation and execute on the caller's thread.
 - **No retry mechanism** is used by default (retry count = 0) to ensure fast failure and avoid prolonged thread
   blocking. Some internal clients include retry strategies but the default configuration disables retries.
-- Connection and read timeouts are **fixed at safe defaults** (30s connect, 60s read) to prevent hanging connections.
+- Timeouts are configurable via `status-list-issuance-timeout` (default: 10s for both connection and read operations).
+  A non-positive timeout value effectively disables the circuit breaker.
 
 ## Security Features
 

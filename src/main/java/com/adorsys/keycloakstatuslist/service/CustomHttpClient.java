@@ -1,5 +1,7 @@
 package com.adorsys.keycloakstatuslist.service;
 
+import com.adorsys.keycloakstatuslist.config.StatusListConfig;
+
 import java.io.IOException;
 
 import org.apache.hc.client5.http.HttpRequestRetryStrategy;
@@ -17,27 +19,28 @@ public class CustomHttpClient {
 
     private static final Logger logger = Logger.getLogger(CustomHttpClient.class);
 
-    private static final int DEFAULT_CONNECT_TIMEOUT = 30000;
-    private static final int DEFAULT_READ_TIMEOUT = 60000;
+    public static final int DEFAULT_CONNECT_TIMEOUT = 30000;
     private static final int DEFAULT_RETRY_COUNT = 0; // Retry disabled by default
 
-    public static CloseableHttpClient getHttpClient() {
-        RequestConfig requestConfig = getRequestConfig();
-        HttpRequestRetryStrategy retryStrategy = getHttpRequestRetryStrategy();
-
+    /**
+     * Creates an HTTP client with timeout values from the configuration.
+     * All callers must use this method so that timeouts are always taken from config.
+     *
+     * @param config the status list configuration
+     * @return configured HTTP client
+     */
+    public static CloseableHttpClient getHttpClient(StatusListConfig config) {
+        int timeoutMs = config.getIssuanceTimeout();
+        if (timeoutMs <= 0) {
+            timeoutMs = DEFAULT_CONNECT_TIMEOUT;
+        }
+        RequestConfig requestConfig = RequestConfig.custom()
+                .setConnectionRequestTimeout(Timeout.ofMilliseconds(timeoutMs))
+                .setResponseTimeout(Timeout.ofMilliseconds(timeoutMs))
+                .build();
         return HttpClients.custom()
                 .setDefaultRequestConfig(requestConfig)
-                .setRetryStrategy(retryStrategy)
-                .build();
-    }
-
-    private static RequestConfig getRequestConfig() {
-        Timeout connectTimeout = Timeout.ofMilliseconds(DEFAULT_CONNECT_TIMEOUT);
-        Timeout responseTimeout = Timeout.ofMilliseconds(DEFAULT_READ_TIMEOUT);
-
-        return RequestConfig.custom()
-                .setConnectionRequestTimeout(connectTimeout)
-                .setResponseTimeout(responseTimeout)
+                .setRetryStrategy(getHttpRequestRetryStrategy())
                 .build();
     }
 
