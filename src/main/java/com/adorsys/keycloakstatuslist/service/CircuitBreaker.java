@@ -100,10 +100,6 @@ public class CircuitBreaker {
         }
         
         switch (currentState) {
-            case CLOSED:
-                // Allow request
-                break;
-                
             case OPEN:
                 // Check if cooldown period has passed
                 if (now - lastFailureTime.get() >= cooldownMillis) {
@@ -120,6 +116,9 @@ public class CircuitBreaker {
                 
             case HALF_OPEN:
                 logger.debugf("Circuit breaker '%s' in HALF_OPEN, allowing test request", name);
+                break;
+            default:
+                // CLOSED: allow request, no action needed
                 break;
         }
     }

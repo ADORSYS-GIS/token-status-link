@@ -32,6 +32,8 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
     
     private static final String CREDENTIALS_PATH = "credentials";
     private static final String STATUS_LISTS_PATH = "statuslists";
+    private static final String STATUS_LISTS_PUBLISH_PATH = "statuslists/publish";
+    private static final String STATUS_LISTS_UPDATE_PATH = "statuslists/update";
     private static final String HEALTH_PATH = "health";
     
     private final String serverUrl;
@@ -128,7 +130,7 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
         
         try {
             String jsonPayload = JsonSerialization.mapper.writeValueAsString(payload);
-            HttpPost httpPost = new HttpPost(serverUrl + STATUS_LISTS_PATH);
+            HttpPost httpPost = new HttpPost(serverUrl + STATUS_LISTS_PUBLISH_PATH);
             configureJsonRequest(httpPost, requestId, jsonPayload);
             
             httpClient.execute(httpPost, response -> handleResponse(
@@ -153,7 +155,7 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
         
         try {
             String jsonPayload = JsonSerialization.mapper.writeValueAsString(payload);
-            HttpPatch httpPatch = new HttpPatch(serverUrl + STATUS_LISTS_PATH + "/" + listId);
+            HttpPatch httpPatch = new HttpPatch(serverUrl + STATUS_LISTS_UPDATE_PATH);
             configureJsonRequest(httpPatch, requestId, jsonPayload);
             
             httpClient.execute(httpPatch, response -> handleResponse(

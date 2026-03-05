@@ -20,46 +20,27 @@ public class CustomHttpClient {
     private static final Logger logger = Logger.getLogger(CustomHttpClient.class);
 
     public static final int DEFAULT_CONNECT_TIMEOUT = 30000;
-    public static final int DEFAULT_READ_TIMEOUT = 60000;
     private static final int DEFAULT_RETRY_COUNT = 0; // Retry disabled by default
 
     /**
      * Creates an HTTP client with timeout values from the configuration.
+     * All callers must use this method so that timeouts are always taken from config.
      *
      * @param config the status list configuration
      * @return configured HTTP client
      */
     public static CloseableHttpClient getHttpClient(StatusListConfig config) {
-        int timeout = config.getIssuanceTimeout();
-        int timeoutMs = timeout > 0 ? timeout : DEFAULT_CONNECT_TIMEOUT;
-        return getHttpClient(timeoutMs, timeoutMs);
-    }
-    
-    /**
-     * Creates an HTTP client with custom timeout values.
-     * This method is kept for backward compatibility but should be avoided in favor of getHttpClient(StatusListConfig).
-     *
-     * @param connectTimeoutMs connection timeout in milliseconds
-     * @param readTimeoutMs read timeout in milliseconds
-     * @return configured HTTP client
-     */
-    private static CloseableHttpClient getHttpClient(int connectTimeoutMs, int readTimeoutMs) {
-        RequestConfig requestConfig = getRequestConfig(connectTimeoutMs, readTimeoutMs);
-        HttpRequestRetryStrategy retryStrategy = getHttpRequestRetryStrategy();
-
+        int timeoutMs = config.getIssuanceTimeout();
+        if (timeoutMs <= 0) {
+            timeoutMs = DEFAULT_CONNECT_TIMEOUT;
+        }
+        RequestConfig requestConfig = RequestConfig.custom()
+                .setConnectionRequestTimeout(Timeout.ofMilliseconds(timeoutMs))
+                .setResponseTimeout(Timeout.ofMilliseconds(timeoutMs))
+                .build();
         return HttpClients.custom()
                 .setDefaultRequestConfig(requestConfig)
-                .setRetryStrategy(retryStrategy)
-                .build();
-    }
-
-    private static RequestConfig getRequestConfig(int connectTimeoutMs, int readTimeoutMs) {
-        Timeout connectTimeout = Timeout.ofMilliseconds(connectTimeoutMs);
-        Timeout responseTimeout = Timeout.ofMilliseconds(readTimeoutMs);
-
-        return RequestConfig.custom()
-                .setConnectionRequestTimeout(connectTimeout)
-                .setResponseTimeout(responseTimeout)
+                .setRetryStrategy(getHttpRequestRetryStrategy())
                 .build();
     }
 
