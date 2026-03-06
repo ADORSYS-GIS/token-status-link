@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
+import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.service.CryptoIdentityService;
 import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
@@ -108,12 +109,14 @@ class CustomOIDCLoginProtocolFactoryTest {
         CloseableHttpClient httpClient = mock(CloseableHttpClient.class);
         CloseableHttpResponse httpResponse = mock(CloseableHttpResponse.class);
 
-        mockedHttpClient.when(CustomHttpClient::getHttpClient).thenReturn(httpClient);
+        mockedHttpClient.when(() -> CustomHttpClient.getHttpClient(any(StatusListConfig.class))).thenReturn(httpClient);
 
-        when(httpClient.execute(any(HttpGet.class), any(HttpClientResponseHandler.class)))
+        when(httpClient.execute(
+                        any(HttpGet.class),
+                        org.mockito.ArgumentMatchers.<HttpClientResponseHandler<Boolean>>any()))
                 .thenAnswer(
                         invocation -> {
-                            HttpClientResponseHandler<?> handler = invocation.getArgument(1);
+                            HttpClientResponseHandler<Boolean> handler = invocation.getArgument(1);
                             when(httpResponse.getCode()).thenReturn(200);
                             when(httpResponse.getEntity()).thenReturn(new StringEntity("OK"));
                             return handler.handleResponse(httpResponse);
@@ -153,7 +156,7 @@ class CustomOIDCLoginProtocolFactoryTest {
         triggerInitialization();
 
         assertEquals(0, mockedStatusListServiceConstruction.constructed().size());
-        mockedHttpClient.verify(CustomHttpClient::getHttpClient, never());
+        mockedHttpClient.verify(() -> CustomHttpClient.getHttpClient(any(StatusListConfig.class)), never());
     }
 
     @Test
@@ -242,10 +245,13 @@ class CustomOIDCLoginProtocolFactoryTest {
         try {
             CloseableHttpClient httpClient = mock(CloseableHttpClient.class);
             CloseableHttpResponse httpResponse = mock(CloseableHttpResponse.class);
-            mockedHttpClient.when(CustomHttpClient::getHttpClient).thenReturn(httpClient);
+            mockedHttpClient.when(() -> CustomHttpClient.getHttpClient(any(StatusListConfig.class))).thenReturn(httpClient);
 
-            when(httpClient.execute(any(HttpGet.class), any(HttpClientResponseHandler.class))).thenAnswer(invocation -> {
-                HttpClientResponseHandler<?> handler = invocation.getArgument(1);
+            when(httpClient.execute(
+                            any(HttpGet.class),
+                            org.mockito.ArgumentMatchers.<HttpClientResponseHandler<Boolean>>any()))
+                    .thenAnswer(invocation -> {
+                HttpClientResponseHandler<Boolean> handler = invocation.getArgument(1);
                 when(httpResponse.getCode()).thenReturn(200);
                 when(httpResponse.getEntity()).thenReturn(new StringEntity("OK"));
                 return handler.handleResponse(httpResponse);

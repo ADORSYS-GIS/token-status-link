@@ -18,6 +18,8 @@ public class StatusListConfig {
     public static final String STATUS_LIST_ENABLED = "status-list-enabled";
     public static final String STATUS_LIST_SERVER_URL = "status-list-server-url";
     public static final String STATUS_LIST_TOKEN_ISSUER_PREFIX = "status-list-token-issuer-prefix";
+    public static final String STATUS_LIST_ISSUANCE_TIMEOUT = "status-list-issuance-timeout";
+    public static final String STATUS_LIST_CIRCUIT_BREAKER_FAILURE_THRESHOLD = "status-list-circuit-breaker-failure-threshold";
     public static final String STATUS_LIST_MANDATORY = "status-list-mandatory";
     public static final String STATUS_LIST_MAX_ENTRIES = "status-list-max-entries";
 
@@ -26,6 +28,14 @@ public class StatusListConfig {
     public static final String DEFAULT_SERVER_URL = "https://statuslist.eudi-adorsys.com/";
     public static final boolean DEFAULT_MANDATORY = false;
     public static final int DEFAULT_MAX_ENTRIES = 10000;
+
+    // Default timeout value for issuance path (used for both connect and read)
+    private static final int DEFAULT_ISSUANCE_TIMEOUT = 10000;
+
+    // Default circuit breaker values
+    private static final int DEFAULT_FAILURE_THRESHOLD = 5;
+    private static final int DEFAULT_WINDOW_SECONDS = 60;
+    private static final int DEFAULT_COOLDOWN_SECONDS = 30;
 
     private final RealmModel realm;
 
@@ -81,6 +91,47 @@ public class StatusListConfig {
         }
 
         return String.format("%s::%s", prefix, realm.getName());
+    }
+
+    /**
+     * Gets the timeout for issuance operations in milliseconds.
+     * This timeout is used for both connection and read operations.
+     * If the value is non-positive, the circuit breaker will effectively be disabled.
+     *
+     * @return the timeout in milliseconds
+     */
+    public int getIssuanceTimeout() {
+        String value = realm.getAttribute(STATUS_LIST_ISSUANCE_TIMEOUT);
+        return value != null ? Integer.parseInt(value) : DEFAULT_ISSUANCE_TIMEOUT;
+    }
+
+    /**
+     * Gets the failure threshold for the circuit breaker.
+     * This threshold applies to both failures and timeouts.
+     *
+     * @return the number of failures/timeouts before opening the circuit
+     */
+    public int getCircuitBreakerFailureThreshold() {
+        String value = realm.getAttribute(STATUS_LIST_CIRCUIT_BREAKER_FAILURE_THRESHOLD);
+        return value != null ? Integer.parseInt(value) : DEFAULT_FAILURE_THRESHOLD;
+    }
+
+    /**
+     * Gets the time window in seconds for tracking failures.
+     *
+     * @return the rolling window size in seconds
+     */
+    public int getCircuitBreakerWindowSeconds() {
+        return DEFAULT_WINDOW_SECONDS;
+    }
+
+    /**
+     * Gets the cooldown period in seconds before attempting recovery.
+     *
+     * @return the cooldown period in seconds
+     */
+    public int getCircuitBreakerCooldownSeconds() {
+        return DEFAULT_COOLDOWN_SECONDS;
     }
 
     /**

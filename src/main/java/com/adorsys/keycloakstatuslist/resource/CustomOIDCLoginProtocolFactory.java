@@ -1,13 +1,15 @@
 package com.adorsys.keycloakstatuslist.resource;
 
+import com.adorsys.keycloakstatuslist.client.ApacheHttpStatusListClient;
+import com.adorsys.keycloakstatuslist.client.StatusListHttpClient;
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.exception.StatusListServerException;
+import com.adorsys.keycloakstatuslist.service.CircuitBreaker;
 import com.adorsys.keycloakstatuslist.service.CredentialRevocationService;
 import com.adorsys.keycloakstatuslist.service.CryptoIdentityService;
 import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
-import com.adorsys.keycloakstatuslist.service.http.CloseableHttpClientAdapter;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -32,6 +34,13 @@ public class CustomOIDCLoginProtocolFactory extends OIDCLoginProtocolFactory {
     private static final Logger logger = Logger.getLogger(CustomOIDCLoginProtocolFactory.class);
     private final Set<String> registeredRealms = ConcurrentHashMap.newKeySet();
     private volatile boolean initialized = false;
+    
+    // Singleton circuit breaker for realm registration operations
+    private static final CircuitBreaker REALM_REGISTRATION_CIRCUIT_BREAKER = CircuitBreaker.getInstance(
+            "RealmRegistrationCircuitBreaker",
+            5,
+            60,
+            30);
 
     /**
      * defines the option-order in the admin-ui
@@ -183,11 +192,14 @@ public class CustomOIDCLoginProtocolFactory extends OIDCLoginProtocolFactory {
             }
 
             CryptoIdentityService cryptoIdentityService = new CryptoIdentityService(session);
-            StatusListService statusListService =
-                    new StatusListService(
-                            config.getServerUrl(),
-                            cryptoIdentityService.getJwtToken(config),
-                            new CloseableHttpClientAdapter(CustomHttpClient.getHttpClient()));
+            
+            StatusListHttpClient httpClient = new ApacheHttpStatusListClient(
+                    config.getServerUrl(),
+                    cryptoIdentityService.getJwtToken(config),
+                    CustomHttpClient.getHttpClient(config),
+                    REALM_REGISTRATION_CIRCUIT_BREAKER
+            );
+            StatusListService statusListService = new StatusListService(httpClient);
 
             // Check if the status list server is reachable
             if (!statusListService.checkServerHealth()) {
