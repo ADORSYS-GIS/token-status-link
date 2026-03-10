@@ -51,6 +51,15 @@ public class StatusListConfig {
     }
 
     /**
+     * Gets the realm ID. Convenience for components that need the realm identifier (e.g. circuit breaker keying).
+     *
+     * @return the realm identifier
+     */
+    public String getRealmId() {
+        return realm.getId();
+    }
+
+    /**
      * Checks if the status list functionality is enabled for the current realm.
      *
      * @return true if enabled, false otherwise

@@ -1,5 +1,7 @@
 package com.adorsys.keycloakstatuslist;
 
+import com.adorsys.keycloakstatuslist.client.ApacheHttpStatusListClient;
+import com.adorsys.keycloakstatuslist.client.StatusListHttpClient;
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
@@ -7,6 +9,9 @@ import com.adorsys.keycloakstatuslist.jpa.repository.StatusListRepository;
 import com.adorsys.keycloakstatuslist.model.Status;
 import com.adorsys.keycloakstatuslist.model.StatusListClaim;
 import com.adorsys.keycloakstatuslist.model.TokenStatus;
+import com.adorsys.keycloakstatuslist.service.CircuitBreaker;
+import com.adorsys.keycloakstatuslist.service.CryptoIdentityService;
+import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
 import jakarta.ws.rs.core.UriBuilder;
 import org.apache.commons.collections4.ListUtils;
@@ -56,7 +61,30 @@ public class StatusListProtocolMapper extends OID4VCMapper {
     public StatusListProtocolMapper(KeycloakSession session) {
         this.session = session;
         this.statusListRepository = new StatusListRepository(session);
-        this.statusListService = StatusListService.create(session);
+        this.statusListService = createStatusListService(session);
+    }
+
+    /**
+     * Builds a StatusListService for the given session (config, circuit breaker, HTTP client).
+     * Wiring lives here so StatusListService stays agnostic of the concrete HTTP client implementation.
+     */
+    private static StatusListService createStatusListService(KeycloakSession session) {
+        StatusListConfig config = new StatusListConfig(session.getContext().getRealm());
+        CryptoIdentityService cryptoIdentityService = new CryptoIdentityService(session);
+
+        CircuitBreaker circuitBreaker = null;
+        if (config.getIssuanceTimeout() > 0) {
+            circuitBreaker = CircuitBreaker.getInstance(config);
+        }
+
+        StatusListHttpClient httpClient = new ApacheHttpStatusListClient(
+                config.getServerUrl(),
+                cryptoIdentityService.getJwtToken(config),
+                CustomHttpClient.getHttpClient(config),
+                circuitBreaker
+        );
+
+        return new StatusListService(httpClient);
     }
 
     @Override

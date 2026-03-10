@@ -69,13 +69,7 @@ public class CredentialRevocationService {
             StatusListConfig config = new StatusListConfig(realm);
             CryptoIdentityService cryptoIdentityService = new CryptoIdentityService(session);
 
-            // Use a circuit breaker for revocation path (singleton per realm)
-            CircuitBreaker circuitBreaker = CircuitBreaker.getInstanceForRealm(
-                    realm.getId(),
-                    "CredentialRevocation",
-                    config.getCircuitBreakerFailureThreshold(),
-                    config.getCircuitBreakerWindowSeconds(),
-                    config.getCircuitBreakerCooldownSeconds());
+            CircuitBreaker circuitBreaker = CircuitBreaker.getInstance(config);
 
             StatusListHttpClient httpClient = new ApacheHttpStatusListClient(
                     config.getServerUrl(),

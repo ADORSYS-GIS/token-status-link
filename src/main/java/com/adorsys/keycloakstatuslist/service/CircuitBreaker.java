@@ -1,5 +1,6 @@
 package com.adorsys.keycloakstatuslist.service;
 
+import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import org.jboss.logging.Logger;
 
 import java.util.concurrent.ConcurrentHashMap;
@@ -45,8 +46,8 @@ public class CircuitBreaker {
      * @param windowSeconds time window for counting failures
      * @param cooldownSeconds time before attempting recovery
      */
-    public CircuitBreaker(String name, int failureThreshold, 
-                         int windowSeconds, int cooldownSeconds) {
+    private CircuitBreaker(String name, int failureThreshold,
+                          int windowSeconds, int cooldownSeconds) {
         this.name = name;
         this.failureThreshold = failureThreshold;
         this.windowMillis = windowSeconds * 1000L;
@@ -58,31 +59,30 @@ public class CircuitBreaker {
     }
     
     /**
-     * Returns a shared CircuitBreaker instance for the given name.
-     * If an instance with the same name already exists, it is reused.
+     * Returns a shared CircuitBreaker instance for the given realm configuration.
+     * Threshold, window and cooldown are taken from the config (single source of truth).
+     * The instance is keyed by realm ID so that all callers for the same realm share the same circuit breaker.
+     *
+     * @param config the status list configuration for the realm (provides realm ID and circuit breaker settings)
+     * @return the shared CircuitBreaker for this realm
      */
-    public static CircuitBreaker getInstance(
+    public static CircuitBreaker getInstance(StatusListConfig config) {
+        String name = "CircuitBreaker-" + config.getRealmId();
+        return getInstance(name,
+                config.getCircuitBreakerFailureThreshold(),
+                config.getCircuitBreakerWindowSeconds(),
+                config.getCircuitBreakerCooldownSeconds());
+    }
+
+    /**
+     * Returns a shared CircuitBreaker instance for the given name and parameters.
+     * Used internally by {@link #getInstance(StatusListConfig)}.
+     */
+    private static CircuitBreaker getInstance(
             String name, int failureThreshold, int windowSeconds, int cooldownSeconds) {
         return INSTANCES.computeIfAbsent(
                 name,
                 key -> new CircuitBreaker(key, failureThreshold, windowSeconds, cooldownSeconds));
-    }
-
-    /**
-     * Returns a shared CircuitBreaker instance for the given realm and component.
-     * The instance is keyed by realm so that all callers for the same realm share the same circuit breaker.
-     *
-     * @param realmId           the realm identifier
-     * @param component         component name (e.g. "StatusList", "CredentialRevocation") used in the internal name
-     * @param failureThreshold   number of failures/timeouts before opening the circuit
-     * @param windowSeconds      time window for counting failures
-     * @param cooldownSeconds    time before attempting recovery
-     * @return the shared CircuitBreaker for this realm and component
-     */
-    public static CircuitBreaker getInstanceForRealm(String realmId, String component,
-            int failureThreshold, int windowSeconds, int cooldownSeconds) {
-        String name = component + "CircuitBreaker-" + realmId;
-        return getInstance(name, failureThreshold, windowSeconds, cooldownSeconds);
     }
     
     /**

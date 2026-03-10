@@ -34,13 +34,6 @@ public class CustomOIDCLoginProtocolFactory extends OIDCLoginProtocolFactory {
     private static final Logger logger = Logger.getLogger(CustomOIDCLoginProtocolFactory.class);
     private final Set<String> registeredRealms = ConcurrentHashMap.newKeySet();
     private volatile boolean initialized = false;
-    
-    // Singleton circuit breaker for realm registration operations
-    private static final CircuitBreaker REALM_REGISTRATION_CIRCUIT_BREAKER = CircuitBreaker.getInstance(
-            "RealmRegistrationCircuitBreaker",
-            5,
-            60,
-            30);
 
     /**
      * defines the option-order in the admin-ui
@@ -192,12 +185,14 @@ public class CustomOIDCLoginProtocolFactory extends OIDCLoginProtocolFactory {
             }
 
             CryptoIdentityService cryptoIdentityService = new CryptoIdentityService(session);
-            
+
+            CircuitBreaker circuitBreaker = CircuitBreaker.getInstance(config);
+
             StatusListHttpClient httpClient = new ApacheHttpStatusListClient(
                     config.getServerUrl(),
                     cryptoIdentityService.getJwtToken(config),
                     CustomHttpClient.getHttpClient(config),
-                    REALM_REGISTRATION_CIRCUIT_BREAKER
+                    circuitBreaker
             );
             StatusListService statusListService = new StatusListService(httpClient);
 
