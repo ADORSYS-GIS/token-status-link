@@ -2,12 +2,14 @@ name: Release
 
 on:
   push:
+    branches:
+      - 'release-plugin-to-maven'
     tags:
       - 'v*'
 
 jobs:
   build-and-release:
-    name: Build and Create Release
+    name: Build and Publish Release
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -15,9 +17,21 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
+#      - name: Extract version from tag
+#        id: version
+#        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
       - name: Extract version from tag
         id: version
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        run: |
+          if [[ $GITHUB_REF == refs/tags/* ]]; then
+            TAG="$GITHUB_REF_NAME"
+          else
+            TAG="v0.1.1-rc3"
+          fi
+          
+          echo "TAG=$TAG" >> "$GITHUB_OUTPUT"
+          echo "VERSION=${TAG#v}" >> "$GITHUB_OUTPUT"
 
       - name: Set up JDK 17
         uses: actions/setup-java@v5
@@ -25,18 +39,27 @@ jobs:
           distribution: "temurin"
           java-version: "17"
           cache: "maven"
+          server-id: central
+          server-username: MAVEN_CENTRAL_USERNAME
+          server-password: MAVEN_CENTRAL_PASSWORD
+          gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
+          gpg-passphrase: MAVEN_GPG_PASSPHRASE
 
       - name: Make Maven Wrapper executable
         run: chmod +x mvnw
 
-      - name: Build Release Artifact
-        run: ./mvnw clean package -Drevision=${{ steps.version.outputs.VERSION }} -DskipTests --batch-mode
+      - name: Build and Release Artifacts
+        run: ./mvnw clean deploy -Prelease -DskipTests -Drevision=${{ steps.version.outputs.VERSION }} --batch-mode
+        env:
+          MAVEN_CENTRAL_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
+          MAVEN_CENTRAL_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            target/keycloak-token-status-plugin-*.jar
+          tag_name: ${{ steps.version.outputs.TAG }}
+          files: target/keycloak-token-status-plugin-*.jar
           generate_release_notes: true
           draft: false
           prerelease: false
