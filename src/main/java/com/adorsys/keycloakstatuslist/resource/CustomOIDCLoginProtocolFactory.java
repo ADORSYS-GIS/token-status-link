@@ -34,7 +34,7 @@ public class CustomOIDCLoginProtocolFactory extends OIDCLoginProtocolFactory {
     private static final Logger logger = Logger.getLogger(CustomOIDCLoginProtocolFactory.class);
     private final Set<String> registeredRealms = ConcurrentHashMap.newKeySet();
     private volatile boolean initialized = false;
-    
+
     /**
      * defines the option-order in the admin-ui
      */

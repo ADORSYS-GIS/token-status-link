@@ -49,8 +49,6 @@ public class StatusListProtocolMapper extends OID4VCMapper {
     private final StatusListService statusListService;
     private final StatusListRepository statusListRepository;
 
-    
-
     public StatusListProtocolMapper() {
         // An empty mapper constructor is required by Keycloak
         this.session = null;
