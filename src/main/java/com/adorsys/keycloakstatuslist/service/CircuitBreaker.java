@@ -46,7 +46,6 @@ public class CircuitBreaker {
      * @param windowSeconds time window for counting failures
      * @param cooldownSeconds time before attempting recovery
      */
-
     private CircuitBreaker(String name, int failureThreshold,
                           int windowSeconds, int cooldownSeconds) {
         this.name = name;
@@ -60,7 +59,6 @@ public class CircuitBreaker {
     }
     
     /**
-
      * Returns a shared CircuitBreaker instance for the given realm configuration.
      * Threshold, window and cooldown are taken from the config (single source of truth).
      * The instance is keyed by realm ID so that all callers for the same realm share the same circuit breaker.

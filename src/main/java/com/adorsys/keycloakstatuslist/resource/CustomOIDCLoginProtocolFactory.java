@@ -186,7 +186,6 @@ public class CustomOIDCLoginProtocolFactory extends OIDCLoginProtocolFactory {
 
             CryptoIdentityService cryptoIdentityService = new CryptoIdentityService(session);
 
-
             CircuitBreaker circuitBreaker = CircuitBreaker.getInstance(config);
 
             StatusListHttpClient httpClient = new ApacheHttpStatusListClient(
