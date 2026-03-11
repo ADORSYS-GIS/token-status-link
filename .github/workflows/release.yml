@@ -2,8 +2,6 @@ name: Release
 
 on:
   push:
-    branches:
-      - 'release-plugin-to-maven'
     tags:
       - 'v*'
 
@@ -17,19 +15,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
-#      - name: Extract version from tag
-#        id: version
-#        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-
       - name: Extract version from tag
         id: version
         run: |
-          if [[ $GITHUB_REF == refs/tags/* ]]; then
-            TAG="$GITHUB_REF_NAME"
-          else
-            TAG="v0.1.1-rc3"
-          fi
-          
+          TAG="$GITHUB_REF_NAME"
           echo "TAG=$TAG" >> "$GITHUB_OUTPUT"
           echo "VERSION=${TAG#v}" >> "$GITHUB_OUTPUT"
 
