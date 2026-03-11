@@ -1,5 +1,7 @@
 package com.adorsys.keycloakstatuslist;
 
+import com.adorsys.keycloakstatuslist.client.ApacheHttpStatusListClient;
+import com.adorsys.keycloakstatuslist.client.StatusListHttpClient;
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
@@ -7,10 +9,10 @@ import com.adorsys.keycloakstatuslist.jpa.repository.StatusListRepository;
 import com.adorsys.keycloakstatuslist.model.Status;
 import com.adorsys.keycloakstatuslist.model.StatusListClaim;
 import com.adorsys.keycloakstatuslist.model.TokenStatus;
+import com.adorsys.keycloakstatuslist.service.CircuitBreaker;
 import com.adorsys.keycloakstatuslist.service.CryptoIdentityService;
 import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
-import com.adorsys.keycloakstatuslist.service.http.CloseableHttpClientAdapter;
 import jakarta.ws.rs.core.UriBuilder;
 import org.apache.commons.collections4.ListUtils;
 import org.jboss.logging.Logger;
@@ -23,11 +25,11 @@ import org.keycloak.protocol.oid4vc.model.VerifiableCredential;
 import org.keycloak.provider.ProviderConfigProperty;
 
 import java.io.IOException;
-import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.net.URI;
 
 import static com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity.MappingStatus;
 
@@ -57,13 +59,30 @@ public class StatusListProtocolMapper extends OID4VCMapper {
     public StatusListProtocolMapper(KeycloakSession session) {
         this.session = session;
         this.statusListRepository = new StatusListRepository(session);
-        CryptoIdentityService cryptoIdentityService = new CryptoIdentityService(session);
+        this.statusListService = createStatusListService(session);
+    }
+
+    /**
+     * Builds a StatusListService for the given session (config, circuit breaker, HTTP client).
+     * Wiring lives here so StatusListService stays agnostic of the concrete HTTP client implementation.
+     */
+    private static StatusListService createStatusListService(KeycloakSession session) {
         StatusListConfig config = new StatusListConfig(session.getContext().getRealm());
-        this.statusListService = new StatusListService(
+        CryptoIdentityService cryptoIdentityService = new CryptoIdentityService(session);
+
+        CircuitBreaker circuitBreaker = null;
+        if (config.getIssuanceTimeout() > 0) {
+            circuitBreaker = CircuitBreaker.getInstance(config);
+        }
+
+        StatusListHttpClient httpClient = new ApacheHttpStatusListClient(
                 config.getServerUrl(),
                 cryptoIdentityService.getJwtToken(config),
-                new CloseableHttpClientAdapter(CustomHttpClient.getHttpClient())
+                CustomHttpClient.getHttpClient(config),
+                circuitBreaker
         );
+
+        return new StatusListService(httpClient);
     }
 
     @Override
@@ -248,9 +267,8 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         StatusListService.StatusListPayload payload =
                 new StatusListService.StatusListPayload(
                         statusListId,
-                        List.of(
-                                new StatusListService.StatusListPayload.StatusEntry(
-                                        idx, TokenStatus.VALID.getValue())));
+                        List.of(new StatusListService.StatusListPayload.StatusEntry(
+                            idx, TokenStatus.VALID.getValue())));
 
         // Publish or update status list on server
         statusListService.publishOrUpdate(payload);
