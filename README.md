@@ -1,5 +1,7 @@
 # Keycloak Token Status Plugin
 
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
+
 This plugin lets Keycloak send the status of long-lived tokens or verifiable credentials to an external status list
 server. It helps you quickly revoke credentials before they expire.
 
@@ -44,6 +46,21 @@ The plugin can be configured at the realm level with the following properties:
 
 4. Configure the plugin using the realm attributes described in
    the [Configuration Properties Section](README.md#configuration-properties)
+
+### Releases on Maven Central
+
+The plugin is officially published
+to [Maven Central](https://central.sonatype.com/artifact/io.github.adorsys-gis/keycloak-token-status-plugin).
+
+Releases are fully automated via GitHub Actions. A new deployment is triggered whenever a version tag (`vX.Y.Z`)
+is created on the repository. The workflow requires the following secrets to be configured:
+
+| Secret                   | Description                                               |
+|:-------------------------|:----------------------------------------------------------|
+| `CENTRAL_TOKEN_USERNAME` | The Maven Central token username.                         |
+| `CENTRAL_TOKEN_PASSWORD` | The Maven Central token password.                         |
+| `GPG_PRIVATE_KEY`        | The ASCII-armored private key used for signing artifacts. |
+| `GPG_PASSPHRASE`         | The passphrase required to unlock the GPG private key.    |
 
 ### Configuring Keycloak's credential issuance to use the Status List protocol mapper
 
@@ -138,3 +155,8 @@ For manual testing with a local status list server:
 - Improve realm registration robustness. Consider implementing a background retry task or lazy registration to make up
   for potential transient failures during startup, maybe due to network issues or the status list server being
   temporarily unavailable.
+
+## License
+
+This project is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0-only).
+See [LICENSE](./LICENSE) for details.

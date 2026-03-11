@@ -2,13 +2,16 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>com.adorsys</groupId>
+    <!-- TODO: Update package hierarchy in the codebase to match this groupId.
+          Delayed to avoid giant conflicts given ongoing PRs. -->
+    <groupId>io.github.adorsys-gis</groupId>
     <artifactId>keycloak-token-status-plugin</artifactId>
     <version>${revision}</version>
     <packaging>jar</packaging>
 
     <name>Keycloak Token Status Plugin</name>
     <description>A Keycloak plugin that publishes token status to a statuslist server</description>
+    <url>https://github.com/ADORSYS-GIS/token-status-link</url>
 
     <properties>
         <revision>1.0.0-SNAPSHOT</revision>
@@ -261,6 +264,105 @@
                     </execution>
                 </executions>
             </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-source-plugin</artifactId>
+                <version>3.4.0</version>
+                <executions>
+                    <execution>
+                        <id>attach-sources</id>
+                        <goals>
+                            <goal>jar-no-fork</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-javadoc-plugin</artifactId>
+                <version>3.12.0</version>
+                <configuration>
+                    <doclint>none</doclint>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>attach-javadocs</id>
+                        <goals>
+                            <goal>jar</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <id>release</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-gpg-plugin</artifactId>
+                        <version>3.2.8</version>
+                        <executions>
+                            <execution>
+                                <id>sign-artifacts</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>sign</goal>
+                                </goals>
+                                <configuration>
+                                    <gpgArguments>
+                                        <arg>--batch</arg>
+                                        <arg>--pinentry-mode</arg>
+                                        <arg>loopback</arg>
+                                    </gpgArguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.sonatype.central</groupId>
+                        <artifactId>central-publishing-maven-plugin</artifactId>
+                        <version>0.10.0</version>
+                        <extensions>true</extensions>
+                        <configuration>
+                            <publishingServerId>central</publishingServerId>
+                            <autoPublish>true</autoPublish>
+                            <waitUntil>validated</waitUntil>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+
+    <licenses>
+        <license>
+            <name>GNU Affero General Public License v3.0</name>
+            <url>https://www.gnu.org/licenses/agpl-3.0-standalone.html</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
+    <organization>
+        <name>adorsys GmbH &amp; Co. KG</name>
+        <url>https://www.adorsys.com</url>
+    </organization>
+
+    <developers>
+        <developer>
+            <id>adorsys-gis</id>
+            <name>ADORSYS GIS Team</name>
+            <url>https://github.com/ADORSYS-GIS</url>
+        </developer>
+    </developers>
+
+    <scm>
+        <connection>scm:git:https://github.com/ADORSYS-GIS/token-status-link.git</connection>
+        <developerConnection>scm:git:ssh://git@github.com/ADORSYS-GIS/token-status-link.git</developerConnection>
+        <url>https://github.com/ADORSYS-GIS/token-status-link</url>
+        <tag>HEAD</tag>
+    </scm>
 </project>

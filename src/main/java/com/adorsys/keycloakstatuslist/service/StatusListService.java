@@ -1,13 +1,10 @@
 package com.adorsys.keycloakstatuslist.service;
 
-import com.adorsys.keycloakstatuslist.client.ApacheHttpStatusListClient;
 import com.adorsys.keycloakstatuslist.client.StatusListHttpClient;
-import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import org.jboss.logging.Logger;
 import org.keycloak.jose.jwk.JWK;
-import org.keycloak.models.KeycloakSession;
 
 import java.util.List;
 import java.util.UUID;
@@ -25,39 +22,6 @@ public class StatusListService {
     public StatusListService(StatusListHttpClient httpClient) {
         this.httpClient = httpClient;
         logger.info("Initialized StatusListService with HTTP client: " + httpClient.getClass().getSimpleName());
-    }
-
-    /**
-     * Factory method to create a StatusListService instance for the given Keycloak session.
-     * Handles configuration, circuit breaker creation, and HTTP client setup.
-     *
-     * @param session the Keycloak session
-     * @return a configured StatusListService instance
-     */
-    public static StatusListService create(KeycloakSession session) {
-        StatusListConfig config = new StatusListConfig(session.getContext().getRealm());
-        CryptoIdentityService cryptoIdentityService = new CryptoIdentityService(session);
-        String realmId = session.getContext().getRealm().getId();
-
-        // Create circuit breaker if timeout is positive (non-positive timeout disables circuit breaker)
-        CircuitBreaker circuitBreaker = null;
-        if (config.getIssuanceTimeout() > 0) {
-            int threshold = config.getCircuitBreakerFailureThreshold();
-            circuitBreaker = CircuitBreaker.getInstanceForRealm(realmId, "StatusList",
-                    threshold,
-                    config.getCircuitBreakerWindowSeconds(),
-                    config.getCircuitBreakerCooldownSeconds());
-        }
-
-        // Create HTTP client with custom timeout for issuance path
-        StatusListHttpClient httpClient = new ApacheHttpStatusListClient(
-                config.getServerUrl(),
-                cryptoIdentityService.getJwtToken(config),
-                CustomHttpClient.getHttpClient(config),
-                circuitBreaker
-        );
-
-        return new StatusListService(httpClient);
     }
 
     public void registerIssuer(String issuerId, JWK publicKey) throws StatusListException {
