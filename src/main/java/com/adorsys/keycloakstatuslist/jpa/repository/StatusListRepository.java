@@ -4,14 +4,13 @@ import com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import jakarta.persistence.TypedQuery;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import org.jboss.logging.Logger;
 import org.keycloak.connections.jpa.JpaConnectionProvider;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.utils.KeycloakModelUtils;
-
-import java.util.List;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Consumer;
 
 public class StatusListRepository {
 
@@ -46,7 +45,7 @@ public class StatusListRepository {
      * prevent race conditions. Must be run within a transaction.
      */
     public Long getNextIndex(EntityManager em, String statusListId) {
-        String q = """                
+        String q = """
                 SELECT m FROM StatusListMappingEntity m
                 WHERE m.statusListId = :listId ORDER BY m.idx DESC
                 """;

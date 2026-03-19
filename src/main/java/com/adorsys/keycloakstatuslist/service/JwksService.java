@@ -1,12 +1,10 @@
 package com.adorsys.keycloakstatuslist.service;
 
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
-
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-
 import org.jboss.logging.Logger;
 import org.keycloak.common.VerificationException;
 import org.keycloak.crypto.KeyUse;
@@ -36,14 +34,14 @@ public class JwksService {
      * Creates signature verifier contexts directly from Keycloak's key management. This is the
      * preferred approach as it avoids converting keys unnecessarily.
      */
-    public List<SignatureVerifierContext> getSignatureVerifierContexts(
-            SdJwtVP sdJwtVP, String requestId) throws StatusListException {
+    public List<SignatureVerifierContext> getSignatureVerifierContexts(SdJwtVP sdJwtVP, String requestId)
+            throws StatusListException {
         try {
             RealmModel realm = session.getContext().getRealm();
             var keyManager = session.keys();
 
-            Stream<KeyWrapper> keyStream = keyManager.getKeysStream(realm)
-                    .filter(key -> KeyUse.SIG.equals(key.getUse()));
+            Stream<KeyWrapper> keyStream =
+                    keyManager.getKeysStream(realm).filter(key -> KeyUse.SIG.equals(key.getUse()));
 
             // If we have a specific key ID from the JWT header, filter by it
             String signingKeyId = getSigningKeyId(sdJwtVP);
@@ -55,11 +53,12 @@ public class JwksService {
             List<SignatureVerifierContext> verifiers = keyStream
                     .map(key -> {
                         try {
-                            SignatureProvider signatureProvider = session
-                                    .getProvider(SignatureProvider.class, key.getAlgorithmOrDefault());
+                            SignatureProvider signatureProvider =
+                                    session.getProvider(SignatureProvider.class, key.getAlgorithmOrDefault());
                             return signatureProvider.verifier(key);
                         } catch (VerificationException e) {
-                            logger.warnf("Failed to create verifier for key %s. RequestId: %s, Error: %s",
+                            logger.warnf(
+                                    "Failed to create verifier for key %s. RequestId: %s, Error: %s",
                                     key.getKid(), requestId, e.getMessage());
                             return null;
                         }
@@ -67,12 +66,13 @@ public class JwksService {
                     .filter(Objects::nonNull)
                     .collect(Collectors.toList());
 
-            logger.infof("Successfully created %d signature verifier contexts. RequestId: %s",
-                    verifiers.size(), requestId);
+            logger.infof(
+                    "Successfully created %d signature verifier contexts. RequestId: %s", verifiers.size(), requestId);
             return verifiers;
 
         } catch (Exception e) {
-            logger.errorf("Failed to create signature verifier contexts. RequestId: %s, Error: %s",
+            logger.errorf(
+                    "Failed to create signature verifier contexts. RequestId: %s, Error: %s",
                     requestId, e.getMessage());
             throw new StatusListException("Failed to create signature verifier contexts: " + e.getMessage(), e);
         }

@@ -1,9 +1,7 @@
 package com.adorsys.keycloakstatuslist.service;
 
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
-
 import java.io.IOException;
-
 import org.apache.hc.client5.http.HttpRequestRetryStrategy;
 import org.apache.hc.client5.http.config.RequestConfig;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
@@ -51,8 +49,7 @@ public class CustomHttpClient {
             @Override
             public boolean retryRequest(
                     HttpRequest httpRequest, IOException e, int execCount, HttpContext httpContext) {
-                logger.warnf(
-                        "[Attempt %d/%d] Error sending status: %s", execCount, maxRetries, e.getMessage());
+                logger.warnf("[Attempt %d/%d] Error sending status: %s", execCount, maxRetries, e.getMessage());
                 return execCount <= maxRetries;
             }
 
@@ -69,8 +66,7 @@ public class CustomHttpClient {
             }
 
             @Override
-            public TimeValue getRetryInterval(
-                    HttpResponse httpResponse, int execCount, HttpContext httpContext) {
+            public TimeValue getRetryInterval(HttpResponse httpResponse, int execCount, HttpContext httpContext) {
                 // Exponential backoff: 1s, 2s, 4s
                 return TimeValue.ofSeconds((long) Math.pow(2, execCount - 1));
             }

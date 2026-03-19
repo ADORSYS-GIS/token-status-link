@@ -1,12 +1,20 @@
 package com.adorsys.keycloakstatuslist.service;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.util.Collections;
+import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -20,9 +28,6 @@ import org.keycloak.sdjwt.vp.KeyBindingJWT;
 import org.keycloak.sdjwt.vp.SdJwtVP;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-
-import java.util.Collections;
-import java.util.Optional;
 
 /**
  * Unit tests for DefaultSdJwtVPValidationService. Tests core: parse validation (null/empty/format),
@@ -64,29 +69,29 @@ class SdJwtVPValidationServiceTest {
 
     @Test
     void parseAndValidateSdJwtVP_nullToken_throws() {
-        StatusListException ex = assertThrows(StatusListException.class,
-                () -> service.parseAndValidateSdJwtVP(null, "req"));
+        StatusListException ex =
+                assertThrows(StatusListException.class, () -> service.parseAndValidateSdJwtVP(null, "req"));
         assertTrue(ex.getMessage().contains("SD-JWT VP token is empty or null"));
     }
 
     @Test
     void parseAndValidateSdJwtVP_emptyToken_throws() {
-        StatusListException ex = assertThrows(StatusListException.class,
-                () -> service.parseAndValidateSdJwtVP("", "req"));
+        StatusListException ex =
+                assertThrows(StatusListException.class, () -> service.parseAndValidateSdJwtVP("", "req"));
         assertTrue(ex.getMessage().contains("SD-JWT VP token is empty or null"));
     }
 
     @Test
     void parseAndValidateSdJwtVP_whitespaceToken_throws() {
-        StatusListException ex = assertThrows(StatusListException.class,
-                () -> service.parseAndValidateSdJwtVP("   ", "req"));
+        StatusListException ex =
+                assertThrows(StatusListException.class, () -> service.parseAndValidateSdJwtVP("   ", "req"));
         assertTrue(ex.getMessage().contains("SD-JWT VP token is empty or null"));
     }
 
     @Test
     void parseAndValidateSdJwtVP_invalidFormat_throws() {
-        StatusListException ex = assertThrows(StatusListException.class,
-                () -> service.parseAndValidateSdJwtVP("invalid.token.format", "req"));
+        StatusListException ex = assertThrows(
+                StatusListException.class, () -> service.parseAndValidateSdJwtVP("invalid.token.format", "req"));
         assertTrue(ex.getMessage().contains("Invalid SD-JWT VP token format"));
     }
 
@@ -108,10 +113,11 @@ class SdJwtVPValidationServiceTest {
         when(payload.get("iss")).thenReturn(issNode);
         when(issNode.asText()).thenReturn("test-issuer");
 
-        StatusListException ex = assertThrows(StatusListException.class,
-                () -> service.verifySdJwtVP(sdJwtVP, requestId, "expected-nonce"));
+        StatusListException ex = assertThrows(
+                StatusListException.class, () -> service.verifySdJwtVP(sdJwtVP, requestId, "expected-nonce"));
 
-        assertTrue(ex.getMessage().contains("No public keys available") || ex.getMessage().contains("SD-JWT VP verification failed"));
+        assertTrue(ex.getMessage().contains("No public keys available")
+                || ex.getMessage().contains("SD-JWT VP verification failed"));
         assertEquals(401, ex.getHttpStatus());
     }
 

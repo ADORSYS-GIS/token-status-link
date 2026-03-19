@@ -8,7 +8,6 @@ import java.security.spec.InvalidKeySpecException;
 import java.security.spec.RSAPrivateCrtKeySpec;
 import java.util.Objects;
 import java.util.function.Function;
-
 import org.keycloak.common.util.Base64Url;
 import org.keycloak.crypto.KeyType;
 import org.keycloak.crypto.KeyWrapper;
@@ -28,8 +27,7 @@ public class RSATestUtils {
     private static final String JWK_SECRET_DQ_FIELD = "dq";
     private static final String JWK_SECRET_QI_FIELD = "qi";
 
-    public static KeyWrapper getRsaKeyWrapper(JWK jwk)
-            throws NoSuchAlgorithmException, InvalidKeySpecException {
+    public static KeyWrapper getRsaKeyWrapper(JWK jwk) throws NoSuchAlgorithmException, InvalidKeySpecException {
         if (!KeyType.RSA.equals(jwk.getKeyType())) {
             throw new IllegalArgumentException("Only RSA keys are supported");
         }
@@ -41,8 +39,7 @@ public class RSATestUtils {
         return keyWrapper;
     }
 
-    private static PrivateKey getRsaPrivateKey(JWK jwk)
-            throws NoSuchAlgorithmException, InvalidKeySpecException {
+    private static PrivateKey getRsaPrivateKey(JWK jwk) throws NoSuchAlgorithmException, InvalidKeySpecException {
         Function<String, byte[]> getField =
                 name -> Base64Url.decode((String) jwk.getOtherClaims().get(name));
 

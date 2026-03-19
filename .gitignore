@@ -3,6 +3,7 @@ target/
 .flattened-pom.xml
 
 # IDE files
+.m2/
 .vscode/
 .idea/
 *.iml

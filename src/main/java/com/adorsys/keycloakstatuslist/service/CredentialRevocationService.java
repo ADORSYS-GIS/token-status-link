@@ -1,5 +1,8 @@
 package com.adorsys.keycloakstatuslist.service;
 
+import static com.adorsys.keycloakstatuslist.service.StatusListService.StatusListPayload;
+import static com.adorsys.keycloakstatuslist.service.StatusListService.StatusListPayload.StatusEntry;
+
 import com.adorsys.keycloakstatuslist.client.ApacheHttpStatusListClient;
 import com.adorsys.keycloakstatuslist.client.StatusListHttpClient;
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
@@ -13,24 +16,19 @@ import com.adorsys.keycloakstatuslist.model.TokenStatus;
 import com.adorsys.keycloakstatuslist.service.nonce.NonceCacheProvider;
 import com.adorsys.keycloakstatuslist.service.nonce.NonceCacheServiceProviderFactory;
 import com.adorsys.keycloakstatuslist.service.validation.SdJwtVPValidationService;
-
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.net.URI;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
-
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.jboss.logging.Logger;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.sdjwt.vp.SdJwtVP;
 import org.keycloak.services.resource.RealmResourceProvider;
 import org.keycloak.util.JsonSerialization;
-
-import static com.adorsys.keycloakstatuslist.service.StatusListService.StatusListPayload.StatusEntry;
-import static com.adorsys.keycloakstatuslist.service.StatusListService.StatusListPayload;
 
 /**
  * Main service for handling credential revocation requests. Orchestrates the
@@ -95,8 +93,7 @@ public class CredentialRevocationService {
         String requestId = UUID.randomUUID().toString();
         Objects.requireNonNull(request);
 
-        logger.infof("Processing credential revocation request. RequestId: %s",
-                requestId);
+        logger.infof("Processing credential revocation request. RequestId: %s", requestId);
 
         try {
             // Step 1: Parse the SD-JWT VP (without full verification yet)
@@ -113,23 +110,21 @@ public class CredentialRevocationService {
             getStatusListService().updateStatusList(revocationPayload, requestId);
 
             Instant revokedAt = Instant.now();
-            logger.infof("Successfully revoked credential. RequestId: %s, RevokedAt: %s",
-                    requestId, revokedAt);
+            logger.infof("Successfully revoked credential. RequestId: %s, RevokedAt: %s", requestId, revokedAt);
 
-            return CredentialRevocationResponse.success(
-                    revokedAt,
-                    request.getRevocationReason());
+            return CredentialRevocationResponse.success(revokedAt, request.getRevocationReason());
 
         } catch (StatusListServerException e) {
-            logger.errorf("Status list server error. RequestId: %s, StatusCode: %d, Error: %s",
+            logger.errorf(
+                    "Status list server error. RequestId: %s, StatusCode: %d, Error: %s",
                     requestId, e.getStatusCode(), e.getMessage());
             throw e;
         } catch (StatusListException e) {
-            logger.errorf(
-                    "Status list operation failed. RequestId: %s, Error: %s", requestId, e.getMessage());
+            logger.errorf("Status list operation failed. RequestId: %s, Error: %s", requestId, e.getMessage());
             throw e;
         } catch (Exception e) {
-            logger.errorf("Unexpected error during credential revocation. RequestId: %s, Error: %s",
+            logger.errorf(
+                    "Unexpected error during credential revocation. RequestId: %s, Error: %s",
                     requestId, e.getMessage(), e);
             throw new StatusListException("Failed to process credential revocation: " + e.getMessage(), e);
         }
@@ -138,27 +133,25 @@ public class CredentialRevocationService {
     /**
      * Validates the nonce from the Key Binding JWT to prevent replay attacks.
      * This is a critical security check that ensures each revocation request uses a fresh, one-time nonce.
-     * 
+     *
      * @param sdJwtVP   the SD-JWT VP token
      * @param requestId the request ID for logging
      * @return the validated RevocationChallenge containing the expected nonce
      * @throws StatusListException if nonce validation fails
      */
-    private RevocationChallenge validateNonce(SdJwtVP sdJwtVP, String requestId)
-            throws StatusListException {
+    private RevocationChallenge validateNonce(SdJwtVP sdJwtVP, String requestId) throws StatusListException {
 
         // Extract nonce from Key Binding JWT
         String presentedNonce = sdJwtVPValidationService.extractNonceFromKeyBindingJWT(sdJwtVP);
 
         if (presentedNonce == null || presentedNonce.trim().isEmpty()) {
-            logger.errorf("Missing nonce in Key Binding JWT. RequestId: %s",
-                    requestId);
+            logger.errorf("Missing nonce in Key Binding JWT. RequestId: %s", requestId);
             throw new StatusListException("Invalid or missing nonce in Key Binding JWT", 401);
         }
 
         // Get nonce service provider via RealmResourceProvider
-        NonceCacheProvider nonceService = (NonceCacheProvider) session.getProvider(
-                RealmResourceProvider.class, NonceCacheServiceProviderFactory.PROVIDER_ID);
+        NonceCacheProvider nonceService = (NonceCacheProvider)
+                session.getProvider(RealmResourceProvider.class, NonceCacheServiceProviderFactory.PROVIDER_ID);
 
         if (nonceService == null) {
             logger.errorf("NonceCacheProvider not available. RequestId: %s", requestId);
@@ -169,13 +162,11 @@ public class CredentialRevocationService {
         RevocationChallenge challenge = nonceService.consumeNonce(presentedNonce);
 
         if (challenge == null) {
-            logger.errorf("Invalid, expired, or replayed nonce. RequestId: %s, Nonce: %s",
-                    requestId, presentedNonce);
+            logger.errorf("Invalid, expired, or replayed nonce. RequestId: %s, Nonce: %s", requestId, presentedNonce);
             throw new StatusListException("Invalid, expired, or replayed nonce", 401);
         }
 
-        logger.infof("Nonce validated successfully. RequestId: %s, Nonce: %s",
-                requestId, presentedNonce);
+        logger.infof("Nonce validated successfully. RequestId: %s, Nonce: %s", requestId, presentedNonce);
 
         return challenge;
     }
@@ -188,8 +179,7 @@ public class CredentialRevocationService {
         Status status = JsonSerialization.mapper.treeToValue(issuerPayload.get("status"), Status.class);
 
         long idx = status.getStatusList().getIdx();
-        String listId = URI.create(status.getStatusList().getUri())
-                .getPath().replaceAll(".*/", "");
+        String listId = URI.create(status.getStatusList().getUri()).getPath().replaceAll(".*/", "");
 
         StatusEntry statusEntry = new StatusEntry(idx, TokenStatus.INVALID.getValue());
         return new StatusListPayload(listId, List.of(statusEntry));

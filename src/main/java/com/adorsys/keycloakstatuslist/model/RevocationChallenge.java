@@ -1,9 +1,8 @@
 package com.adorsys.keycloakstatuslist.model;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import org.keycloak.util.JsonSerialization;
-
 import java.time.Instant;
+import org.keycloak.util.JsonSerialization;
 
 /**
  * Response model for the revocation challenge endpoint.
@@ -25,8 +24,7 @@ public class RevocationChallenge {
     @JsonProperty("exp")
     private long expiresAt;
 
-    public RevocationChallenge() {
-    }
+    public RevocationChallenge() {}
 
     public RevocationChallenge(String nonce, String audience, int expiresIn) {
         this.nonce = nonce;

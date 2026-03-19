@@ -10,9 +10,8 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
-import org.keycloak.common.util.Time;
-
 import java.util.Objects;
+import org.keycloak.common.util.Time;
 
 @Entity
 @Access(AccessType.FIELD)
@@ -114,15 +113,32 @@ public class StatusListMappingEntity {
     public boolean equals(Object o) {
         if (o == null || getClass() != o.getClass()) return false;
         StatusListMappingEntity that = (StatusListMappingEntity) o;
-        return Objects.equals(getId(), that.getId()) && Objects.equals(getIdx(), that.getIdx()) && Objects.equals(getStatusListId(), that.getStatusListId()) && Objects.equals(getUserId(), that.getUserId()) && Objects.equals(getTokenId(), that.getTokenId()) && Objects.equals(getRealmId(), that.getRealmId()) && getStatus() == that.getStatus() && Objects.equals(getCreatedTimestamp(), that.getCreatedTimestamp());
+        return Objects.equals(getId(), that.getId())
+                && Objects.equals(getIdx(), that.getIdx())
+                && Objects.equals(getStatusListId(), that.getStatusListId())
+                && Objects.equals(getUserId(), that.getUserId())
+                && Objects.equals(getTokenId(), that.getTokenId())
+                && Objects.equals(getRealmId(), that.getRealmId())
+                && getStatus() == that.getStatus()
+                && Objects.equals(getCreatedTimestamp(), that.getCreatedTimestamp());
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(getId(), getIdx(), getStatusListId(), getUserId(), getTokenId(), getRealmId(), getStatus(), getCreatedTimestamp());
+        return Objects.hash(
+                getId(),
+                getIdx(),
+                getStatusListId(),
+                getUserId(),
+                getTokenId(),
+                getRealmId(),
+                getStatus(),
+                getCreatedTimestamp());
     }
 
     public enum MappingStatus {
-        INIT, SUCCESS, FAILURE
+        INIT,
+        SUCCESS,
+        FAILURE
     }
 }

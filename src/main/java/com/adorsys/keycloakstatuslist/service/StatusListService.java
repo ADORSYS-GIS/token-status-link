@@ -3,11 +3,10 @@ package com.adorsys.keycloakstatuslist.service;
 import com.adorsys.keycloakstatuslist.client.StatusListHttpClient;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import org.jboss.logging.Logger;
-import org.keycloak.jose.jwk.JWK;
-
 import java.util.List;
 import java.util.UUID;
+import org.jboss.logging.Logger;
+import org.keycloak.jose.jwk.JWK;
 
 public class StatusListService {
     private static final Logger logger = Logger.getLogger(StatusListService.class);
@@ -21,7 +20,8 @@ public class StatusListService {
      */
     public StatusListService(StatusListHttpClient httpClient) {
         this.httpClient = httpClient;
-        logger.info("Initialized StatusListService with HTTP client: " + httpClient.getClass().getSimpleName());
+        logger.info("Initialized StatusListService with HTTP client: "
+                + httpClient.getClass().getSimpleName());
     }
 
     public void registerIssuer(String issuerId, JWK publicKey) throws StatusListException {
@@ -46,10 +46,7 @@ public class StatusListService {
         } catch (StatusListException e) {
             logger.errorf(
                     "Request ID: %s, Failed to publish or update status list %s: %s",
-                    requestId,
-                    listId,
-                    e.getMessage(),
-                    e);
+                    requestId, listId, e.getMessage(), e);
             throw e;
         }
     }
@@ -79,7 +76,7 @@ public class StatusListService {
     }
 
     private static final String STATUS_LISTS_PATH = "statuslists";
-    
+
     /**
      * Gets the URI for a status list without making any HTTP calls.
      *
@@ -91,10 +88,7 @@ public class StatusListService {
         return serverUrl + STATUS_LISTS_PATH + "/" + listId;
     }
 
-    public record StatusListPayload(
-            @JsonProperty("list_id") String listId,
-            List<StatusEntry> status) {
-        public record StatusEntry(long index, String status) {
-        }
+    public record StatusListPayload(@JsonProperty("list_id") String listId, List<StatusEntry> status) {
+        public record StatusEntry(long index, String status) {}
     }
 }
