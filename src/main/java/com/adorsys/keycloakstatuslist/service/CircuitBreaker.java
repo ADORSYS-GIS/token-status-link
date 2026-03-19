@@ -1,43 +1,42 @@
 package com.adorsys.keycloakstatuslist.service;
 
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
-import org.jboss.logging.Logger;
-
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import org.jboss.logging.Logger;
 
 /**
  * Simple circuit breaker implementation to protect against repeated failures
  * when calling external services.
- * 
+ *
  * States:
  * - CLOSED: Normal operation, requests pass through
  * - OPEN: Too many failures, requests fail fast
  * - HALF_OPEN: Testing if service recovered, limited requests allowed
  */
 public class CircuitBreaker {
-    
+
     private static final Logger logger = Logger.getLogger(CircuitBreaker.class);
     private static final ConcurrentHashMap<String, CircuitBreaker> INSTANCES = new ConcurrentHashMap<>();
-    
+
     private enum State {
         CLOSED,
         OPEN,
         HALF_OPEN
     }
-    
+
     private final String name;
     private final int failureThreshold;
     private final long windowMillis;
     private final long cooldownMillis;
-    
+
     private final AtomicReference<State> state = new AtomicReference<>(State.CLOSED);
     private final AtomicInteger failureCount = new AtomicInteger(0);
     private final AtomicLong windowStartTime = new AtomicLong(System.currentTimeMillis());
     private final AtomicLong lastFailureTime = new AtomicLong(0);
-    
+
     /**
      * Creates a new circuit breaker.
      *
@@ -46,18 +45,17 @@ public class CircuitBreaker {
      * @param windowSeconds time window for counting failures
      * @param cooldownSeconds time before attempting recovery
      */
-    private CircuitBreaker(String name, int failureThreshold,
-                          int windowSeconds, int cooldownSeconds) {
+    private CircuitBreaker(String name, int failureThreshold, int windowSeconds, int cooldownSeconds) {
         this.name = name;
         this.failureThreshold = failureThreshold;
         this.windowMillis = windowSeconds * 1000L;
         this.cooldownMillis = cooldownSeconds * 1000L;
-        
-        logger.infof("Circuit breaker '%s' initialized: failureThreshold=%d, " +
-                "window=%ds, cooldown=%ds", 
+
+        logger.infof(
+                "Circuit breaker '%s' initialized: failureThreshold=%d, " + "window=%ds, cooldown=%ds",
                 name, failureThreshold, windowSeconds, cooldownSeconds);
     }
-    
+
     /**
      * Returns a shared CircuitBreaker instance for the given realm configuration.
      * Threshold, window and cooldown are taken from the config (single source of truth).
@@ -68,7 +66,8 @@ public class CircuitBreaker {
      */
     public static CircuitBreaker getInstance(StatusListConfig config) {
         String name = "CircuitBreaker-" + config.getRealmId();
-        return getInstance(name,
+        return getInstance(
+                name,
                 config.getCircuitBreakerFailureThreshold(),
                 config.getCircuitBreakerWindowSeconds(),
                 config.getCircuitBreakerCooldownSeconds());
@@ -81,10 +80,9 @@ public class CircuitBreaker {
     private static CircuitBreaker getInstance(
             String name, int failureThreshold, int windowSeconds, int cooldownSeconds) {
         return INSTANCES.computeIfAbsent(
-                name,
-                key -> new CircuitBreaker(key, failureThreshold, windowSeconds, cooldownSeconds));
+                name, key -> new CircuitBreaker(key, failureThreshold, windowSeconds, cooldownSeconds));
     }
-    
+
     /**
      * Checks if a request should be allowed through the circuit breaker.
      *
@@ -93,12 +91,12 @@ public class CircuitBreaker {
     public void checkState() throws CircuitBreakerOpenException {
         State currentState = state.get();
         long now = System.currentTimeMillis();
-        
+
         // Check if window has expired and reset counters
         if (now - windowStartTime.get() > windowMillis) {
             resetWindow();
         }
-        
+
         switch (currentState) {
             case OPEN:
                 // Check if cooldown period has passed
@@ -110,10 +108,10 @@ public class CircuitBreaker {
                 } else {
                     // Still in cooldown, fail fast
                     throw new CircuitBreakerOpenException(
-                        String.format("Circuit breaker '%s' is OPEN. Failing fast.", name));
+                            String.format("Circuit breaker '%s' is OPEN. Failing fast.", name));
                 }
                 break;
-                
+
             case HALF_OPEN:
                 logger.debugf("Circuit breaker '%s' in HALF_OPEN, allowing test request", name);
                 break;
@@ -122,13 +120,13 @@ public class CircuitBreaker {
                 break;
         }
     }
-    
+
     /**
      * Records a successful operation.
      */
     public void recordSuccess() {
         State currentState = state.get();
-        
+
         if (currentState == State.HALF_OPEN) {
             // Success in half-open state, close the circuit
             if (state.compareAndSet(State.HALF_OPEN, State.CLOSED)) {
@@ -137,33 +135,33 @@ public class CircuitBreaker {
             }
         }
     }
-    
+
     /**
      * Records a failed operation.
      */
     public void recordFailure() {
         long now = System.currentTimeMillis();
         lastFailureTime.set(now);
-        
+
         State currentState = state.get();
-        
+
         if (currentState == State.HALF_OPEN) {
             if (state.compareAndSet(State.HALF_OPEN, State.OPEN)) {
                 logger.warnf("Circuit breaker '%s' transitioning back to OPEN after failed test", name);
             }
             return;
         }
-        
+
         int failures = failureCount.incrementAndGet();
         logger.debugf("Circuit breaker '%s' recorded failure %d/%d", name, failures, failureThreshold);
-        
+
         if (failures >= failureThreshold) {
             if (state.compareAndSet(State.CLOSED, State.OPEN)) {
                 logger.errorf("Circuit breaker '%s' OPENED after %d failures", name, failures);
             }
         }
     }
-    
+
     /**
      * Records a timeout operation. Timeouts are treated the same as failures.
      */
@@ -171,7 +169,7 @@ public class CircuitBreaker {
         logger.debugf("Circuit breaker '%s' recorded timeout (treated as failure)", name);
         recordFailure();
     }
-    
+
     /**
      * Resets the time window and counters.
      */
@@ -181,7 +179,7 @@ public class CircuitBreaker {
         failureCount.set(0);
         logger.debugf("Circuit breaker '%s' reset window", name);
     }
-    
+
     /**
      * Resets all counters.
      */
@@ -189,7 +187,7 @@ public class CircuitBreaker {
         failureCount.set(0);
         windowStartTime.set(System.currentTimeMillis());
     }
-    
+
     /**
      * Gets the current state of the circuit breaker.
      *
@@ -198,7 +196,7 @@ public class CircuitBreaker {
     public String getState() {
         return state.get().name();
     }
-    
+
     /**
      * Gets the current failure count.
      *
@@ -207,7 +205,7 @@ public class CircuitBreaker {
     public int getFailureCount() {
         return failureCount.get();
     }
-        
+
     /**
      * Exception thrown when circuit breaker is open.
      */
@@ -217,4 +215,3 @@ public class CircuitBreaker {
         }
     }
 }
-

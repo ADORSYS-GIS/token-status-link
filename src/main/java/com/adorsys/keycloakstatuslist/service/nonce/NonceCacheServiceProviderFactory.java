@@ -12,13 +12,13 @@ import org.keycloak.services.resource.RealmResourceProviderFactory;
  * Implements RealmResourceProviderFactory so Keycloak can discover it via standard SPI.
  */
 public class NonceCacheServiceProviderFactory implements RealmResourceProviderFactory {
-    
+
     private static final Logger logger = Logger.getLogger(NonceCacheServiceProviderFactory.class);
     public static final String PROVIDER_ID = "nonce-cache";
-    
+
     // Singleton instance of the service (shared across all realms and sessions)
     private static NonceCacheService instance;
-    
+
     @Override
     public RealmResourceProvider create(KeycloakSession session) {
         if (instance == null) {
@@ -32,17 +32,17 @@ public class NonceCacheServiceProviderFactory implements RealmResourceProviderFa
         logger.debugf("Returning NonceCacheService instance for session");
         return instance;
     }
-    
+
     @Override
     public void init(Config.Scope config) {
         logger.info("Initializing NonceCacheServiceProviderFactory with ID: " + PROVIDER_ID);
     }
-    
+
     @Override
     public void postInit(KeycloakSessionFactory factory) {
         logger.info("Post-initializing NonceCacheServiceProviderFactory");
     }
-    
+
     @Override
     public void close() {
         if (instance != null) {
@@ -51,7 +51,7 @@ public class NonceCacheServiceProviderFactory implements RealmResourceProviderFa
             logger.info("Closed NonceCacheService");
         }
     }
-    
+
     @Override
     public String getId() {
         return PROVIDER_ID;

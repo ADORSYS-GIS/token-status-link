@@ -1,19 +1,25 @@
 package com.adorsys.keycloakstatuslist.service;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import com.adorsys.keycloakstatuslist.client.StatusListHttpClient;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.keycloak.jose.jwk.JWK;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-
-import java.util.List;
 
 /**
  * Unit tests for StatusListService. Tests core logic: publish-vs-update branching,
@@ -100,8 +106,8 @@ class StatusListServiceTest {
         StatusListService.StatusListPayload payload = new StatusListService.StatusListPayload(
                 "list-id", List.of(new StatusListService.StatusListPayload.StatusEntry(1, "VALID")));
 
-        StatusListException exception = assertThrows(StatusListException.class, () ->
-                statusListService.publishOrUpdate(payload));
+        StatusListException exception =
+                assertThrows(StatusListException.class, () -> statusListService.publishOrUpdate(payload));
 
         assertTrue(exception.getMessage().contains("Connection failed")
                 || exception.getMessage().contains("Failed to publish or update"));

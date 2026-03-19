@@ -1,11 +1,14 @@
 package com.adorsys.keycloakstatuslist.service;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.util.List;
 import java.util.stream.Stream;
-
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -57,8 +60,7 @@ class JwksServiceTest {
     @Test
     void testGetSignatureVerifierContexts_NoKeys() throws Exception {
         when(keyManager.getKeysStream(realm)).thenReturn(Stream.empty());
-        List<SignatureVerifierContext> result =
-                service.getSignatureVerifierContexts(sdJwtVP, "issuer");
+        List<SignatureVerifierContext> result = service.getSignatureVerifierContexts(sdJwtVP, "issuer");
         assertNotNull(result);
         assertTrue(result.isEmpty());
     }
@@ -73,8 +75,7 @@ class JwksServiceTest {
         when(session.getProvider(SignatureProvider.class, "RS256")).thenReturn(signatureProvider);
         when(signatureProvider.verifier(key)).thenReturn(verifierContext);
 
-        List<SignatureVerifierContext> result =
-                service.getSignatureVerifierContexts(sdJwtVP, "issuer");
+        List<SignatureVerifierContext> result = service.getSignatureVerifierContexts(sdJwtVP, "issuer");
         assertNotNull(result);
         assertEquals(1, result.size());
         assertSame(verifierContext, result.get(0));

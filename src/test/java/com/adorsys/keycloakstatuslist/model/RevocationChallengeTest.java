@@ -1,13 +1,12 @@
 package com.adorsys.keycloakstatuslist.model;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import org.junit.jupiter.api.Test;
-
-import java.time.Instant;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.time.Instant;
+import org.junit.jupiter.api.Test;
 
 class RevocationChallengeTest {
     private final ObjectMapper objectMapper = new ObjectMapper();

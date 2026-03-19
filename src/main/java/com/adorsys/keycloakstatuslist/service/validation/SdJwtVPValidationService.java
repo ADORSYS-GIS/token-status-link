@@ -30,6 +30,5 @@ public interface SdJwtVPValidationService {
      * Verifies key binding of SD-JWT VP token and issuer signature using Keycloak's internal key management.
      * This ensures the token was properly issued by the claimed issuer.
      */
-    void verifySdJwtVP(SdJwtVP sdJwtVP, String requestId, String expectedNonce)
-            throws StatusListException;
+    void verifySdJwtVP(SdJwtVP sdJwtVP, String requestId, String expectedNonce) throws StatusListException;
 }

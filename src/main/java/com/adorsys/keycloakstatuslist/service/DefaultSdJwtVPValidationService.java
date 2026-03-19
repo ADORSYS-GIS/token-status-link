@@ -3,18 +3,16 @@ package com.adorsys.keycloakstatuslist.service;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.service.validation.SdJwtVPValidationService;
 import com.fasterxml.jackson.databind.JsonNode;
-
 import java.util.List;
-
 import org.jboss.logging.Logger;
 import org.keycloak.common.VerificationException;
 import org.keycloak.crypto.SignatureVerifierContext;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
-import org.keycloak.services.Urls;
 import org.keycloak.sdjwt.IssuerSignedJwtVerificationOpts;
 import org.keycloak.sdjwt.vp.KeyBindingJwtVerificationOpts;
 import org.keycloak.sdjwt.vp.SdJwtVP;
+import org.keycloak.services.Urls;
 
 /**
  * Default implementation of SdJwtVPValidationService. Handles token parsing, signature verification,
@@ -37,32 +35,27 @@ public class DefaultSdJwtVPValidationService implements SdJwtVPValidationService
     }
 
     @Override
-    public SdJwtVP parseAndValidateSdJwtVP(String sdJwtVpString, String requestId)
-            throws StatusListException {
+    public SdJwtVP parseAndValidateSdJwtVP(String sdJwtVpString, String requestId) throws StatusListException {
 
-        logger.debugf(
-                "Parsing SD-JWT VP token using Keycloak's built-in SdJwtVP class. RequestId: %s",
-                requestId);
+        logger.debugf("Parsing SD-JWT VP token using Keycloak's built-in SdJwtVP class. RequestId: %s", requestId);
 
         try {
             if (sdJwtVpString == null || sdJwtVpString.trim().isEmpty()) {
                 throw new StatusListException("SD-JWT VP token is empty or null");
             }
-            
+
             SdJwtVP sdJwtVP = SdJwtVP.of(sdJwtVpString);
-            
+
             logger.infof("SD-JWT VP parsed successfully. RequestId: %s", requestId);
-            
+
             return sdJwtVP;
 
         } catch (IllegalArgumentException e) {
 
-            logger.errorf(
-                    "Invalid SD-JWT VP token format. RequestId: %s, Error: %s", requestId, e.getMessage());
+            logger.errorf("Invalid SD-JWT VP token format. RequestId: %s, Error: %s", requestId, e.getMessage());
             throw new StatusListException("Invalid SD-JWT VP token format: " + e.getMessage(), e);
         } catch (Exception e) {
-            logger.errorf(
-                    "Failed to parse SD-JWT VP token. RequestId: %s, Error: %s", requestId, e.getMessage());
+            logger.errorf("Failed to parse SD-JWT VP token. RequestId: %s, Error: %s", requestId, e.getMessage());
             throw new StatusListException("Failed to parse SD-JWT VP token: " + e.getMessage(), e);
         }
     }
@@ -73,7 +66,7 @@ public class DefaultSdJwtVPValidationService implements SdJwtVPValidationService
      */
     public void verifySdJwtVP(SdJwtVP sdJwtVP, String requestId, String expectedNonce) throws StatusListException {
         try {
-          
+
             String issuer = extractIssuerFromToken(sdJwtVP);
             if (issuer == null || issuer.trim().isEmpty()) {
                 logger.errorf("No issuer found in SD-JWT VP token. RequestId: %s", requestId);
@@ -84,27 +77,29 @@ public class DefaultSdJwtVPValidationService implements SdJwtVPValidationService
             List<SignatureVerifierContext> verifyingKeys = jwksService.getSignatureVerifierContexts(sdJwtVP, requestId);
 
             if (verifyingKeys.isEmpty()) {
-                logger.errorf(
-                        "No valid issuer signature verifier contexts created. RequestId: %s", requestId);
+                logger.errorf("No valid issuer signature verifier contexts created. RequestId: %s", requestId);
                 throw new StatusListException("No public keys available for issuer: " + issuer);
             }
-            
+
             sdJwtVP.verify(
-                verifyingKeys,
-                getIssuerSignedJwtVerificationOpts(),
-                getKeyBindingJwtVerificationOpts(requestId, getRevocationEndpointUrl(), expectedNonce)
-            );
-            
-            logger.infof("SD-JWT VP signature verification completed successfully with nonce validation. RequestId: %s, Nonce: %s", requestId, expectedNonce);
-            
+                    verifyingKeys,
+                    getIssuerSignedJwtVerificationOpts(),
+                    getKeyBindingJwtVerificationOpts(requestId, getRevocationEndpointUrl(), expectedNonce));
+
+            logger.infof(
+                    "SD-JWT VP signature verification completed successfully with nonce validation. RequestId: %s, Nonce: %s",
+                    requestId, expectedNonce);
+
         } catch (VerificationException e) {
-            logger.errorf("SD-JWT VP signature verification failed - REJECTING REQUEST. RequestId: %s, Error: %s",
-                         requestId, e.getMessage());
+            logger.errorf(
+                    "SD-JWT VP signature verification failed - REJECTING REQUEST. RequestId: %s, Error: %s",
+                    requestId, e.getMessage());
             throw new StatusListException("Invalid SD-JWT VP signature: " + e.getMessage(), e, 401);
-            
+
         } catch (Exception e) {
-            logger.errorf("SD-JWT VP verification failed - REJECTING REQUEST. RequestId: %s, Error: %s",
-                         requestId, e.getMessage());
+            logger.errorf(
+                    "SD-JWT VP verification failed - REJECTING REQUEST. RequestId: %s, Error: %s",
+                    requestId, e.getMessage());
             throw new StatusListException("SD-JWT VP verification failed: " + e.getMessage(), e, 401);
         }
     }
@@ -132,7 +127,7 @@ public class DefaultSdJwtVPValidationService implements SdJwtVPValidationService
                 logger.debug("No Key Binding JWT present in SD-JWT VP");
                 return null;
             }
-            
+
             var payload = kbOpt.get().getPayload();
             if (payload != null) {
                 JsonNode nonceNode = payload.get("nonce");
@@ -140,10 +135,10 @@ public class DefaultSdJwtVPValidationService implements SdJwtVPValidationService
                     return nonceNode.asText();
                 }
             }
-            
+
             logger.debug("Nonce not found in Key Binding JWT payload");
             return null;
-            
+
         } catch (Exception e) {
             logger.warn("Failed to extract nonce from Key Binding JWT", e);
             return null;
@@ -163,15 +158,12 @@ public class DefaultSdJwtVPValidationService implements SdJwtVPValidationService
     }
 
     /**
-
+     *
      * Creates key binding JWT verification options that enforce presenter verification. This is
      * critical for ensuring the presenter is actually the credential holder.
      */
     private KeyBindingJwtVerificationOpts getKeyBindingJwtVerificationOpts(
-            String requestId, 
-            String expectedAudience,
-            String expectedNonce
-    ) throws StatusListException {
+            String requestId, String expectedAudience, String expectedNonce) throws StatusListException {
         try {
             // Build verification options with SERVER-GENERATED nonce
             // The Keycloak library will verify that the client's Key Binding JWT contains this exact nonce
@@ -184,11 +176,14 @@ public class DefaultSdJwtVPValidationService implements SdJwtVPValidationService
                     .withNbfCheck(true)
                     .build();
         } catch (IllegalArgumentException e) {
-            logger.errorf("Failed to build Key Binding verification options due to invalid arguments. RequestId: %s, Error: %s", requestId, e.getMessage());
+            logger.errorf(
+                    "Failed to build Key Binding verification options due to invalid arguments. RequestId: %s, Error: %s",
+                    requestId, e.getMessage());
             throw new StatusListException("Malformed VP: " + e.getMessage(), e, 400);
         } catch (Exception e) {
-            logger.errorf("Unexpected error building Key Binding verification options. RequestId: %s, Error: %s", 
-                        requestId, e.getMessage());
+            logger.errorf(
+                    "Unexpected error building Key Binding verification options. RequestId: %s, Error: %s",
+                    requestId, e.getMessage());
             throw new StatusListException("Failed to build Key Binding verification options: " + e.getMessage(), e);
         }
     }
@@ -212,6 +207,7 @@ public class DefaultSdJwtVPValidationService implements SdJwtVPValidationService
 
     private String getRevocationEndpointUrl() {
         RealmModel realm = session.getContext().getRealm();
-        return Urls.realmIssuer(session.getContext().getUri().getBaseUri(), realm.getName()) + "/protocol/openid-connect/revoke";
+        return Urls.realmIssuer(session.getContext().getUri().getBaseUri(), realm.getName())
+                + "/protocol/openid-connect/revoke";
     }
 }

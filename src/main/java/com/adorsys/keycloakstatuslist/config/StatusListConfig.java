@@ -1,7 +1,6 @@
 package com.adorsys.keycloakstatuslist.config;
 
 import java.util.UUID;
-
 import org.jboss.logging.Logger;
 import org.keycloak.models.RealmModel;
 
@@ -19,7 +18,8 @@ public class StatusListConfig {
     public static final String STATUS_LIST_SERVER_URL = "status-list-server-url";
     public static final String STATUS_LIST_TOKEN_ISSUER_PREFIX = "status-list-token-issuer-prefix";
     public static final String STATUS_LIST_ISSUANCE_TIMEOUT = "status-list-issuance-timeout";
-    public static final String STATUS_LIST_CIRCUIT_BREAKER_FAILURE_THRESHOLD = "status-list-circuit-breaker-failure-threshold";
+    public static final String STATUS_LIST_CIRCUIT_BREAKER_FAILURE_THRESHOLD =
+            "status-list-circuit-breaker-failure-threshold";
     public static final String STATUS_LIST_MANDATORY = "status-list-mandatory";
     public static final String STATUS_LIST_MAX_ENTRIES = "status-list-max-entries";
 
@@ -95,8 +95,7 @@ public class StatusListConfig {
             prefix = UUID.randomUUID().toString();
             realm.setAttribute(STATUS_LIST_TOKEN_ISSUER_PREFIX, prefix);
             logger.warnf(
-                    "No token issuer prefix configured for realm %s. Using generated: %s",
-                    realm.getName(), prefix);
+                    "No token issuer prefix configured for realm %s. Using generated: %s", realm.getName(), prefix);
         }
 
         return String.format("%s::%s", prefix, realm.getName());

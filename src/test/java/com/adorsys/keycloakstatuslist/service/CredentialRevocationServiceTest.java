@@ -1,8 +1,19 @@
 package com.adorsys.keycloakstatuslist.service;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest;
@@ -53,7 +64,9 @@ class CredentialRevocationServiceTest {
     @BeforeEach
     void setUp() {
         service = new CredentialRevocationService(session, statusListService, sdJwtVPValidationService);
-        lenient().when(session.getProvider(eq(RealmResourceProvider.class), eq(NonceCacheServiceProviderFactory.PROVIDER_ID)))
+        lenient()
+                .when(session.getProvider(
+                        eq(RealmResourceProvider.class), eq(NonceCacheServiceProviderFactory.PROVIDER_ID)))
                 .thenReturn((RealmResourceProvider) nonceCacheService);
     }
 
@@ -78,7 +91,8 @@ class CredentialRevocationServiceTest {
         when(sdJwtVP.getIssuerSignedJWT()).thenReturn(issuerSignedJWT);
         when(issuerSignedJWT.getPayload()).thenReturn(issuerPayload);
 
-        when(sdJwtVPValidationService.parseAndValidateSdJwtVP(eq(token), anyString())).thenReturn(sdJwtVP);
+        when(sdJwtVPValidationService.parseAndValidateSdJwtVP(eq(token), anyString()))
+                .thenReturn(sdJwtVP);
         when(sdJwtVPValidationService.extractNonceFromKeyBindingJWT(sdJwtVP)).thenReturn(nonce);
         when(nonceCacheService.consumeNonce(nonce)).thenReturn(challenge);
         doNothing().when(sdJwtVPValidationService).verifySdJwtVP(eq(sdJwtVP), anyString(), eq(nonce));
@@ -115,8 +129,8 @@ class CredentialRevocationServiceTest {
         when(sdJwtVPValidationService.parseAndValidateSdJwtVP(anyString(), anyString()))
                 .thenThrow(new StatusListException("Invalid token format"));
 
-        StatusListException exception = assertThrows(StatusListException.class, () ->
-                service.revokeCredential(request, "bad-token"));
+        StatusListException exception =
+                assertThrows(StatusListException.class, () -> service.revokeCredential(request, "bad-token"));
 
         assertTrue(exception.getMessage().contains("Invalid token format"));
         verify(statusListService, never()).updateStatusList(any(), anyString());
@@ -127,11 +141,12 @@ class CredentialRevocationServiceTest {
         CredentialRevocationRequest request = new CredentialRevocationRequest();
         request.setRevocationMode(CredentialRevocationRequest.CREDENTIAL_REVOCATION_MODE);
 
-        when(sdJwtVPValidationService.parseAndValidateSdJwtVP(anyString(), anyString())).thenReturn(sdJwtVP);
+        when(sdJwtVPValidationService.parseAndValidateSdJwtVP(anyString(), anyString()))
+                .thenReturn(sdJwtVP);
         when(sdJwtVPValidationService.extractNonceFromKeyBindingJWT(sdJwtVP)).thenReturn(null);
 
-        StatusListException exception = assertThrows(StatusListException.class, () ->
-                service.revokeCredential(request, "token"));
+        StatusListException exception =
+                assertThrows(StatusListException.class, () -> service.revokeCredential(request, "token"));
 
         assertTrue(exception.getMessage().contains("Invalid or missing nonce"));
         assertEquals(401, exception.getHttpStatus());
@@ -144,12 +159,13 @@ class CredentialRevocationServiceTest {
         CredentialRevocationRequest request = new CredentialRevocationRequest();
         request.setRevocationMode(CredentialRevocationRequest.CREDENTIAL_REVOCATION_MODE);
 
-        when(sdJwtVPValidationService.parseAndValidateSdJwtVP(anyString(), anyString())).thenReturn(sdJwtVP);
+        when(sdJwtVPValidationService.parseAndValidateSdJwtVP(anyString(), anyString()))
+                .thenReturn(sdJwtVP);
         when(sdJwtVPValidationService.extractNonceFromKeyBindingJWT(sdJwtVP)).thenReturn("bad-nonce");
         when(nonceCacheService.consumeNonce("bad-nonce")).thenReturn(null);
 
-        StatusListException exception = assertThrows(StatusListException.class, () ->
-                service.revokeCredential(request, "token"));
+        StatusListException exception =
+                assertThrows(StatusListException.class, () -> service.revokeCredential(request, "token"));
 
         assertTrue(exception.getMessage().contains("Invalid, expired, or replayed nonce"));
         assertEquals(401, exception.getHttpStatus());
@@ -174,15 +190,17 @@ class CredentialRevocationServiceTest {
         when(sdJwtVP.getIssuerSignedJWT()).thenReturn(issuerSignedJWT);
         when(issuerSignedJWT.getPayload()).thenReturn(issuerPayload);
 
-        when(sdJwtVPValidationService.parseAndValidateSdJwtVP(anyString(), anyString())).thenReturn(sdJwtVP);
+        when(sdJwtVPValidationService.parseAndValidateSdJwtVP(anyString(), anyString()))
+                .thenReturn(sdJwtVP);
         when(sdJwtVPValidationService.extractNonceFromKeyBindingJWT(sdJwtVP)).thenReturn(nonce);
         when(nonceCacheService.consumeNonce(nonce)).thenReturn(challenge);
         doNothing().when(sdJwtVPValidationService).verifySdJwtVP(eq(sdJwtVP), anyString(), eq(nonce));
         doThrow(new StatusListException("Server error", 500))
-                .when(statusListService).updateStatusList(any(), anyString());
+                .when(statusListService)
+                .updateStatusList(any(), anyString());
 
-        StatusListException exception = assertThrows(StatusListException.class, () ->
-                service.revokeCredential(request, "token"));
+        StatusListException exception =
+                assertThrows(StatusListException.class, () -> service.revokeCredential(request, "token"));
 
         assertTrue(exception.getMessage().contains("Server error")
                 || exception.getMessage().contains("Status list")
@@ -198,8 +216,8 @@ class CredentialRevocationServiceTest {
         when(sdJwtVPValidationService.parseAndValidateSdJwtVP(anyString(), anyString()))
                 .thenThrow(new RuntimeException("Unexpected error"));
 
-        StatusListException exception = assertThrows(StatusListException.class, () ->
-                service.revokeCredential(request, "token"));
+        StatusListException exception =
+                assertThrows(StatusListException.class, () -> service.revokeCredential(request, "token"));
 
         assertTrue(exception.getMessage().contains("Failed to process credential revocation"));
         assertTrue(exception.getMessage().contains("Unexpected error"));
@@ -213,13 +231,13 @@ class CredentialRevocationServiceTest {
 
     @Test
     void revokeCredential_nullRequest_throwsNPE() {
-        assertThrows(NullPointerException.class, () ->
-                service.revokeCredential(null, "token"));
+        assertThrows(NullPointerException.class, () -> service.revokeCredential(null, "token"));
     }
 
     @Test
     void revokeCredential_nonceProviderNull_throws500() throws Exception {
-        when(sdJwtVPValidationService.parseAndValidateSdJwtVP(anyString(), anyString())).thenReturn(sdJwtVP);
+        when(sdJwtVPValidationService.parseAndValidateSdJwtVP(anyString(), anyString()))
+                .thenReturn(sdJwtVP);
         when(sdJwtVPValidationService.extractNonceFromKeyBindingJWT(sdJwtVP)).thenReturn("nonce-1");
         when(session.getProvider(eq(RealmResourceProvider.class), eq(NonceCacheServiceProviderFactory.PROVIDER_ID)))
                 .thenReturn(null);
@@ -227,8 +245,8 @@ class CredentialRevocationServiceTest {
         CredentialRevocationRequest request = new CredentialRevocationRequest();
         request.setRevocationMode(CredentialRevocationRequest.CREDENTIAL_REVOCATION_MODE);
 
-        StatusListException ex = assertThrows(StatusListException.class, () ->
-                service.revokeCredential(request, "token"));
+        StatusListException ex =
+                assertThrows(StatusListException.class, () -> service.revokeCredential(request, "token"));
 
         assertTrue(ex.getMessage().contains("Nonce validation service not available"));
         assertEquals(500, ex.getHttpStatus());
