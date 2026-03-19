@@ -2,8 +2,9 @@ package com.adorsys.keycloakstatuslist.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import java.util.Objects;
 import org.keycloak.util.JsonSerialization;
+
+import java.util.Objects;
 
 /**
  * Represents a status claim for inclusion in an OAuth 2.0 or OpenID Connect token, as defined in

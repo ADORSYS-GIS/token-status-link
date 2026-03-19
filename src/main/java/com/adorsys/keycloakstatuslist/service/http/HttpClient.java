@@ -1,11 +1,12 @@
 package com.adorsys.keycloakstatuslist.service.http;
 
-import java.io.IOException;
 import org.apache.hc.client5.http.classic.methods.HttpGet;
 import org.apache.hc.client5.http.classic.methods.HttpPatch;
 import org.apache.hc.client5.http.classic.methods.HttpPost;
 import org.apache.hc.core5.http.ClassicHttpRequest;
 import org.apache.hc.core5.http.io.HttpClientResponseHandler;
+
+import java.io.IOException;
 
 /**
  * Interface for HTTP client operations. Allows alternative HTTP client implementations to be
@@ -22,7 +23,8 @@ public interface HttpClient {
      * @return the response object
      * @throws IOException if the request fails
      */
-    <T> T execute(HttpGet request, HttpClientResponseHandler<? extends T> responseHandler) throws IOException;
+    <T> T execute(HttpGet request, HttpClientResponseHandler<? extends T> responseHandler)
+            throws IOException;
 
     /**
      * Executes an HTTP POST request.
@@ -33,7 +35,8 @@ public interface HttpClient {
      * @return the response object
      * @throws IOException if the request fails
      */
-    <T> T execute(HttpPost request, HttpClientResponseHandler<? extends T> responseHandler) throws IOException;
+    <T> T execute(HttpPost request, HttpClientResponseHandler<? extends T> responseHandler)
+            throws IOException;
 
     /**
      * Executes an HTTP PATCH request.
@@ -44,7 +47,8 @@ public interface HttpClient {
      * @return the response object
      * @throws IOException if the request fails
      */
-    <T> T execute(HttpPatch request, HttpClientResponseHandler<? extends T> responseHandler) throws IOException;
+    <T> T execute(HttpPatch request, HttpClientResponseHandler<? extends T> responseHandler)
+            throws IOException;
 
     /**
      * Executes a generic HTTP request.
@@ -58,3 +62,4 @@ public interface HttpClient {
     <T> T execute(ClassicHttpRequest request, HttpClientResponseHandler<? extends T> responseHandler)
             throws IOException;
 }
+

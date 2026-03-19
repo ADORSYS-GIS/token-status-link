@@ -48,4 +48,14 @@
         </createIndex>
     </changeSet>
 
+    <changeSet id="add-created-timestamp-to-status-list-mapping" author="adorsys">
+        <addColumn tableName="status_list_mapping">
+            <column name="created_timestamp" type="bigint"/>
+        </addColumn>
+        <createIndex indexName="idx_status_list_mapping_realm_created_timestamp" tableName="status_list_mapping">
+            <column name="realm_id" />
+            <column name="created_timestamp" />
+        </createIndex>
+    </changeSet>
+
 </databaseChangeLog>

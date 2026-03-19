@@ -5,13 +5,16 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mockStatic;
 
+import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
 import jakarta.persistence.EntityManager;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.Field;
 import java.security.NoSuchAlgorithmException;
 import java.security.spec.InvalidKeySpecException;
+
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpResponse;
 import org.junit.jupiter.api.AfterEach;
@@ -44,43 +47,32 @@ public class MockKeycloakTest {
 
     @Mock
     protected KeycloakSession session;
-
     @Mock
     protected KeyManager keyManager;
-
     @Mock
     protected KeycloakSessionFactory sessionFactory;
-
     @Mock
     protected KeycloakTransactionManager transactionManager;
 
     @Mock
     protected JpaConnectionProvider jpaConnectionProvider;
-
     @Mock
     protected EntityManager entityManager;
 
     @Mock
     protected KeycloakContext context;
-
     @Mock
     protected RealmModel realm;
-
     @Mock
     protected ClientModel client;
-
     @Mock
     protected UserSessionModel userSession;
-
     @Mock
     protected ClientConnection clientConnection;
-
     @Mock
     protected CloseableHttpClient httpClient;
-
     @Mock
     protected CloseableHttpResponse httpResponse;
-
     private MockedStatic<CustomHttpClient> mocked;
 
     static KeyWrapper getActiveRsaKey() {
@@ -130,7 +122,9 @@ public class MockKeycloakTest {
         lenient().when(session.getTransactionManager()).thenReturn(transactionManager);
         lenient().doNothing().when(transactionManager).begin();
 
-        lenient().when(session.getProvider(JpaConnectionProvider.class)).thenReturn(jpaConnectionProvider);
+        lenient()
+                .when(session.getProvider(JpaConnectionProvider.class))
+                .thenReturn(jpaConnectionProvider);
         lenient().when(jpaConnectionProvider.getEntityManager()).thenReturn(entityManager);
 
         lenient().when(session.getContext()).thenReturn(context);
@@ -146,7 +140,7 @@ public class MockKeycloakTest {
     @BeforeEach
     void httpSetUp() {
         mocked = mockStatic(CustomHttpClient.class);
-        mocked.when(CustomHttpClient::getHttpClient).thenReturn(httpClient);
+        mocked.when(() -> CustomHttpClient.getHttpClient(any(StatusListConfig.class))).thenReturn(httpClient);
     }
 
     @AfterEach

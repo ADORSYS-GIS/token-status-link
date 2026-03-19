@@ -17,3 +17,4 @@ public interface RequestValidationService {
      */
     void validateRevocationRequest(CredentialRevocationRequest request) throws StatusListException;
 }
+

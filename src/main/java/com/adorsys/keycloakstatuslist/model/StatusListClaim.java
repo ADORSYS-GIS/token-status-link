@@ -2,9 +2,10 @@ package com.adorsys.keycloakstatuslist.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import org.keycloak.util.JsonSerialization;
+
 import java.net.URI;
 import java.util.Objects;
-import org.keycloak.util.JsonSerialization;
 
 /**
  * Represents the `status_list` claim object for a token, as defined in the <a href=
