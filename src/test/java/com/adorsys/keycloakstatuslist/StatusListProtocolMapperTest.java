@@ -1,28 +1,5 @@
 package com.adorsys.keycloakstatuslist;
 
-import com.adorsys.keycloakstatuslist.config.StatusListConfig;
-import com.adorsys.keycloakstatuslist.exception.StatusListException;
-import com.adorsys.keycloakstatuslist.helpers.MockKeycloakTest;
-import com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
-import com.adorsys.keycloakstatuslist.jpa.repository.StatusListRepository;
-import com.adorsys.keycloakstatuslist.model.Status;
-import com.adorsys.keycloakstatuslist.model.StatusListClaim;
-import com.adorsys.keycloakstatuslist.model.TokenStatus;
-import com.adorsys.keycloakstatuslist.service.StatusListService;
-import jakarta.persistence.PersistenceException;
-import jakarta.ws.rs.core.UriBuilder;
-import nl.altindag.log.LogCaptor;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.keycloak.protocol.ProtocolMapper;
-import org.keycloak.models.ProtocolMapperModel;
-import org.mockito.ArgumentCaptor;
-import org.mockito.Mock;
-
-import java.net.URI;
-import java.util.HashMap;
-import java.util.concurrent.ThreadLocalRandom;
-
 import static com.adorsys.keycloakstatuslist.StatusListProtocolMapper.Constants;
 import static com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity.MappingStatus;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -43,6 +20,28 @@ import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+
+import com.adorsys.keycloakstatuslist.config.StatusListConfig;
+import com.adorsys.keycloakstatuslist.exception.StatusListException;
+import com.adorsys.keycloakstatuslist.helpers.MockKeycloakTest;
+import com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
+import com.adorsys.keycloakstatuslist.jpa.repository.StatusListRepository;
+import com.adorsys.keycloakstatuslist.model.Status;
+import com.adorsys.keycloakstatuslist.model.StatusListClaim;
+import com.adorsys.keycloakstatuslist.model.TokenStatus;
+import com.adorsys.keycloakstatuslist.service.StatusListService;
+import jakarta.persistence.PersistenceException;
+import jakarta.ws.rs.core.UriBuilder;
+import java.net.URI;
+import java.util.HashMap;
+import java.util.concurrent.ThreadLocalRandom;
+import nl.altindag.log.LogCaptor;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.keycloak.models.ProtocolMapperModel;
+import org.keycloak.protocol.ProtocolMapper;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mock;
 
 class StatusListProtocolMapperTest extends MockKeycloakTest {
 
