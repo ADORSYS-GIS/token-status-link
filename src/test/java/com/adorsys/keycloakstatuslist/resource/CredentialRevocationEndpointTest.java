@@ -64,7 +64,9 @@ class CredentialRevocationEndpointTest {
         when(context.getRealm()).thenReturn(realm);
 
         lenient().when(realm.getAttribute(StatusListConfig.STATUS_LIST_ENABLED)).thenReturn("true");
-        lenient().when(realm.getAttribute(StatusListConfig.STATUS_LIST_SERVER_URL)).thenReturn("https://status.example.com");
+        lenient()
+                .when(realm.getAttribute(StatusListConfig.STATUS_LIST_SERVER_URL))
+                .thenReturn("https://status.example.com");
 
         revocationService = new FakeCredentialRevocationService();
         endpoint = new CredentialRevocationEndpoint(session, eventBuilder, revocationService);
@@ -85,7 +87,8 @@ class CredentialRevocationEndpointTest {
 
         assertEquals(401, response.getStatus());
         assertInstanceOf(CredentialRevocationResponse.class, response.getEntity());
-        assertEquals("Missing Authorization header", ((CredentialRevocationResponse) response.getEntity()).getMessage());
+        assertEquals(
+                "Missing Authorization header", ((CredentialRevocationResponse) response.getEntity()).getMessage());
         assertNoRevocationAttempt();
     }
 
@@ -135,7 +138,8 @@ class CredentialRevocationEndpointTest {
     @Test
     void shouldReturnServerErrorWhenServiceEnabledCheckFails() {
         setCredentialRevocationForm("manual-check");
-        when(realm.getAttribute(StatusListConfig.STATUS_LIST_ENABLED)).thenThrow(new RuntimeException("realm misconfigured"));
+        when(realm.getAttribute(StatusListConfig.STATUS_LIST_ENABLED))
+                .thenThrow(new RuntimeException("realm misconfigured"));
         when(headers.getHeaderString(HttpHeaders.AUTHORIZATION)).thenReturn("Bearer test-token");
 
         Response response = endpoint.revoke();
@@ -166,7 +170,8 @@ class CredentialRevocationEndpointTest {
     void shouldReturnServerErrorWhenServiceConfigurationCheckFails() {
         setCredentialRevocationForm("manual-check");
         when(realm.getAttribute(StatusListConfig.STATUS_LIST_ENABLED)).thenReturn("true");
-        when(realm.getAttribute(StatusListConfig.STATUS_LIST_SERVER_URL)).thenThrow(new RuntimeException("missing attribute"));
+        when(realm.getAttribute(StatusListConfig.STATUS_LIST_SERVER_URL))
+                .thenThrow(new RuntimeException("missing attribute"));
         when(headers.getHeaderString(HttpHeaders.AUTHORIZATION)).thenReturn("Bearer test-token");
 
         Response response = endpoint.revoke();

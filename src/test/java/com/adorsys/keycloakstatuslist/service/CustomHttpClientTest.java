@@ -47,10 +47,7 @@ class CustomHttpClientTest {
         HttpRequestRetryStrategy strategy = getRetryStrategy();
 
         boolean shouldRetry = strategy.retryRequest(
-                mock(HttpRequest.class),
-                new IOException("network error"),
-                1,
-                mock(HttpContext.class));
+                mock(HttpRequest.class), new IOException("network error"), 1, mock(HttpContext.class));
 
         assertFalse(shouldRetry);
     }

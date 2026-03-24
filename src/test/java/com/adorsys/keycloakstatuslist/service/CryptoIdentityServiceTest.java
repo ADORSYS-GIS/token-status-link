@@ -43,7 +43,8 @@ class CryptoIdentityServiceTest extends MockKeycloakTest {
 
     @Test
     void getActiveKeyShouldThrowWhenNoActiveSigningKey() {
-        when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq(Algorithm.RS256))).thenReturn(null);
+        when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq(Algorithm.RS256)))
+                .thenReturn(null);
 
         IllegalStateException ex = assertThrows(IllegalStateException.class, () -> service.getActiveKey(realm));
         assertTrue(ex.getMessage().contains("No active signing key found"));
@@ -51,7 +52,8 @@ class CryptoIdentityServiceTest extends MockKeycloakTest {
 
     @Test
     void getJwtTokenShouldContainExpectedIssuerClaim() {
-        when(realm.getAttribute(StatusListConfig.STATUS_LIST_TOKEN_ISSUER_PREFIX)).thenReturn("issuer-prefix");
+        when(realm.getAttribute(StatusListConfig.STATUS_LIST_TOKEN_ISSUER_PREFIX))
+                .thenReturn("issuer-prefix");
         StatusListConfig config = new StatusListConfig(realm);
 
         String token = service.getJwtToken(config);
@@ -68,7 +70,8 @@ class CryptoIdentityServiceTest extends MockKeycloakTest {
     @Test
     void getRealmKeyDataShouldFallbackToRs256WhenDefaultAlgMissing() throws Exception {
         when(realm.getDefaultSignatureAlgorithm()).thenReturn(null);
-        when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq(Algorithm.ES256))).thenReturn(null);
+        when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq(Algorithm.ES256)))
+                .thenReturn(null);
         when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq(Algorithm.RS256)))
                 .thenReturn(RSATestUtils.getRsaKeyWrapper(testJwkResource("/keycloak-active-key-rsa.json")));
 
@@ -91,7 +94,8 @@ class CryptoIdentityServiceTest extends MockKeycloakTest {
         ecKey.setPublicKey(ecPair.getPublic());
 
         when(realm.getDefaultSignatureAlgorithm()).thenReturn(Algorithm.ES256);
-        when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq(Algorithm.ES256))).thenReturn(ecKey);
+        when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq(Algorithm.ES256)))
+                .thenReturn(ecKey);
 
         CryptoIdentityService.KeyData keyData = CryptoIdentityService.getRealmKeyData(session, realm);
 
@@ -104,7 +108,8 @@ class CryptoIdentityServiceTest extends MockKeycloakTest {
     @Test
     void getRealmKeyDataShouldThrowWhenNoActiveKeyFound() {
         when(realm.getDefaultSignatureAlgorithm()).thenReturn(Algorithm.RS256);
-        when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq(Algorithm.RS256))).thenReturn(null);
+        when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq(Algorithm.RS256)))
+                .thenReturn(null);
 
         StatusListException ex =
                 assertThrows(StatusListException.class, () -> CryptoIdentityService.getRealmKeyData(session, realm));
@@ -119,7 +124,8 @@ class CryptoIdentityServiceTest extends MockKeycloakTest {
         keyWithoutPublicKey.setPublicKey(null);
 
         when(realm.getDefaultSignatureAlgorithm()).thenReturn(Algorithm.RS256);
-        when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq(Algorithm.RS256))).thenReturn(keyWithoutPublicKey);
+        when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq(Algorithm.RS256)))
+                .thenReturn(keyWithoutPublicKey);
 
         StatusListException ex =
                 assertThrows(StatusListException.class, () -> CryptoIdentityService.getRealmKeyData(session, realm));
@@ -136,7 +142,8 @@ class CryptoIdentityServiceTest extends MockKeycloakTest {
         unsupported.setPublicKey(unsupportedKey);
 
         when(realm.getDefaultSignatureAlgorithm()).thenReturn(Algorithm.RS256);
-        when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq(Algorithm.RS256))).thenReturn(unsupported);
+        when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq(Algorithm.RS256)))
+                .thenReturn(unsupported);
 
         StatusListException ex =
                 assertThrows(StatusListException.class, () -> CryptoIdentityService.getRealmKeyData(session, realm));

@@ -191,8 +191,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
     @Test
     void shouldNotMap_IfStatusServerUrlIsBlank() {
-        when(realm.getAttribute(StatusListConfig.STATUS_LIST_SERVER_URL))
-                .thenReturn(" ");
+        when(realm.getAttribute(StatusListConfig.STATUS_LIST_SERVER_URL)).thenReturn(" ");
 
         mapper.setClaim(claims, userSession);
 
@@ -202,8 +201,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
     @Test
     void shouldMap_WhenHttpStatusServerUrlIsUsed() {
-        when(realm.getAttribute(StatusListConfig.STATUS_LIST_SERVER_URL))
-                .thenReturn("http://example.com");
+        when(realm.getAttribute(StatusListConfig.STATUS_LIST_SERVER_URL)).thenReturn("http://example.com");
         long idx = mockGetNextIndex();
 
         mapper.setClaim(claims, userSession);

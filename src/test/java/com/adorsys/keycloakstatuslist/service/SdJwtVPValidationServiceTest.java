@@ -234,9 +234,7 @@ class SdJwtVPValidationServiceTest {
 
         when(jwksService.getSignatureVerifierContexts(any(SdJwtVP.class), eq(requestId)))
                 .thenReturn(List.of(verifierContext));
-        doThrow(new VerificationException("bad signature"))
-                .when(sdJwtVP)
-                .verify(anyList(), any(), any());
+        doThrow(new VerificationException("bad signature")).when(sdJwtVP).verify(anyList(), any(), any());
 
         StatusListException ex =
                 assertThrows(StatusListException.class, () -> service.verifySdJwtVP(sdJwtVP, requestId, "nonce"));
@@ -285,9 +283,7 @@ class SdJwtVPValidationServiceTest {
 
         when(jwksService.getSignatureVerifierContexts(any(SdJwtVP.class), eq(requestId)))
                 .thenReturn(List.of(verifierContext));
-        doThrow(new RuntimeException("unexpected failure"))
-                .when(sdJwtVP)
-                .verify(anyList(), any(), any());
+        doThrow(new RuntimeException("unexpected failure")).when(sdJwtVP).verify(anyList(), any(), any());
 
         StatusListException ex =
                 assertThrows(StatusListException.class, () -> service.verifySdJwtVP(sdJwtVP, requestId, "nonce"));

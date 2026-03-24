@@ -35,8 +35,8 @@ class ApacheHttpStatusListClientTest {
     void registerIssuerShouldSucceedOn2xx() throws Exception {
         CloseableHttpClient httpClient = mock(CloseableHttpClient.class);
         mockPostResponse(httpClient, 201, "{\"ok\":true}");
-        ApacheHttpStatusListClient client = new ApacheHttpStatusListClient(
-                "https://status.example.com", "token", httpClient, null);
+        ApacheHttpStatusListClient client =
+                new ApacheHttpStatusListClient("https://status.example.com", "token", httpClient, null);
 
         client.registerIssuer("issuer-1", mock(JWK.class));
 
@@ -47,8 +47,8 @@ class ApacheHttpStatusListClientTest {
     void registerIssuerShouldAcceptConflictAsAlreadyRegistered() throws Exception {
         CloseableHttpClient httpClient = mock(CloseableHttpClient.class);
         mockPostResponse(httpClient, 409, "{\"message\":\"already exists\"}");
-        ApacheHttpStatusListClient client = new ApacheHttpStatusListClient(
-                "https://status.example.com", "token", httpClient, null);
+        ApacheHttpStatusListClient client =
+                new ApacheHttpStatusListClient("https://status.example.com", "token", httpClient, null);
 
         client.registerIssuer("issuer-1", mock(JWK.class));
 
@@ -59,14 +59,14 @@ class ApacheHttpStatusListClientTest {
     void checkStatusListExistsShouldHandle200And404() throws Exception {
         CloseableHttpClient okClient = mock(CloseableHttpClient.class);
         mockGetResponse(okClient, 200, "");
-        ApacheHttpStatusListClient ok = new ApacheHttpStatusListClient(
-                "https://status.example.com/", "token", okClient, null);
+        ApacheHttpStatusListClient ok =
+                new ApacheHttpStatusListClient("https://status.example.com/", "token", okClient, null);
         assertTrue(ok.checkStatusListExists("list-1"));
 
         CloseableHttpClient notFoundClient = mock(CloseableHttpClient.class);
         mockGetResponse(notFoundClient, 404, "");
-        ApacheHttpStatusListClient notFound = new ApacheHttpStatusListClient(
-                "https://status.example.com/", "token", notFoundClient, null);
+        ApacheHttpStatusListClient notFound =
+                new ApacheHttpStatusListClient("https://status.example.com/", "token", notFoundClient, null);
         assertFalse(notFound.checkStatusListExists("list-2"));
     }
 
@@ -74,8 +74,8 @@ class ApacheHttpStatusListClientTest {
     void checkStatusListExistsShouldThrowOnServerError() throws Exception {
         CloseableHttpClient httpClient = mock(CloseableHttpClient.class);
         mockGetResponse(httpClient, 500, "{\"error\":\"boom\"}");
-        ApacheHttpStatusListClient client = new ApacheHttpStatusListClient(
-                "https://status.example.com", "token", httpClient, null);
+        ApacheHttpStatusListClient client =
+                new ApacheHttpStatusListClient("https://status.example.com", "token", httpClient, null);
 
         assertThrows(StatusListServerException.class, () -> client.checkStatusListExists("list-1"));
     }
@@ -85,11 +85,10 @@ class ApacheHttpStatusListClientTest {
         CloseableHttpClient httpClient = mock(CloseableHttpClient.class);
         mockPostResponse(httpClient, 200, "{\"ok\":true}");
         mockPatchResponse(httpClient, 200, "{\"ok\":true}");
-        ApacheHttpStatusListClient client = new ApacheHttpStatusListClient(
-                "https://status.example.com", "token", httpClient, null);
+        ApacheHttpStatusListClient client =
+                new ApacheHttpStatusListClient("https://status.example.com", "token", httpClient, null);
         StatusListService.StatusListPayload payload = new StatusListService.StatusListPayload(
-                "list-1",
-                List.of(new StatusListService.StatusListPayload.StatusEntry(1, "VALID")));
+                "list-1", List.of(new StatusListService.StatusListPayload.StatusEntry(1, "VALID")));
 
         client.publishStatusList(payload, "req-1");
         client.updateStatusList(payload, "req-2");
@@ -102,21 +101,21 @@ class ApacheHttpStatusListClientTest {
     void checkServerHealthShouldReturnTrueOn2xxAndFalseOnErrors() throws Exception {
         CloseableHttpClient healthyClient = mock(CloseableHttpClient.class);
         mockGetResponse(healthyClient, 200, "");
-        ApacheHttpStatusListClient healthy = new ApacheHttpStatusListClient(
-                "https://status.example.com", "token", healthyClient, null);
+        ApacheHttpStatusListClient healthy =
+                new ApacheHttpStatusListClient("https://status.example.com", "token", healthyClient, null);
         assertTrue(healthy.checkServerHealth());
 
         CloseableHttpClient unhealthyClient = mock(CloseableHttpClient.class);
         mockGetResponse(unhealthyClient, 503, "");
-        ApacheHttpStatusListClient unhealthy = new ApacheHttpStatusListClient(
-                "https://status.example.com", "token", unhealthyClient, null);
+        ApacheHttpStatusListClient unhealthy =
+                new ApacheHttpStatusListClient("https://status.example.com", "token", unhealthyClient, null);
         assertFalse(unhealthy.checkServerHealth());
 
         CloseableHttpClient ioFailingClient = mock(CloseableHttpClient.class);
         when(ioFailingClient.execute(any(HttpGet.class), any(HttpClientResponseHandler.class)))
                 .thenThrow(new IOException("down"));
-        ApacheHttpStatusListClient ioFailing = new ApacheHttpStatusListClient(
-                "https://status.example.com", "token", ioFailingClient, null);
+        ApacheHttpStatusListClient ioFailing =
+                new ApacheHttpStatusListClient("https://status.example.com", "token", ioFailingClient, null);
         assertFalse(ioFailing.checkServerHealth());
     }
 
@@ -125,8 +124,8 @@ class ApacheHttpStatusListClientTest {
         CloseableHttpClient httpClient = mock(CloseableHttpClient.class);
         CircuitBreaker breaker = createBreaker("client-cb-open", 1, 60, 30);
         breaker.recordFailure();
-        ApacheHttpStatusListClient client = new ApacheHttpStatusListClient(
-                "https://status.example.com", "token", httpClient, breaker);
+        ApacheHttpStatusListClient client =
+                new ApacheHttpStatusListClient("https://status.example.com", "token", httpClient, breaker);
 
         assertThrows(StatusListException.class, () -> client.checkStatusListExists("list-1"));
         verify(httpClient, never()).execute(any(HttpGet.class), any(HttpClientResponseHandler.class));
@@ -138,8 +137,8 @@ class ApacheHttpStatusListClientTest {
         when(httpClient.execute(any(HttpGet.class), any(HttpClientResponseHandler.class)))
                 .thenThrow(new InterruptedIOException("timeout"));
         CircuitBreaker breaker = createBreaker("client-cb-timeout", 5, 60, 30);
-        ApacheHttpStatusListClient client = new ApacheHttpStatusListClient(
-                "https://status.example.com", "token", httpClient, breaker);
+        ApacheHttpStatusListClient client =
+                new ApacheHttpStatusListClient("https://status.example.com", "token", httpClient, breaker);
 
         assertThrows(StatusListException.class, () -> client.checkStatusListExists("list-1"));
         assertTrue(Thread.currentThread().isInterrupted());
