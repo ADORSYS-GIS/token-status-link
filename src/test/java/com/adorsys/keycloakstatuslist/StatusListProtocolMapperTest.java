@@ -1,24 +1,5 @@
 package com.adorsys.keycloakstatuslist;
 
-import static com.adorsys.keycloakstatuslist.StatusListProtocolMapper.Constants;
-import static com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity.MappingStatus;
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.containsString;
-import static org.hamcrest.Matchers.equalTo;
-import static org.hamcrest.Matchers.hasItem;
-import static org.hamcrest.Matchers.hasItems;
-import static org.hamcrest.Matchers.not;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.anyString;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.lenient;
-import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
-
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.helpers.MockKeycloakTest;
@@ -30,15 +11,38 @@ import com.adorsys.keycloakstatuslist.model.TokenStatus;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
 import jakarta.persistence.PersistenceException;
 import jakarta.ws.rs.core.UriBuilder;
-import java.net.URI;
-import java.util.HashMap;
-import java.util.concurrent.ThreadLocalRandom;
 import nl.altindag.log.LogCaptor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.keycloak.protocol.ProtocolMapper;
 import org.keycloak.models.ProtocolMapperModel;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
+
+import java.net.URI;
+import java.util.HashMap;
+import java.util.concurrent.ThreadLocalRandom;
+
+import static com.adorsys.keycloakstatuslist.StatusListProtocolMapper.Constants;
+import static com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity.MappingStatus;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.hasItems;
+import static org.hamcrest.Matchers.not;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class StatusListProtocolMapperTest extends MockKeycloakTest {
 
@@ -78,9 +82,41 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
     }
 
     @Test
+    void shouldCreateSessionBoundMapperInstance() {
+        ProtocolMapper created = mapper.create(session);
+        assertInstanceOf(StatusListProtocolMapper.class, created);
+    }
+
+    @Test
+    void shouldReturnWithoutMappingWhenSessionIsMissing() {
+        StatusListProtocolMapper mapperWithoutSession = new StatusListProtocolMapper();
+        HashMap<String, Object> localClaims = new HashMap<>();
+        localClaims.put(Constants.ID_CLAIM_KEY, "did:example:123");
+
+        mapperWithoutSession.setClaim(localClaims, userSession);
+
+        assertThat(localClaims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
+    }
+
+    @Test
     void testGetMetadataAttributePath() {
         assertEquals(
                 Constants.STATUS_CLAIM_KEY, mapper.getMetadataAttributePath().get(0));
+    }
+
+    @Test
+    void shouldExposeMapperMetadataMethods() {
+        assertEquals(Constants.MAPPER_ID, mapper.getId());
+        assertEquals("Status List Claim Mapper", mapper.getDisplayType());
+        assertTrue(mapper.getHelpText().contains("status list claim"));
+        assertFalse(mapper.includeInMetadata());
+        assertTrue(mapper.getIndividualConfigProperties().isEmpty());
+        mapper.close();
+    }
+
+    @Test
+    void shouldNoOpForW3CVerifiableCredentialClaimSetter() {
+        mapper.setClaim((org.keycloak.protocol.oid4vc.model.VerifiableCredential) null, userSession);
     }
 
     @Test
@@ -152,6 +188,31 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
         assertThat("Claims should remain unmapped", claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
         assertThat(logCaptor.getErrorLogs(), hasItem(containsString("Invalid status list server URL")));
+    }
+
+    @Test
+    void shouldNotMap_IfStatusServerUrlIsBlank() {
+        when(realm.getAttribute(StatusListConfig.STATUS_LIST_SERVER_URL))
+                .thenReturn(" ");
+
+        mapper.setClaim(claims, userSession);
+
+        assertThat("Claims should remain unmapped", claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
+        assertThat(logCaptor.getErrorLogs(), hasItem(containsString("Invalid status list server URL")));
+    }
+
+    @Test
+    void shouldMap_WhenHttpStatusServerUrlIsUsed() {
+        when(realm.getAttribute(StatusListConfig.STATUS_LIST_SERVER_URL))
+                .thenReturn("http://example.com");
+        long idx = mockGetNextIndex();
+
+        mapper.setClaim(claims, userSession);
+
+        assertThat(claims.keySet(), hasItem(Constants.STATUS_CLAIM_KEY));
+        Status status = (Status) claims.get(Constants.STATUS_CLAIM_KEY);
+        assertEquals(idx, status.getStatusList().getIdx());
+        assertTrue(status.getStatusList().getUri().toString().startsWith("http://"));
     }
 
     @Test
@@ -234,6 +295,26 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         assertThat(
                 logCaptor.getErrorLogs(),
                 hasItem(containsString("Status list is mandatory and publication failed; failing issuance")));
+    }
+
+    @Test
+    void shouldMapStatusEvenWhenIdClaimIsNotString() {
+        mockGetNextIndex();
+        claims.put(Constants.ID_CLAIM_KEY, 1234L);
+
+        mapper.setClaim(claims, userSession);
+
+        assertThat(claims.keySet(), hasItem(Constants.STATUS_CLAIM_KEY));
+    }
+
+    @Test
+    void shouldMapStatusEvenWhenIdClaimIsMissing() {
+        mockGetNextIndex();
+        claims.remove(Constants.ID_CLAIM_KEY);
+
+        mapper.setClaim(claims, userSession);
+
+        assertThat(claims.keySet(), hasItem(Constants.STATUS_CLAIM_KEY));
     }
 
     private void mockDefaultRealmConfig() {
