@@ -133,8 +133,8 @@ public class CustomOIDCLoginProtocolFactory extends OIDCLoginProtocolFactory {
 
     /**
      * Ensures the realm is registered as an issuer.
-     * Synchronous implementation that uses a per-realm lock to prevent concurrent 
-     * registration attempts. Should be called from a background thread or a 
+     * Synchronous implementation that uses a per-realm lock to prevent concurrent
+     * registration attempts. Should be called from a background thread or a
      * request context that can afford a delay.
      */
     private void ensureRealmRegistered(KeycloakSession session, RealmModel realm) {
