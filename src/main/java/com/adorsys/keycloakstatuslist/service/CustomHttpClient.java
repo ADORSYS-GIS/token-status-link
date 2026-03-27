@@ -18,7 +18,7 @@ public class CustomHttpClient {
     private static final Logger logger = Logger.getLogger(CustomHttpClient.class);
 
     public static final int DEFAULT_CONNECT_TIMEOUT = 30000;
-    private static final int DEFAULT_RETRY_COUNT = 0; // Retry disabled by default
+    private static final int DEFAULT_RETRY_COUNT = 1; // Enable one retry by default
 
     /**
      * Creates an HTTP client with timeout values from the configuration.

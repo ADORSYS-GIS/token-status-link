@@ -55,6 +55,7 @@ class CustomOIDCLoginProtocolFactoryTest {
     private KeycloakSessionFactory sessionFactory;
     private KeycloakSession session;
     private KeycloakTransactionManager transactionManager;
+    private RealmProvider realmProvider;
     private RealmModel realm;
     private JpaConnectionProvider jpaConnectionProvider;
     private EntityManager entityManager;
@@ -67,12 +68,17 @@ class CustomOIDCLoginProtocolFactoryTest {
 
     @BeforeEach
     void setUp() {
-        factory = new CustomOIDCLoginProtocolFactory();
+        factory = new CustomOIDCLoginProtocolFactory() {
+            @Override
+            protected void runAsync(Runnable runnable) {
+                runnable.run();
+            }
+        };
         sessionFactory = mock(KeycloakSessionFactory.class);
         session = mock(KeycloakSession.class);
         KeycloakContext context1 = mock(KeycloakContext.class);
         transactionManager = mock(KeycloakTransactionManager.class);
-        RealmProvider realmProvider = mock(RealmProvider.class);
+        realmProvider = mock(RealmProvider.class);
         realm = mock(RealmModel.class);
         jpaConnectionProvider = mock(JpaConnectionProvider.class);
         entityManager = mock(EntityManager.class);
@@ -81,11 +87,13 @@ class CustomOIDCLoginProtocolFactoryTest {
         lenient().when(context1.getRealm()).thenReturn(realm);
 
         when(sessionFactory.create()).thenReturn(session);
+        when(session.getKeycloakSessionFactory()).thenReturn(sessionFactory);
         when(session.getTransactionManager()).thenReturn(transactionManager);
         when(session.realms()).thenReturn(realmProvider);
         when(session.getProvider(eq(JpaConnectionProvider.class))).thenReturn(jpaConnectionProvider);
         when(jpaConnectionProvider.getEntityManager()).thenReturn(entityManager);
         when(realmProvider.getRealmsStream()).thenAnswer(i -> Stream.of(realm));
+        lenient().when(realmProvider.getRealmByName("test-realm")).thenReturn(realm);
 
         when(realm.getName()).thenReturn("test-realm");
         when(realm.getAttribute("status-list-enabled")).thenReturn("true");
@@ -100,6 +108,12 @@ class CustomOIDCLoginProtocolFactoryTest {
         mockedCryptoServiceConstruction =
                 mockConstruction(CryptoIdentityService.class, (mock, context) -> when(mock.getJwtToken(any()))
                         .thenReturn("mock-token"));
+
+        JWK mockJwk = mock(JWK.class);
+        CryptoIdentityService.KeyData keyData = new CryptoIdentityService.KeyData(mockJwk, "RS256");
+        mockedRevocationService
+                .when(() -> CryptoIdentityService.getRealmKeyData(any(), any()))
+                .thenReturn(keyData);
     }
 
     @AfterEach
@@ -137,12 +151,6 @@ class CustomOIDCLoginProtocolFactoryTest {
                     return handler.handleResponse(httpResponse);
                 });
 
-        JWK mockJwk = mock(JWK.class);
-        CryptoIdentityService.KeyData keyData = new CryptoIdentityService.KeyData(mockJwk, "RS256");
-        mockedRevocationService
-                .when(() -> CryptoIdentityService.getRealmKeyData(session, realm))
-                .thenReturn(keyData);
-
         ArgumentCaptor<ProviderEventListener> listenerCaptor = ArgumentCaptor.forClass(ProviderEventListener.class);
         factory.postInit(sessionFactory);
 
@@ -158,7 +166,22 @@ class CustomOIDCLoginProtocolFactoryTest {
                 mockedStatusListServiceConstruction.constructed().get(0);
 
         try {
-            verify(mockService).registerIssuer(argThat(arg -> arg.endsWith("::test-realm")), eq(mockJwk));
+            verify(mockService).registerIssuer(argThat(arg -> arg.endsWith("::test-realm")), any());
+        } catch (StatusListException e) {
+            fail("Should not throw exception");
+        }
+    }
+
+    @Test
+    void testLazyRegistrationInCreateProtocolEndpoint() {
+        // Ensure not registered initially
+        factory.createProtocolEndpoint(session, mock(EventBuilder.class));
+
+        StatusListService lastMock = mockedStatusListServiceConstruction
+                .constructed()
+                .get(mockedStatusListServiceConstruction.constructed().size() - 1);
+        try {
+            verify(lastMock).registerIssuer(argThat(arg -> arg.endsWith("::test-realm")), any());
         } catch (StatusListException e) {
             fail("Should not throw exception");
         }
@@ -202,7 +225,7 @@ class CustomOIDCLoginProtocolFactoryTest {
 
         mockedRevocationService
                 .when(() -> CryptoIdentityService.getRealmKeyData(session, realm))
-                .thenThrow(new com.adorsys.keycloakstatuslist.exception.StatusListException("Key not found"));
+                .thenThrow(new StatusListException("Key not found"));
 
         triggerInitialization();
 
@@ -239,7 +262,7 @@ class CustomOIDCLoginProtocolFactoryTest {
                 mockedStatusListServiceConstruction.constructed().get(0);
         try {
             doThrow(new RuntimeException("API Error")).when(mockService).registerIssuer(any(), any());
-        } catch (com.adorsys.keycloakstatuslist.exception.StatusListException e) {
+        } catch (StatusListException e) {
             fail("Should not throw exception during setup");
         }
 

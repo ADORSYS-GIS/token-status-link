@@ -28,7 +28,7 @@ The plugin can be configured at the realm level with the following properties:
 | `status-list-enabled`                     | Enables or disables the status list service                                                                               | `true`                                 |
 | `status-list-server-url`                  | URL of the status list server                                                                                             | `https://statuslist.eudi-adorsys.com/` |
 | `status-list-token-issuer-prefix`         | Prefix for building the Token Issuer ID                                                                                   | `Generated UUID`                       |
-| `status-list-issuance-timeout`            | Timeout in milliseconds for issuance operations (used for both connection and read). Non-positive values disable circuit breaker | `10000`                                |
+| `status-list-issuance-timeout`            | Timeout in milliseconds for issuance operations (used for both connection and read). Non-positive values disable circuit breaker | `30000`                                |
 | `status-list-circuit-breaker-failure-threshold` | Number of failures/timeouts before opening the circuit breaker                                                          | `5`                                    |
 | `status-list-mandatory`                   | If true, publication failures block issuance; if false, failures are logged and issuance continues without a status claim | `false`                                |
 | `status-list-max-entries`                 | Maximum number of entries to publish under the same status list                                                           | `10000`                                |
@@ -78,12 +78,10 @@ corresponding to a specific credential's configuration. Below is a sample such c
 
 ## Performance Considerations
 
-- The plugin performs HTTP requests using the bundled HTTP clients; calls are synchronous (blocking) in the current
-  implementation and execute on the caller's thread.
-- **No retry mechanism** is used by default (retry count = 0) to ensure fast failure and avoid prolonged thread
-  blocking. Some internal clients include retry strategies but the default configuration disables retries.
-- Timeouts are configurable via `status-list-issuance-timeout` (default: 10s for both connection and read operations).
-  A non-positive timeout value effectively disables the circuit breaker.
+- **Non-Blocking Registration**: Realm registration is performed **asynchronously** in background threads (`status-list-init`). This ensures that Keycloak startup and OIDC request processing are never blocked by status list server latency.
+- **Retry & Cooldown**: The plugin includes a built-in **retry mechanism** with exponential backoff for registration attempts. To prevent resource exhaustion during server failures, a **1-minute cooldown** is enforced per-realm between registration attempts.
+- **On-Demand (Lazy) Trigger**: Registration is triggered on-demand when a realm's OIDC endpoints are first accessed, but the trigger itself is non-blocking to the caller's thread.
+- **Configurable Timeouts**: Timeouts are configurable via `status-list-issuance-timeout` (default: 30s).
 
 ## Security Features
 
@@ -150,9 +148,6 @@ For manual testing with a local status list server:
 
 - Ensure nonce cache logic is compatible with clustered environments
 - Document the plugin's HTTP endpoints and expected request/response formats in more detail
-- Improve realm registration robustness. Consider implementing a background retry task or lazy registration to make up
-  for potential transient failures during startup, maybe due to network issues or the status list server being
-  temporarily unavailable.
 
 ## License
 

@@ -30,7 +30,7 @@ public class StatusListConfig {
     public static final int DEFAULT_MAX_ENTRIES = 10000;
 
     // Default timeout value for issuance path (used for both connect and read)
-    private static final int DEFAULT_ISSUANCE_TIMEOUT = 10000;
+    private static final int DEFAULT_ISSUANCE_TIMEOUT = 30000;
 
     // Default circuit breaker values
     private static final int DEFAULT_FAILURE_THRESHOLD = 5;

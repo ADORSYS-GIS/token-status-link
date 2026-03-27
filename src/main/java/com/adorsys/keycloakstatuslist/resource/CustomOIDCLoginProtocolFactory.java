@@ -10,7 +10,6 @@ import com.adorsys.keycloakstatuslist.service.CredentialRevocationService;
 import com.adorsys.keycloakstatuslist.service.CryptoIdentityService;
 import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -23,14 +22,22 @@ import org.keycloak.models.utils.PostMigrationEvent;
 import org.keycloak.protocol.oidc.OIDCLoginProtocolFactory;
 
 /**
- * Overrides the OID4VC protocol factory to inject a custom revocation endpoint into the standard
- * /protocol/openid-connect/revoke path. Handles realm issuer registration at startup for status
- * list integration.
+ * Custom OIDC Protocol Factory with:
+ * - Startup registration
+ * - New realm registration
+ * - Lazy (on-demand) registration
+ * - Thread-safe per-realm locking
  */
 public class CustomOIDCLoginProtocolFactory extends OIDCLoginProtocolFactory {
 
     private static final Logger logger = Logger.getLogger(CustomOIDCLoginProtocolFactory.class);
+
     private final Set<String> registeredRealms = ConcurrentHashMap.newKeySet();
+    private final ConcurrentHashMap<String, Object> registrationLocks = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Long> lastAttemptTime = new ConcurrentHashMap<>();
+
+    private static final long COOLDOWN_MS = 60000; // 1 minute
+
     private volatile boolean initialized = false;
 
     /**
@@ -43,6 +50,34 @@ public class CustomOIDCLoginProtocolFactory extends OIDCLoginProtocolFactory {
 
     @Override
     public Object createProtocolEndpoint(KeycloakSession session, EventBuilder event) {
+        RealmModel realm = session.getContext().getRealm();
+        String realmName = realm.getName();
+
+        // Lazy registration in background if not already registered and not in cooldown
+        if (!registeredRealms.contains(realmName)) {
+            Long lastTime = lastAttemptTime.get(realmName);
+            if (lastTime == null || System.currentTimeMillis() - lastTime >= COOLDOWN_MS) {
+                KeycloakSessionFactory factory = session.getKeycloakSessionFactory();
+                logger.debugf("Scheduling lazy background registration for realm: %s", realmName);
+                runAsync(() -> {
+                    try (KeycloakSession bgSession = factory.create()) {
+                        bgSession.getTransactionManager().begin();
+                        RealmModel bgRealm = bgSession.realms().getRealmByName(realmName);
+                        if (bgRealm != null) {
+                            ensureRealmRegistered(bgSession, bgRealm);
+                            bgSession.getTransactionManager().commit();
+                        } else {
+                            bgSession.getTransactionManager().rollback();
+                        }
+                    } catch (Exception e) {
+                        logger.errorf(
+                                "Error during lazy background registration for realm %s: %s",
+                                realmName, e.getMessage(), e);
+                    }
+                });
+            }
+        }
+
         CredentialRevocationService revocationService = new CredentialRevocationService(session);
         return new CustomOIDCLoginProtocolService(session, event, revocationService);
     }
@@ -50,10 +85,7 @@ public class CustomOIDCLoginProtocolFactory extends OIDCLoginProtocolFactory {
     @Override
     public void postInit(KeycloakSessionFactory factory) {
         super.postInit(factory);
-        logger.info("Post-initializing CustomOIDCLoginProtocolFactory for standard revocation endpoint override");
 
-        // Initialize realms directly since we're already in the postInit phase
-        // which means Keycloak's database is ready
         try {
             factory.register(event -> {
                 if (event instanceof PostMigrationEvent) {
@@ -61,7 +93,7 @@ public class CustomOIDCLoginProtocolFactory extends OIDCLoginProtocolFactory {
                 }
             });
         } catch (Exception e) {
-            logger.error("Error during initialization", e);
+            logger.error("Error during initialization listener registration", e);
         }
     }
 
@@ -70,110 +102,96 @@ public class CustomOIDCLoginProtocolFactory extends OIDCLoginProtocolFactory {
             return;
         }
 
-        logger.info("Starting realm initialization");
+        // Run in a background thread to avoid blocking Keycloak boot
+        runAsync(() -> {
+            logger.info("Starting background realm initialization");
+            try (KeycloakSession session = factory.create()) {
+                session.getTransactionManager().begin();
 
-        try (KeycloakSession session = factory.create()) {
-            session.getTransactionManager().begin();
+                List<RealmModel> realms = session.realms().getRealmsStream().toList();
 
-            // Get all realms
-            List<RealmModel> realms = session.realms().getRealmsStream().toList();
-            logger.info("Found " + realms.size() + " realms to register");
-
-            // Track registration results
-            int totalRealms = realms.size();
-            int successfulRegistrations = 0;
-            int failedRegistrations = 0;
-            int skippedRegistrations = 0;
-            List<String> failedRealmNames = new ArrayList<>();
-            List<String> skippedRealmNames = new ArrayList<>();
-
-            // Register each realm
-            for (RealmModel realm : realms) {
-                boolean registrationResult = registerRealmAsIssuer(session, realm);
-                if (registrationResult) {
-                    successfulRegistrations++;
-                } else {
-                    // Check if this was due to server unavailability
-                    if (realm.getAttribute("status-list-enabled") != null
-                            && "true".equals(realm.getAttribute("status-list-enabled"))) {
-                        skippedRegistrations++;
-                        skippedRealmNames.add(realm.getName());
-                    } else {
-                        failedRegistrations++;
-                        failedRealmNames.add(realm.getName());
-                    }
+                for (RealmModel realm : realms) {
+                    ensureRealmRegistered(session, realm);
                 }
-            }
 
-            session.getTransactionManager().commit();
-
-            // Report results based on registration outcomes
-            logger.info("Registration results - Total: "
-                    + totalRealms
-                    + ", Successful: "
-                    + successfulRegistrations
-                    + ", Failed: "
-                    + failedRegistrations
-                    + ", Skipped: "
-                    + skippedRegistrations);
-
-            if (failedRegistrations == 0 && skippedRegistrations == 0) {
-                logger.info("Successfully completed realm initialization - all " + totalRealms + " realms registered");
+                session.getTransactionManager().commit();
                 initialized = true;
-            } else if (successfulRegistrations == 0 && failedRegistrations > 0) {
-                logger.error("Realm initialization failed - all "
-                        + totalRealms
-                        + " realms failed to register. Failed realms: "
-                        + String.join(", ", failedRealmNames));
-            } else {
-                if (skippedRegistrations > 0) {
-                    logger.warn(
-                            "Realm initialization completed with some realms skipped due to server unavailability - "
-                                    + successfulRegistrations
-                                    + " successful, "
-                                    + skippedRegistrations
-                                    + " skipped. Skipped realms: "
-                                    + String.join(", ", skippedRealmNames));
-                }
-                if (failedRegistrations > 0) {
-                    logger.warn("Realm initialization completed with some failures - "
-                            + successfulRegistrations
-                            + " successful, "
-                            + failedRegistrations
-                            + " failed. Failed realms: "
-                            + String.join(", ", failedRealmNames));
-                }
-                initialized = true;
+                logger.info("Successfully completed initial background realm registration checks");
+
+            } catch (Exception e) {
+                logger.error("Error during background realm initialization", e);
             }
-        } catch (Exception e) {
-            logger.error("Error during realm initialization", e);
+        });
+    }
+
+    /**
+     * Helper to run a task asynchronously. Overridden in tests to run synchronously.
+     */
+    protected void runAsync(Runnable runnable) {
+        new Thread(runnable, "status-list-init").start();
+    }
+
+    /**
+     * Ensures the realm is registered as an issuer.
+     * Synchronous implementation that uses a per-realm lock to prevent concurrent 
+     * registration attempts. Should be called from a background thread or a 
+     * request context that can afford a delay.
+     */
+    private void ensureRealmRegistered(KeycloakSession session, RealmModel realm) {
+        String realmName = realm.getName();
+
+        if (registeredRealms.contains(realmName)) {
+            return;
+        }
+
+        // Quick check outside lock
+        Long lastTime = lastAttemptTime.get(realmName);
+        if (lastTime != null && System.currentTimeMillis() - lastTime < COOLDOWN_MS) {
+            return;
+        }
+
+        // Use a lock object per realm to avoid parallel registration attempts for the same realm
+        Object lock = registrationLocks.computeIfAbsent(realmName, k -> new Object());
+
+        synchronized (lock) {
+            if (!registeredRealms.contains(realmName)) {
+                // Check cooldown again inside lock to prevent "waiting herd" from retrying immediately
+                lastTime = lastAttemptTime.get(realmName);
+                if (lastTime != null && System.currentTimeMillis() - lastTime < COOLDOWN_MS) {
+                    return;
+                }
+
+                // Mark current attempt time
+                lastAttemptTime.put(realmName, System.currentTimeMillis());
+
+                registerRealmAsIssuer(session, realm);
+            }
         }
     }
 
     private boolean registerRealmAsIssuer(KeycloakSession session, RealmModel realm) {
-        if (registeredRealms.contains(realm.getName())) {
-            logger.debug("Realm already registered as issuer: " + realm.getName());
-            return true; // Already registered, no need to re-register
+        String realmName = realm.getName();
+
+        if (registeredRealms.contains(realmName)) {
+            return true;
         }
 
         try {
             StatusListConfig config = new StatusListConfig(realm);
+
             if (!config.isEnabled()) {
-                logger.debug("Status list service is disabled for realm: " + realm.getName());
-                return true; // Disabled, no need to register
+                return true;
             }
 
             CryptoIdentityService.KeyData keyData;
             try {
                 keyData = CryptoIdentityService.getRealmKeyData(session, realm);
             } catch (StatusListException e) {
-                logger.warn(
-                        "Could not retrieve valid signing key for realm: " + realm.getName() + ". " + e.getMessage());
+                logger.warn("Key extraction failed for realm: " + realmName);
                 return false;
             }
 
             CryptoIdentityService cryptoIdentityService = new CryptoIdentityService(session);
-
             CircuitBreaker circuitBreaker = CircuitBreaker.getInstance(config);
 
             StatusListHttpClient httpClient = new ApacheHttpStatusListClient(
@@ -181,26 +199,23 @@ public class CustomOIDCLoginProtocolFactory extends OIDCLoginProtocolFactory {
                     cryptoIdentityService.getJwtToken(config),
                     CustomHttpClient.getHttpClient(config),
                     circuitBreaker);
+
             StatusListService statusListService = new StatusListService(httpClient);
 
-            // Check if the status list server is reachable
             if (!statusListService.checkServerHealth()) {
-                logger.warn("Status list server is not reachable for realm: " + realm.getName());
                 return false;
             }
 
-            // Register the realm as an issuer using the retrieved public key
             statusListService.registerIssuer(config.getTokenIssuerId(), keyData.jwk());
-            registeredRealms.add(realm.getName());
-            logger.info("Successfully registered realm as issuer: " + realm.getName());
+
+            registeredRealms.add(realmName);
+
+            registrationLocks.remove(realmName);
+
             return true;
-        } catch (StatusListServerException e) {
-            logger.errorf(
-                    "Failed to register realm as issuer: %s. Server returned status code: %d, message: %s",
-                    realm.getName(), e.getStatusCode(), e.getMessage(), e);
-            return false;
-        } catch (StatusListException e) {
-            logger.error("Failed to register realm as issuer: " + realm.getName(), e);
+
+        } catch (StatusListServerException | StatusListException e) {
+            logger.error("Registration failed for realm: " + realmName, e);
             return false;
         }
     }
@@ -208,8 +223,9 @@ public class CustomOIDCLoginProtocolFactory extends OIDCLoginProtocolFactory {
     @Override
     public void close() {
         super.close();
-        logger.info("Closing CustomOIDCLoginProtocolFactory");
         registeredRealms.clear();
+        registrationLocks.clear();
+        lastAttemptTime.clear();
         initialized = false;
     }
 }
