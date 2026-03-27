@@ -23,22 +23,22 @@ The status list server should implement the OAuth 2.0 Status List pattern.
 
 The plugin can be configured at the realm level with the following properties:
 
-| Property                                  | Description                                                                                                               | Default Value                          |
-|-------------------------------------------|---------------------------------------------------------------------------------------------------------------------------|----------------------------------------|
-| `status-list-enabled`                     | Enables or disables the status list service                                                                               | `true`                                 |
-| `status-list-server-url`                  | URL of the status list server                                                                                             | `https://statuslist.eudi-adorsys.com/` |
-| `status-list-token-issuer-prefix`         | Prefix for building the Token Issuer ID                                                                                   | `Generated UUID`                       |
-| `status-list-issuance-timeout`            | Timeout in milliseconds for issuance operations (used for both connection and read). Non-positive values disable circuit breaker | `30000`                                |
-| `status-list-circuit-breaker-failure-threshold` | Number of failures/timeouts before opening the circuit breaker                                                          | `5`                                    |
-| `status-list-mandatory`                   | If true, publication failures block issuance; if false, failures are logged and issuance continues without a status claim | `false`                                |
-| `status-list-max-entries`                 | Maximum number of entries to publish under the same status list                                                           | `10000`                                |
+| Property                                        | Description                                                                                                                      | Default Value                          |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| `status-list-enabled`                           | Enables or disables the status list service                                                                                      | `true`                                 |
+| `status-list-server-url`                        | URL of the status list server                                                                                                    | `https://statuslist.eudi-adorsys.com/` |
+| `status-list-token-issuer-prefix`               | Prefix for building the Token Issuer ID                                                                                          | `Generated UUID`                       |
+| `status-list-issuance-timeout`                  | Timeout in milliseconds for issuance operations (used for both connection and read). Non-positive values disable circuit breaker | `30000`                                |
+| `status-list-circuit-breaker-failure-threshold` | Number of failures/timeouts before opening the circuit breaker                                                                   | `5`                                    |
+| `status-list-mandatory`                         | If true, publication failures block issuance; if false, failures are logged and issuance continues without a status claim        | `false`                                |
+| `status-list-max-entries`                       | Maximum number of entries to publish under the same status list                                                                  | `10000`                                |
 
 ## Installation
 
 1. Build the plugin using Maven:
-    ```bash
-    ./mvnw clean package
-    ```
+   ```bash
+   ./mvnw clean package
+   ```
 2. Copy the resulting JAR file `target/keycloak-token-status-plugin-1.0.0-SNAPSHOT.jar` to Keycloak's `providers`
    directory.
 
@@ -56,7 +56,7 @@ Releases are fully automated via GitHub Actions. A new deployment is triggered w
 is created on the repository. The workflow requires the following secrets to be configured:
 
 | Secret                   | Description                                               |
-|:-------------------------|:----------------------------------------------------------|
+| :----------------------- | :-------------------------------------------------------- |
 | `CENTRAL_TOKEN_USERNAME` | The Maven Central token username.                         |
 | `CENTRAL_TOKEN_PASSWORD` | The Maven Central token password.                         |
 | `GPG_PRIVATE_KEY`        | The ASCII-armored private key used for signing artifacts. |
