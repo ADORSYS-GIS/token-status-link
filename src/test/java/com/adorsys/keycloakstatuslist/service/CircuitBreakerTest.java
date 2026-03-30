@@ -9,19 +9,27 @@ import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.Map;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.keycloak.common.util.Time;
 import org.keycloak.models.RealmModel;
 
 class CircuitBreakerTest {
 
     @BeforeEach
     void resetInstances() throws Exception {
+        Time.setOffset(0);
         Field instancesField = CircuitBreaker.class.getDeclaredField("INSTANCES");
         instancesField.setAccessible(true);
         @SuppressWarnings("unchecked")
         Map<String, CircuitBreaker> instances = (Map<String, CircuitBreaker>) instancesField.get(null);
         instances.clear();
+    }
+
+    @AfterEach
+    void resetTimeOffset() {
+        Time.setOffset(0);
     }
 
     @Test
@@ -91,7 +99,7 @@ class CircuitBreakerTest {
         breaker.recordFailure();
         assertEquals(1, breaker.getFailureCount());
 
-        Thread.sleep(5);
+        Time.setOffset(1);
         breaker.checkState();
 
         assertEquals(0, breaker.getFailureCount());

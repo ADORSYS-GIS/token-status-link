@@ -6,6 +6,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import org.jboss.logging.Logger;
+import org.keycloak.common.util.Time;
 
 /**
  * Simple circuit breaker implementation to protect against repeated failures
@@ -34,7 +35,7 @@ public class CircuitBreaker {
 
     private final AtomicReference<State> state = new AtomicReference<>(State.CLOSED);
     private final AtomicInteger failureCount = new AtomicInteger(0);
-    private final AtomicLong windowStartTime = new AtomicLong(System.currentTimeMillis());
+    private final AtomicLong windowStartTime = new AtomicLong(Time.currentTimeMillis());
     private final AtomicLong lastFailureTime = new AtomicLong(0);
 
     /**
@@ -90,7 +91,7 @@ public class CircuitBreaker {
      */
     public void checkState() throws CircuitBreakerOpenException {
         State currentState = state.get();
-        long now = System.currentTimeMillis();
+        long now = Time.currentTimeMillis();
 
         // Check if window has expired and reset counters
         if (now - windowStartTime.get() > windowMillis) {
@@ -140,7 +141,7 @@ public class CircuitBreaker {
      * Records a failed operation.
      */
     public void recordFailure() {
-        long now = System.currentTimeMillis();
+        long now = Time.currentTimeMillis();
         lastFailureTime.set(now);
 
         State currentState = state.get();
@@ -174,7 +175,7 @@ public class CircuitBreaker {
      * Resets the time window and counters.
      */
     private void resetWindow() {
-        long now = System.currentTimeMillis();
+        long now = Time.currentTimeMillis();
         windowStartTime.set(now);
         failureCount.set(0);
         logger.debugf("Circuit breaker '%s' reset window", name);
@@ -185,7 +186,7 @@ public class CircuitBreaker {
      */
     private void resetCounters() {
         failureCount.set(0);
-        windowStartTime.set(System.currentTimeMillis());
+        windowStartTime.set(Time.currentTimeMillis());
     }
 
     /**

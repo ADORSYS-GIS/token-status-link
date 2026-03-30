@@ -12,17 +12,18 @@ import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.helpers.MockKeycloakTest;
 import com.adorsys.keycloakstatuslist.helpers.RSATestUtils;
-import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.PublicKey;
 import java.security.interfaces.ECPublicKey;
-import java.util.Base64;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.keycloak.crypto.Algorithm;
 import org.keycloak.crypto.KeyUse;
 import org.keycloak.crypto.KeyWrapper;
+import org.keycloak.jose.jws.JWSInput;
+import org.keycloak.util.JsonSerialization;
 
 class CryptoIdentityServiceTest extends MockKeycloakTest {
 
@@ -51,7 +52,7 @@ class CryptoIdentityServiceTest extends MockKeycloakTest {
     }
 
     @Test
-    void getJwtTokenShouldContainExpectedIssuerClaim() {
+    void getJwtTokenShouldContainExpectedIssuerClaim() throws Exception {
         when(realm.getAttribute(StatusListConfig.STATUS_LIST_TOKEN_ISSUER_PREFIX))
                 .thenReturn("issuer-prefix");
         StatusListConfig config = new StatusListConfig(realm);
@@ -59,12 +60,13 @@ class CryptoIdentityServiceTest extends MockKeycloakTest {
         String token = service.getJwtToken(config);
 
         assertNotNull(token);
-        String[] parts = token.split("\\.");
-        assertTrue(parts.length >= 2);
-        String payloadJson = new String(Base64.getUrlDecoder().decode(parts[1]), StandardCharsets.UTF_8);
-        assertTrue(payloadJson.contains("\"iss\":\"issuer-prefix::" + TEST_REALM_NAME + "\""));
-        assertTrue(payloadJson.contains("\"iat\":"));
-        assertTrue(payloadJson.contains("\"exp\":"));
+        JWSInput jwsInput = new JWSInput(token);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> payload = JsonSerialization.readValue(jwsInput.getContent(), Map.class);
+
+        assertEquals("issuer-prefix::" + TEST_REALM_NAME, payload.get("iss"));
+        assertTrue(payload.containsKey("iat"));
+        assertTrue(payload.containsKey("exp"));
     }
 
     @Test

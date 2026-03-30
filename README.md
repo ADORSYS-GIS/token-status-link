@@ -148,7 +148,6 @@ For manual testing with a local status list server:
 
 ## TODO
 
-- Improve test coverage (StatusListService, RevocationEndpoint, NonceCacheService)
 - Ensure nonce cache logic is compatible with clustered environments
 - Document the plugin's HTTP endpoints and expected request/response formats in more detail
 - Improve realm registration robustness. Consider implementing a background retry task or lazy registration to make up
