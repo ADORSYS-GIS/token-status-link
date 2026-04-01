@@ -1,23 +1,29 @@
 package com.adorsys.keycloakstatuslist.service;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.util.Collections;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.keycloak.common.VerificationException;
 import org.keycloak.crypto.SignatureVerifierContext;
 import org.keycloak.models.KeycloakContext;
 import org.keycloak.models.KeycloakSession;
@@ -142,6 +148,28 @@ class SdJwtVPValidationServiceTest {
     }
 
     @Test
+    void extractNonceFromKeyBindingJWT_returnsNullWhenNonceNotTextual() {
+        KeyBindingJWT kbJwt = mock(KeyBindingJWT.class);
+        ObjectNode payload = mock(ObjectNode.class);
+        JsonNode nonceNode = mock(JsonNode.class);
+        when(sdJwtVP.getKeyBindingJWT()).thenReturn(Optional.of(kbJwt));
+        when(kbJwt.getPayload()).thenReturn(payload);
+        when(payload.get("nonce")).thenReturn(nonceNode);
+        when(nonceNode.isTextual()).thenReturn(false);
+
+        assertNull(service.extractNonceFromKeyBindingJWT(sdJwtVP));
+    }
+
+    @Test
+    void extractNonceFromKeyBindingJWT_returnsNullWhenKeyBindingPayloadMissing() {
+        KeyBindingJWT kbJwt = mock(KeyBindingJWT.class);
+        when(sdJwtVP.getKeyBindingJWT()).thenReturn(Optional.of(kbJwt));
+        when(kbJwt.getPayload()).thenReturn(null);
+
+        assertNull(service.extractNonceFromKeyBindingJWT(sdJwtVP));
+    }
+
+    @Test
     void extractIssuerFromToken_returnsIssuerFromPayload() {
         IssuerSignedJWT issuerSignedJWT = mock(IssuerSignedJWT.class);
         ObjectNode payload = mock(ObjectNode.class);
@@ -162,5 +190,104 @@ class SdJwtVPValidationServiceTest {
         when(issuerSignedJWT.getPayload()).thenReturn(null);
 
         assertNull(service.extractIssuerFromToken(sdJwtVP));
+    }
+
+    @Test
+    void extractIssuerFromToken_returnsNullWhenExtractionThrows() {
+        when(sdJwtVP.getIssuerSignedJWT()).thenThrow(new RuntimeException("cannot decode"));
+
+        assertNull(service.extractIssuerFromToken(sdJwtVP));
+    }
+
+    @Test
+    void verifySdJwtVP_missingIssuer_throws401() {
+        ObjectNode payload = mock(ObjectNode.class);
+        IssuerSignedJWT issuerSignedJWT = mock(IssuerSignedJWT.class);
+        JsonNode issNode = mock(JsonNode.class);
+
+        when(sdJwtVP.getIssuerSignedJWT()).thenReturn(issuerSignedJWT);
+        when(issuerSignedJWT.getPayload()).thenReturn(payload);
+        when(payload.get("iss")).thenReturn(issNode);
+        when(issNode.asText()).thenReturn("");
+
+        StatusListException ex =
+                assertThrows(StatusListException.class, () -> service.verifySdJwtVP(sdJwtVP, "req", "nonce"));
+        assertTrue(ex.getMessage().contains("SD-JWT VP verification failed"));
+        assertEquals(401, ex.getHttpStatus());
+    }
+
+    @Test
+    void verifySdJwtVP_verificationException_throws401() throws Exception {
+        String requestId = "req";
+        when(context.getUri()).thenReturn(uriInfo);
+        when(uriInfo.getBaseUri()).thenReturn(java.net.URI.create("http://localhost:8080/auth/"));
+        when(context.getRealm()).thenReturn(realm);
+        when(realm.getName()).thenReturn("test-realm");
+
+        ObjectNode payload = mock(ObjectNode.class);
+        IssuerSignedJWT issuerSignedJWT = mock(IssuerSignedJWT.class);
+        JsonNode issNode = mock(JsonNode.class);
+        when(sdJwtVP.getIssuerSignedJWT()).thenReturn(issuerSignedJWT);
+        when(issuerSignedJWT.getPayload()).thenReturn(payload);
+        when(payload.get("iss")).thenReturn(issNode);
+        when(issNode.asText()).thenReturn("test-issuer");
+
+        when(jwksService.getSignatureVerifierContexts(any(SdJwtVP.class), eq(requestId)))
+                .thenReturn(List.of(verifierContext));
+        doThrow(new VerificationException("bad signature")).when(sdJwtVP).verify(anyList(), any(), any());
+
+        StatusListException ex =
+                assertThrows(StatusListException.class, () -> service.verifySdJwtVP(sdJwtVP, requestId, "nonce"));
+        assertTrue(ex.getMessage().contains("Invalid SD-JWT VP signature"));
+        assertEquals(401, ex.getHttpStatus());
+    }
+
+    @Test
+    void verifySdJwtVP_successPath_callsVerifyWithoutThrowing() throws Exception {
+        String requestId = "req";
+        when(context.getUri()).thenReturn(uriInfo);
+        when(uriInfo.getBaseUri()).thenReturn(java.net.URI.create("http://localhost:8080/auth/"));
+        when(context.getRealm()).thenReturn(realm);
+        when(realm.getName()).thenReturn("test-realm");
+
+        ObjectNode payload = mock(ObjectNode.class);
+        IssuerSignedJWT issuerSignedJWT = mock(IssuerSignedJWT.class);
+        JsonNode issNode = mock(JsonNode.class);
+        when(sdJwtVP.getIssuerSignedJWT()).thenReturn(issuerSignedJWT);
+        when(issuerSignedJWT.getPayload()).thenReturn(payload);
+        when(payload.get("iss")).thenReturn(issNode);
+        when(issNode.asText()).thenReturn("test-issuer");
+
+        when(jwksService.getSignatureVerifierContexts(any(SdJwtVP.class), eq(requestId)))
+                .thenReturn(List.of(verifierContext));
+
+        assertDoesNotThrow(() -> service.verifySdJwtVP(sdJwtVP, requestId, "nonce"));
+        verify(sdJwtVP).verify(anyList(), any(), any());
+    }
+
+    @Test
+    void verifySdJwtVP_unexpectedVerificationError_throws401() throws Exception {
+        String requestId = "req";
+        when(context.getUri()).thenReturn(uriInfo);
+        when(uriInfo.getBaseUri()).thenReturn(java.net.URI.create("http://localhost:8080/auth/"));
+        when(context.getRealm()).thenReturn(realm);
+        when(realm.getName()).thenReturn("test-realm");
+
+        ObjectNode payload = mock(ObjectNode.class);
+        IssuerSignedJWT issuerSignedJWT = mock(IssuerSignedJWT.class);
+        JsonNode issNode = mock(JsonNode.class);
+        when(sdJwtVP.getIssuerSignedJWT()).thenReturn(issuerSignedJWT);
+        when(issuerSignedJWT.getPayload()).thenReturn(payload);
+        when(payload.get("iss")).thenReturn(issNode);
+        when(issNode.asText()).thenReturn("test-issuer");
+
+        when(jwksService.getSignatureVerifierContexts(any(SdJwtVP.class), eq(requestId)))
+                .thenReturn(List.of(verifierContext));
+        doThrow(new RuntimeException("unexpected failure")).when(sdJwtVP).verify(anyList(), any(), any());
+
+        StatusListException ex =
+                assertThrows(StatusListException.class, () -> service.verifySdJwtVP(sdJwtVP, requestId, "nonce"));
+        assertTrue(ex.getMessage().contains("SD-JWT VP verification failed"));
+        assertEquals(401, ex.getHttpStatus());
     }
 }
