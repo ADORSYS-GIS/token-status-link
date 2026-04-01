@@ -13,6 +13,8 @@ import com.adorsys.keycloakstatuslist.service.StatusListService;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import org.jboss.logging.Logger;
 import org.keycloak.events.EventBuilder;
 import org.keycloak.models.KeycloakSession;
@@ -35,8 +37,10 @@ public class CustomOIDCLoginProtocolFactory extends OIDCLoginProtocolFactory {
     private final Set<String> registeredRealms = ConcurrentHashMap.newKeySet();
     private final ConcurrentHashMap<String, Object> registrationLocks = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Long> lastAttemptTime = new ConcurrentHashMap<>();
+    private final Set<String> inFlight = ConcurrentHashMap.newKeySet();
 
-    private static final long COOLDOWN_MS = 60000; // 1 minute
+    private static final ExecutorService executor = Executors.newFixedThreadPool(
+            Math.max(2, Runtime.getRuntime().availableProcessors()), r -> new Thread(r, "status-list-init"));
 
     private volatile boolean initialized = false;
 
@@ -55,26 +59,41 @@ public class CustomOIDCLoginProtocolFactory extends OIDCLoginProtocolFactory {
 
         // Lazy registration in background if not already registered and not in cooldown
         if (!registeredRealms.contains(realmName)) {
+            StatusListConfig config = new StatusListConfig(realm);
             Long lastTime = lastAttemptTime.get(realmName);
-            if (lastTime == null || System.currentTimeMillis() - lastTime >= COOLDOWN_MS) {
-                KeycloakSessionFactory factory = session.getKeycloakSessionFactory();
-                logger.debugf("Scheduling lazy background registration for realm: %s", realmName);
-                runAsync(() -> {
-                    try (KeycloakSession bgSession = factory.create()) {
-                        bgSession.getTransactionManager().begin();
-                        RealmModel bgRealm = bgSession.realms().getRealmByName(realmName);
-                        if (bgRealm != null) {
-                            ensureRealmRegistered(bgSession, bgRealm);
-                            bgSession.getTransactionManager().commit();
-                        } else {
-                            bgSession.getTransactionManager().rollback();
+            long cooldown = config.getRegistrationCooldownMs();
+
+            if (lastTime == null || System.currentTimeMillis() - lastTime >= cooldown) {
+                // Atomic check for in-flight tasks to prevent multiple scheduled tasks for the same realm
+                if (inFlight.add(realmName)) {
+                    logger.debugf("Scheduling lazy background registration for realm: %s", realmName);
+                    KeycloakSessionFactory factory = session.getKeycloakSessionFactory();
+                    runAsync(() -> {
+                        try (KeycloakSession bgSession = factory.create()) {
+                            bgSession.getTransactionManager().begin();
+                            try {
+                                RealmModel bgRealm = bgSession.realms().getRealmByName(realmName);
+                                if (bgRealm != null) {
+                                    ensureRealmRegistered(bgSession, bgRealm);
+                                    bgSession.getTransactionManager().commit();
+                                } else {
+                                    bgSession.getTransactionManager().rollback();
+                                }
+                            } catch (Exception e) {
+                                if (bgSession.getTransactionManager().isActive()) {
+                                    bgSession.getTransactionManager().rollback();
+                                }
+                                throw e;
+                            }
+                        } catch (Exception e) {
+                            logger.errorf(
+                                    "Error during lazy background registration for realm %s: %s",
+                                    realmName, e.getMessage(), e);
+                        } finally {
+                            inFlight.remove(realmName);
                         }
-                    } catch (Exception e) {
-                        logger.errorf(
-                                "Error during lazy background registration for realm %s: %s",
-                                realmName, e.getMessage(), e);
-                    }
-                });
+                    });
+                }
             }
         }
 
@@ -107,17 +126,22 @@ public class CustomOIDCLoginProtocolFactory extends OIDCLoginProtocolFactory {
             logger.info("Starting background realm initialization");
             try (KeycloakSession session = factory.create()) {
                 session.getTransactionManager().begin();
+                try {
+                    List<RealmModel> realms = session.realms().getRealmsStream().toList();
 
-                List<RealmModel> realms = session.realms().getRealmsStream().toList();
+                    for (RealmModel realm : realms) {
+                        ensureRealmRegistered(session, realm);
+                    }
 
-                for (RealmModel realm : realms) {
-                    ensureRealmRegistered(session, realm);
+                    session.getTransactionManager().commit();
+                    initialized = true;
+                    logger.info("Successfully completed initial background realm registration checks");
+                } catch (Exception e) {
+                    if (session.getTransactionManager().isActive()) {
+                        session.getTransactionManager().rollback();
+                    }
+                    throw e;
                 }
-
-                session.getTransactionManager().commit();
-                initialized = true;
-                logger.info("Successfully completed initial background realm registration checks");
-
             } catch (Exception e) {
                 logger.error("Error during background realm initialization", e);
             }
@@ -128,7 +152,7 @@ public class CustomOIDCLoginProtocolFactory extends OIDCLoginProtocolFactory {
      * Helper to run a task asynchronously. Overridden in tests to run synchronously.
      */
     protected void runAsync(Runnable runnable) {
-        new Thread(runnable, "status-list-init").start();
+        executor.execute(runnable);
     }
 
     /**
@@ -145,8 +169,11 @@ public class CustomOIDCLoginProtocolFactory extends OIDCLoginProtocolFactory {
         }
 
         // Quick check outside lock
+        StatusListConfig config = new StatusListConfig(realm);
         Long lastTime = lastAttemptTime.get(realmName);
-        if (lastTime != null && System.currentTimeMillis() - lastTime < COOLDOWN_MS) {
+        long cooldown = config.getRegistrationCooldownMs();
+
+        if (lastTime != null && System.currentTimeMillis() - lastTime < cooldown) {
             return;
         }
 
@@ -157,7 +184,7 @@ public class CustomOIDCLoginProtocolFactory extends OIDCLoginProtocolFactory {
             if (!registeredRealms.contains(realmName)) {
                 // Check cooldown again inside lock to prevent "waiting herd" from retrying immediately
                 lastTime = lastAttemptTime.get(realmName);
-                if (lastTime != null && System.currentTimeMillis() - lastTime < COOLDOWN_MS) {
+                if (lastTime != null && System.currentTimeMillis() - lastTime < cooldown) {
                     return;
                 }
 
@@ -197,7 +224,7 @@ public class CustomOIDCLoginProtocolFactory extends OIDCLoginProtocolFactory {
             StatusListHttpClient httpClient = new ApacheHttpStatusListClient(
                     config.getServerUrl(),
                     cryptoIdentityService.getJwtToken(config),
-                    CustomHttpClient.getHttpClient(config),
+                    CustomHttpClient.getRegistrationHttpClient(config),
                     circuitBreaker);
 
             StatusListService statusListService = new StatusListService(httpClient);
@@ -226,6 +253,7 @@ public class CustomOIDCLoginProtocolFactory extends OIDCLoginProtocolFactory {
         registeredRealms.clear();
         registrationLocks.clear();
         lastAttemptTime.clear();
+        inFlight.clear();
         initialized = false;
     }
 }

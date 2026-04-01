@@ -18,17 +18,38 @@ public class CustomHttpClient {
     private static final Logger logger = Logger.getLogger(CustomHttpClient.class);
 
     public static final int DEFAULT_CONNECT_TIMEOUT = 30000;
-    private static final int DEFAULT_RETRY_COUNT = 1; // Enable one retry by default
 
     /**
-     * Creates an HTTP client with timeout values from the configuration.
-     * All callers must use this method so that timeouts are always taken from config.
+     * Creates an HTTP client for issuance operations (runtime/foreground).
+     * Typically has a shorter timeout and fewer/no retries to protect tail latency.
      *
      * @param config the status list configuration
      * @return configured HTTP client
      */
+    public static CloseableHttpClient getIssuanceHttpClient(StatusListConfig config) {
+        // Issuance path: minimal/no retries to avoid blocking the user thread for too long
+        return createHttpClient(config.getIssuanceTimeout(), 0);
+    }
+
+    /**
+     * Creates an HTTP client for registration operations (background).
+     * Can have longer timeouts and more retries since it doesn't block user threads.
+     *
+     * @param config the status list configuration
+     * @return configured HTTP client
+     */
+    public static CloseableHttpClient getRegistrationHttpClient(StatusListConfig config) {
+        return createHttpClient(config.getRegistrationTimeout(), config.getRegistrationRetries());
+    }
+
+    /**
+     * Legacy method for backward compatibility - defaults to issuance policy.
+     */
     public static CloseableHttpClient getHttpClient(StatusListConfig config) {
-        int timeoutMs = config.getIssuanceTimeout();
+        return getIssuanceHttpClient(config);
+    }
+
+    private static CloseableHttpClient createHttpClient(int timeoutMs, int maxRetries) {
         if (timeoutMs <= 0) {
             timeoutMs = DEFAULT_CONNECT_TIMEOUT;
         }
@@ -38,12 +59,14 @@ public class CustomHttpClient {
                 .build();
         return HttpClients.custom()
                 .setDefaultRequestConfig(requestConfig)
-                .setRetryStrategy(getHttpRequestRetryStrategy())
+                .setRetryStrategy(getHttpRequestRetryStrategy(maxRetries))
                 .build();
     }
 
-    private static HttpRequestRetryStrategy getHttpRequestRetryStrategy() {
-        int maxRetries = DEFAULT_RETRY_COUNT;
+    private static HttpRequestRetryStrategy getHttpRequestRetryStrategy(int maxRetries) {
+        if (maxRetries <= 0) {
+            return null;
+        }
 
         return new HttpRequestRetryStrategy() {
             @Override

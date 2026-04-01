@@ -139,7 +139,7 @@ class CustomOIDCLoginProtocolFactoryTest {
         CloseableHttpResponse httpResponse = mock(CloseableHttpResponse.class);
 
         mockedHttpClient
-                .when(() -> CustomHttpClient.getHttpClient(any(StatusListConfig.class)))
+                .when(() -> CustomHttpClient.getRegistrationHttpClient(any(StatusListConfig.class)))
                 .thenReturn(httpClient);
 
         when(httpClient.execute(
@@ -194,7 +194,7 @@ class CustomOIDCLoginProtocolFactoryTest {
         triggerInitialization();
 
         assertEquals(0, mockedStatusListServiceConstruction.constructed().size());
-        mockedHttpClient.verify(() -> CustomHttpClient.getHttpClient(any(StatusListConfig.class)), never());
+        mockedHttpClient.verify(() -> CustomHttpClient.getRegistrationHttpClient(any(StatusListConfig.class)), never());
     }
 
     @Test
@@ -283,7 +283,7 @@ class CustomOIDCLoginProtocolFactoryTest {
             CloseableHttpClient httpClient = mock(CloseableHttpClient.class);
             CloseableHttpResponse httpResponse = mock(CloseableHttpResponse.class);
             mockedHttpClient
-                    .when(() -> CustomHttpClient.getHttpClient(any(StatusListConfig.class)))
+                    .when(() -> CustomHttpClient.getRegistrationHttpClient(any(StatusListConfig.class)))
                     .thenReturn(httpClient);
 
             when(httpClient.execute(
