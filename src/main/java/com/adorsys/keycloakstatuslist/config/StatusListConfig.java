@@ -18,6 +18,9 @@ public class StatusListConfig {
     public static final String STATUS_LIST_SERVER_URL = "status-list-server-url";
     public static final String STATUS_LIST_TOKEN_ISSUER_PREFIX = "status-list-token-issuer-prefix";
     public static final String STATUS_LIST_ISSUANCE_TIMEOUT = "status-list-issuance-timeout";
+    public static final String STATUS_LIST_REGISTRATION_TIMEOUT = "status-list-registration-timeout";
+    public static final String STATUS_LIST_REGISTRATION_RETRIES = "status-list-registration-retries";
+    public static final String STATUS_LIST_REGISTRATION_COOLDOWN = "status-list-registration-cooldown";
     public static final String STATUS_LIST_CIRCUIT_BREAKER_FAILURE_THRESHOLD =
             "status-list-circuit-breaker-failure-threshold";
     public static final String STATUS_LIST_MANDATORY = "status-list-mandatory";
@@ -29,8 +32,13 @@ public class StatusListConfig {
     public static final boolean DEFAULT_MANDATORY = false;
     public static final int DEFAULT_MAX_ENTRIES = 10000;
 
-    // Default timeout value for issuance path (used for both connect and read)
+    // Default values for issuance path (runtime)
     private static final int DEFAULT_ISSUANCE_TIMEOUT = 10000;
+
+    // Default values for registration path (background)
+    private static final int DEFAULT_REGISTRATION_TIMEOUT = 30000;
+    private static final int DEFAULT_REGISTRATION_RETRIES = 1;
+    private static final int DEFAULT_REGISTRATION_COOLDOWN = 60000;
 
     // Default circuit breaker values
     private static final int DEFAULT_FAILURE_THRESHOLD = 5;
@@ -111,6 +119,36 @@ public class StatusListConfig {
     public int getIssuanceTimeout() {
         String value = realm.getAttribute(STATUS_LIST_ISSUANCE_TIMEOUT);
         return value != null ? Integer.parseInt(value) : DEFAULT_ISSUANCE_TIMEOUT;
+    }
+
+    /**
+     * Gets the timeout for background registration operations in milliseconds.
+     *
+     * @return the timeout in milliseconds
+     */
+    public int getRegistrationTimeout() {
+        String value = realm.getAttribute(STATUS_LIST_REGISTRATION_TIMEOUT);
+        return value != null ? Integer.parseInt(value) : DEFAULT_REGISTRATION_TIMEOUT;
+    }
+
+    /**
+     * Gets the number of retries for background registration operations.
+     *
+     * @return the maximum number of retries
+     */
+    public int getRegistrationRetries() {
+        String value = realm.getAttribute(STATUS_LIST_REGISTRATION_RETRIES);
+        return value != null ? Integer.parseInt(value) : DEFAULT_REGISTRATION_RETRIES;
+    }
+
+    /**
+     * Gets the cooldown period in milliseconds between registration attempts for the same realm.
+     *
+     * @return the cooldown period in milliseconds
+     */
+    public long getRegistrationCooldownMs() {
+        String value = realm.getAttribute(STATUS_LIST_REGISTRATION_COOLDOWN);
+        return value != null ? Long.parseLong(value) : DEFAULT_REGISTRATION_COOLDOWN;
     }
 
     /**
