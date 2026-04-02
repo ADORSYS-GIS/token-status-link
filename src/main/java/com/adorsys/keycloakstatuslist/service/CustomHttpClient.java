@@ -64,10 +64,6 @@ public class CustomHttpClient {
     }
 
     private static HttpRequestRetryStrategy getHttpRequestRetryStrategy(int maxRetries) {
-        if (maxRetries <= 0) {
-            return null;
-        }
-
         return new HttpRequestRetryStrategy() {
             @Override
             public boolean retryRequest(
