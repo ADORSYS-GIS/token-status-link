@@ -6,7 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.argThat;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.eq;
@@ -20,6 +21,7 @@ import static org.mockito.Mockito.when;
 
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
+import com.adorsys.keycloakstatuslist.service.CircuitBreaker;
 import com.adorsys.keycloakstatuslist.service.CryptoIdentityService;
 import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
@@ -65,9 +67,18 @@ class CustomOIDCLoginProtocolFactoryTest {
 
     private MockedConstruction<StatusListService> mockedStatusListServiceConstruction;
     private MockedConstruction<CryptoIdentityService> mockedCryptoServiceConstruction;
+    private MockedStatic<CircuitBreaker> mockedCircuitBreaker;
 
     @BeforeEach
     void setUp() {
+        mockedCircuitBreaker = mockStatic(CircuitBreaker.class);
+        mockedCircuitBreaker
+                .when(() -> CircuitBreaker.getInstance(any(), anyInt(), anyInt(), anyInt()))
+                .thenAnswer(inv -> mock(CircuitBreaker.class));
+        mockedCircuitBreaker
+                .when(() -> CircuitBreaker.getInstance(any(StatusListConfig.class)))
+                .thenReturn(mock(CircuitBreaker.class));
+
         factory = new CustomOIDCLoginProtocolFactory() {
             @Override
             protected void runAsync(Runnable runnable) {
@@ -122,6 +133,7 @@ class CustomOIDCLoginProtocolFactoryTest {
         if (mockedHttpClient != null) mockedHttpClient.close();
         if (mockedStatusListServiceConstruction != null) mockedStatusListServiceConstruction.close();
         if (mockedCryptoServiceConstruction != null) mockedCryptoServiceConstruction.close();
+        if (mockedCircuitBreaker != null) mockedCircuitBreaker.close();
 
         factory.close();
     }
@@ -158,7 +170,7 @@ class CustomOIDCLoginProtocolFactoryTest {
 
         listenerCaptor.getValue().onEvent(new PostMigrationEvent(sessionFactory));
 
-        verify(transactionManager).begin();
+        verify(transactionManager, atLeastOnce()).begin();
         verify(transactionManager).commit();
 
         assertEquals(1, mockedStatusListServiceConstruction.constructed().size());

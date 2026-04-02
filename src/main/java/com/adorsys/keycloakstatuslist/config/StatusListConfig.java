@@ -38,7 +38,7 @@ public class StatusListConfig {
     // Default values for registration path (background)
     private static final int DEFAULT_REGISTRATION_TIMEOUT = 30000;
     private static final int DEFAULT_REGISTRATION_RETRIES = 1;
-    private static final int DEFAULT_REGISTRATION_COOLDOWN_SECONDS = 60;
+    private static final int DEFAULT_REGISTRATION_COOLDOWN = 60000;
 
     // Default circuit breaker values
     private static final int DEFAULT_FAILURE_THRESHOLD = 5;
@@ -148,8 +148,7 @@ public class StatusListConfig {
      */
     public long getRegistrationCooldownMs() {
         String value = realm.getAttribute(STATUS_LIST_REGISTRATION_COOLDOWN);
-        int seconds = value != null ? Integer.parseInt(value) : DEFAULT_REGISTRATION_COOLDOWN_SECONDS;
-        return seconds * 1000L;
+        return value != null ? Long.parseLong(value) : DEFAULT_REGISTRATION_COOLDOWN;
     }
 
     /**
