@@ -78,7 +78,7 @@ public class CircuitBreaker {
      * Returns a shared CircuitBreaker instance for the given name and parameters.
      * Used internally by {@link #getInstance(StatusListConfig)}.
      */
-    private static CircuitBreaker getInstance(
+    public static CircuitBreaker getInstance(
             String name, int failureThreshold, int windowSeconds, int cooldownSeconds) {
         return INSTANCES.computeIfAbsent(
                 name, key -> new CircuitBreaker(key, failureThreshold, windowSeconds, cooldownSeconds));
