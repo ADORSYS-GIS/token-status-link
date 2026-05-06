@@ -99,8 +99,9 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
     @Test
     void testGetMetadataAttributePath() {
-        assertEquals(
-                Constants.STATUS_CLAIM_KEY, mapper.getMetadataAttributePath().get(0));
+        var metadataPath = mapper.getMetadataAttributePath();
+        assertFalse(metadataPath.isEmpty());
+        assertEquals(Constants.STATUS_CLAIM_KEY, metadataPath.get(metadataPath.size() - 1));
     }
 
     @Test
