@@ -34,6 +34,7 @@ import jakarta.persistence.PersistenceException;
 import jakarta.ws.rs.core.UriBuilder;
 import java.net.URI;
 import java.util.HashMap;
+import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 import nl.altindag.log.LogCaptor;
 import org.junit.jupiter.api.BeforeEach;
@@ -99,9 +100,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
     @Test
     void testGetMetadataAttributePath() {
-        var metadataPath = mapper.getMetadataAttributePath();
-        assertFalse(metadataPath.isEmpty());
-        assertEquals(Constants.STATUS_CLAIM_KEY, metadataPath.get(metadataPath.size() - 1));
+        assertEquals(List.of("credentialSubject", Constants.STATUS_CLAIM_KEY), mapper.getMetadataAttributePath());
     }
 
     @Test
