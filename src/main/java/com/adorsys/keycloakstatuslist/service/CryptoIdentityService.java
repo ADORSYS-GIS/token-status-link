@@ -7,13 +7,12 @@ import java.security.interfaces.ECPublicKey;
 import java.security.interfaces.RSAPublicKey;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Optional;
 import org.jboss.logging.Logger;
 import org.keycloak.common.util.Time;
 import org.keycloak.crypto.Algorithm;
-import org.keycloak.crypto.AsymmetricSignatureSignerContext;
 import org.keycloak.crypto.KeyUse;
 import org.keycloak.crypto.KeyWrapper;
+import org.keycloak.crypto.SignatureProvider;
 import org.keycloak.jose.jwk.JWK;
 import org.keycloak.jose.jwk.JWKBuilder;
 import org.keycloak.jose.jws.JWSBuilder;
@@ -38,9 +37,22 @@ public class CryptoIdentityService {
 
     /**
      * Retrieve the active signing key for the given realm.
+     * Uses the same algorithm resolution logic as {@link #getRealmKeyData} to ensure
+     * that the JWT bearer token is signed with the same key that was registered.
      */
     public KeyWrapper getActiveKey(RealmModel realm) {
-        KeyWrapper activeKey = session.keys().getActiveKey(realm, KeyUse.SIG, "RS256");
+        String defaultAlg = realm.getDefaultSignatureAlgorithm();
+        String algorithm = (defaultAlg == null || defaultAlg.isBlank()) ? Algorithm.ES256 : defaultAlg;
+
+        KeyWrapper activeKey = session.keys().getActiveKey(realm, KeyUse.SIG, algorithm);
+        if (activeKey == null) {
+            // Fall back to ES256 explicitly
+            activeKey = session.keys().getActiveKey(realm, KeyUse.SIG, Algorithm.ES256);
+        }
+        if (activeKey == null) {
+            // Final fallback to RS256
+            activeKey = session.keys().getActiveKey(realm, KeyUse.SIG, Algorithm.RS256);
+        }
         if (activeKey == null) {
             throw new IllegalStateException("No active signing key found for realm: " + realm.getName());
         }
@@ -53,6 +65,12 @@ public class CryptoIdentityService {
      */
     public String getJwtToken(StatusListConfig realmConfig) {
         KeyWrapper keyWrapper = getActiveKey(realmConfig.getRealm());
+        String algorithm = keyWrapper.getAlgorithm() != null ? keyWrapper.getAlgorithm() : Algorithm.ES256;
+
+        SignatureProvider signatureProvider = session.getProvider(SignatureProvider.class, algorithm);
+        if (signatureProvider == null) {
+            throw new IllegalStateException("No SignatureProvider found for algorithm: " + algorithm);
+        }
 
         // Payload
         Map<String, Object> payload = new HashMap<>();
@@ -61,7 +79,7 @@ public class CryptoIdentityService {
         payload.put("exp", Time.currentTime() + DEFAULT_AUTH_TOKEN_LIFETIME);
 
         // Build and sign JWT
-        return new JWSBuilder().jsonContent(payload).sign(new AsymmetricSignatureSignerContext(keyWrapper));
+        return new JWSBuilder().jsonContent(payload).sign(signatureProvider.signer(keyWrapper));
     }
 
     /**
@@ -72,8 +90,8 @@ public class CryptoIdentityService {
         try {
             KeyManager keyManager = session.keys();
 
-            String algorithm =
-                    Optional.ofNullable(realm.getDefaultSignatureAlgorithm()).orElse(Algorithm.ES256);
+            String defaultAlg = realm.getDefaultSignatureAlgorithm();
+            String algorithm = (defaultAlg == null || defaultAlg.isBlank()) ? Algorithm.ES256 : defaultAlg;
 
             KeyWrapper activeKey = keyManager.getActiveKey(realm, KeyUse.SIG, algorithm);
 

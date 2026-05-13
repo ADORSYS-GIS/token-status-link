@@ -43,7 +43,46 @@ class CryptoIdentityServiceTest extends MockKeycloakTest {
     }
 
     @Test
+    void getActiveKeyShouldPreferEs256OverRs256() {
+        KeyWrapper esKey = new KeyWrapper();
+        esKey.setKid("es-kid");
+        esKey.setAlgorithm(Algorithm.ES256);
+
+        KeyWrapper rsaKey = new KeyWrapper();
+        rsaKey.setKid("rsa-kid");
+        rsaKey.setAlgorithm(Algorithm.RS256);
+
+        when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq(Algorithm.ES256)))
+                .thenReturn(esKey);
+        org.mockito.Mockito.lenient()
+                .when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq(Algorithm.RS256)))
+                .thenReturn(rsaKey);
+
+        KeyWrapper result = service.getActiveKey(realm);
+        assertEquals("es-kid", result.getKid());
+        assertEquals(Algorithm.ES256, result.getAlgorithm());
+    }
+
+    @Test
+    void getActiveKeyShouldFallbackToRs256WhenEs256Missing() {
+        KeyWrapper rsaKey = new KeyWrapper();
+        rsaKey.setKid("rsa-kid-fallback");
+        rsaKey.setAlgorithm(Algorithm.RS256);
+
+        when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq(Algorithm.ES256)))
+                .thenReturn(null);
+        when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq(Algorithm.RS256)))
+                .thenReturn(rsaKey);
+
+        KeyWrapper result = service.getActiveKey(realm);
+        assertEquals("rsa-kid-fallback", result.getKid());
+        assertEquals(Algorithm.RS256, result.getAlgorithm());
+    }
+
+    @Test
     void getActiveKeyShouldThrowWhenNoActiveSigningKey() {
+        when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq(Algorithm.ES256)))
+                .thenReturn(null);
         when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq(Algorithm.RS256)))
                 .thenReturn(null);
 
@@ -72,8 +111,10 @@ class CryptoIdentityServiceTest extends MockKeycloakTest {
     @Test
     void getRealmKeyDataShouldFallbackToRs256WhenDefaultAlgMissing() throws Exception {
         when(realm.getDefaultSignatureAlgorithm()).thenReturn(null);
+        // ES256 check fails
         when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq(Algorithm.ES256)))
                 .thenReturn(null);
+        // Fallback to RS256
         when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq(Algorithm.RS256)))
                 .thenReturn(RSATestUtils.getRsaKeyWrapper(testJwkResource("/keycloak-active-key-rsa.json")));
 
