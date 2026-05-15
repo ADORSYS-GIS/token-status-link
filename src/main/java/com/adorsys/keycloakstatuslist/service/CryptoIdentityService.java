@@ -36,27 +36,37 @@ public class CryptoIdentityService {
     }
 
     /**
-     * Retrieve the active signing key for the given realm.
-     * Uses the same algorithm resolution logic as {@link #getRealmKeyData} to ensure
-     * that the JWT bearer token is signed with the same key that was registered.
+     * Resolves the active signing key for the given realm using a consistent fallback chain:
+     * default algorithm → ES256 → RS256.
+     *
+     * <p>This is the single source of truth for key resolution and is used by both
+     * {@link #getActiveKey} and {@link #getRealmKeyData} to ensure the JWT bearer token
+     * is always signed with the same key that was registered as the issuer key.
      */
-    public KeyWrapper getActiveKey(RealmModel realm) {
+    static KeyWrapper resolveActiveSigningKey(RealmModel realm, KeyManager keyManager) {
         String defaultAlg = realm.getDefaultSignatureAlgorithm();
         String algorithm = (defaultAlg == null || defaultAlg.isBlank()) ? Algorithm.ES256 : defaultAlg;
 
-        KeyWrapper activeKey = session.keys().getActiveKey(realm, KeyUse.SIG, algorithm);
-        if (activeKey == null) {
-            // Fall back to ES256 explicitly
-            activeKey = session.keys().getActiveKey(realm, KeyUse.SIG, Algorithm.ES256);
+        KeyWrapper activeKey = keyManager.getActiveKey(realm, KeyUse.SIG, algorithm);
+        if (activeKey == null || activeKey.getPublicKey() == null) {
+            activeKey = keyManager.getActiveKey(realm, KeyUse.SIG, Algorithm.ES256);
         }
-        if (activeKey == null) {
-            // Final fallback to RS256
-            activeKey = session.keys().getActiveKey(realm, KeyUse.SIG, Algorithm.RS256);
+        if (activeKey == null || activeKey.getPublicKey() == null) {
+            activeKey = keyManager.getActiveKey(realm, KeyUse.SIG, Algorithm.RS256);
         }
+        return activeKey;
+    }
+
+    /**
+     * Retrieve the active signing key for the given realm.
+     *
+     * @throws IllegalStateException if no active signing key is found
+     */
+    public KeyWrapper getActiveKey(RealmModel realm) {
+        KeyWrapper activeKey = resolveActiveSigningKey(realm, session.keys());
         if (activeKey == null) {
             throw new IllegalStateException("No active signing key found for realm: " + realm.getName());
         }
-
         return activeKey;
     }
 
@@ -83,22 +93,15 @@ public class CryptoIdentityService {
     }
 
     /**
-     * Gets the realm's active signing key and converts it to JWK. Supports RSA and EC. accessible by
-     * CredentialRevocationResourceProviderFactory.
+     * Gets the realm's active signing key and converts it to JWK. Supports RSA and EC.
+     * Accessible by CredentialRevocationResourceProviderFactory.
+     *
+     * <p>Uses {@link #resolveActiveSigningKey} to guarantee that the registered JWK
+     * always matches the key used to sign the JWT bearer token.
      */
     public static KeyData getRealmKeyData(KeycloakSession session, RealmModel realm) throws StatusListException {
         try {
-            KeyManager keyManager = session.keys();
-
-            String defaultAlg = realm.getDefaultSignatureAlgorithm();
-            String algorithm = (defaultAlg == null || defaultAlg.isBlank()) ? Algorithm.ES256 : defaultAlg;
-
-            KeyWrapper activeKey = keyManager.getActiveKey(realm, KeyUse.SIG, algorithm);
-
-            if (activeKey == null || activeKey.getPublicKey() == null) {
-                activeKey = keyManager.getActiveKey(realm, KeyUse.SIG, Algorithm.RS256);
-                algorithm = Algorithm.RS256;
-            }
+            KeyWrapper activeKey = resolveActiveSigningKey(realm, session.keys());
 
             if (activeKey == null) {
                 throw new StatusListException("No active signing key found for realm: " + realm.getName());
@@ -109,7 +112,7 @@ public class CryptoIdentityService {
             }
 
             PublicKey pubKey = (PublicKey) activeKey.getPublicKey();
-            String finalAlg = activeKey.getAlgorithm() != null ? activeKey.getAlgorithm() : algorithm;
+            String finalAlg = activeKey.getAlgorithm();
 
             JWKBuilder builder = JWKBuilder.create().kid(activeKey.getKid()).algorithm(finalAlg);
 
