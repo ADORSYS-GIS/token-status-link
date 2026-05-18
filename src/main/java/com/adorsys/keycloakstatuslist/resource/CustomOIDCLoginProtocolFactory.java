@@ -87,6 +87,7 @@ public class CustomOIDCLoginProtocolFactory extends OIDCLoginProtocolFactory {
                     try {
                         RealmModel realm = bgSession.realms().getRealmByName(realmName);
                         if (realm != null) {
+                            bgSession.getContext().setRealm(realm);
                             ensureRealmRegistered(bgSession, realm);
                         }
                         bgSession.getTransactionManager().commit();

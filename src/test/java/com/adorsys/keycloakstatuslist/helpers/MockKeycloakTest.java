@@ -1,6 +1,7 @@
 package com.adorsys.keycloakstatuslist.helpers;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mockStatic;
@@ -22,6 +23,8 @@ import org.keycloak.common.ClientConnection;
 import org.keycloak.connections.jpa.JpaConnectionProvider;
 import org.keycloak.crypto.Algorithm;
 import org.keycloak.crypto.KeyWrapper;
+import org.keycloak.crypto.SignatureProvider;
+import org.keycloak.crypto.SignatureSignerContext;
 import org.keycloak.jose.jwk.JWK;
 import org.keycloak.models.ClientModel;
 import org.keycloak.models.KeyManager;
@@ -82,6 +85,12 @@ public class MockKeycloakTest {
     @Mock
     protected CloseableHttpResponse httpResponse;
 
+    @Mock
+    protected SignatureProvider signatureProvider;
+
+    @Mock
+    protected SignatureSignerContext signerContext;
+
     private MockedStatic<CustomHttpClient> mocked;
 
     static KeyWrapper getActiveRsaKey() {
@@ -125,6 +134,13 @@ public class MockKeycloakTest {
         lenient()
                 .when(keyManager.getActiveKey(any(), any(), eq(Algorithm.RS256)))
                 .thenReturn(getActiveRsaKey());
+
+        lenient()
+                .when(session.getProvider(eq(SignatureProvider.class), anyString()))
+                .thenReturn(signatureProvider);
+        lenient().when(signatureProvider.signer(any())).thenReturn(signerContext);
+        lenient().when(signerContext.getKid()).thenReturn("test-kid");
+        lenient().when(signerContext.getAlgorithm()).thenReturn(Algorithm.RS256);
 
         lenient().when(session.getKeycloakSessionFactory()).thenReturn(sessionFactory);
         lenient().when(sessionFactory.create()).thenReturn(session);
