@@ -48,9 +48,13 @@ public class CryptoIdentityService {
         String algorithm = (defaultAlg == null || defaultAlg.isBlank()) ? Algorithm.ES256 : defaultAlg;
 
         KeyWrapper activeKey = keyManager.getActiveKey(realm, KeyUse.SIG, algorithm);
+
         if (activeKey == null || activeKey.getPublicKey() == null) {
-            activeKey = keyManager.getActiveKey(realm, KeyUse.SIG, Algorithm.ES256);
+            if (!Algorithm.ES256.equals(algorithm)) {
+                activeKey = keyManager.getActiveKey(realm, KeyUse.SIG, Algorithm.ES256);
+            }
         }
+
         if (activeKey == null || activeKey.getPublicKey() == null) {
             activeKey = keyManager.getActiveKey(realm, KeyUse.SIG, Algorithm.RS256);
         }

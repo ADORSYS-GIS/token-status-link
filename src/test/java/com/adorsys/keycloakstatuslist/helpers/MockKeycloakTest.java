@@ -102,15 +102,6 @@ public class MockKeycloakTest {
         }
     }
 
-    static KeyWrapper getActiveEcKey() {
-        try {
-            JWK jwk = testJwkResource("/keycloak-active-key-ec.json");
-            return ECTestUtils.getEcKeyWrapper(jwk);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-    }
-
     @SuppressWarnings("SameParameterValue")
     protected static JWK testJwkResource(String filename) {
         try (InputStream stream = MockKeycloakTest.class.getResourceAsStream(filename)) {
