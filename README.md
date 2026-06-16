@@ -36,6 +36,14 @@ The plugin can be configured at the realm level with the following properties:
 | `status-list-mandatory`                         | If true, publication failures block issuance; if false, failures are logged and issuance continues without a status claim | `false`                               |
 | `status-list-max-entries`                       | Maximum number of entries to publish under the same status list                                                           | `10000`                               |
 
+## Compatibility
+
+This plugin has been tested and verified to work with:
+
+| Component | Version |
+|-----------|---------|
+| Keycloak  | 26.6.3  |
+
 ## Installation
 
 1. Build the plugin using Maven:
