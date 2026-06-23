@@ -4,7 +4,7 @@
 
     <!-- TODO: Update package hierarchy in the codebase to match this groupId.
           Delayed to avoid giant conflicts given ongoing PRs. -->
-    <groupId>io.github.adorsys-gis</groupId>
+    <groupId>io.github.wistefan</groupId>
     <artifactId>keycloak-token-status-plugin</artifactId>
     <version>${revision}</version>
     <packaging>jar</packaging>
