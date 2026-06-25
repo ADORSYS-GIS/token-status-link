@@ -190,14 +190,17 @@ public class CustomHttpClient {
             }
         }
         if (proxyUrl == null || proxyUrl.isEmpty()) {
+            logger.info("Empty proxy url.");
             return null;
         }
         try {
+            logger.info("Setup proxy");
             URI uri = new URI(proxyUrl);
             int port = uri.getPort();
             if (port < 0) {
                 port = "https".equalsIgnoreCase(uri.getScheme()) ? 443 : 80;
             }
+            logger.infof("Use proxy %s.", uri.getHost());
             return new HttpHost(uri.getScheme(), uri.getHost(), port);
         } catch (URISyntaxException e) {
             logger.warnf("Invalid proxy URL '%s': %s", proxyUrl, e.getMessage());
