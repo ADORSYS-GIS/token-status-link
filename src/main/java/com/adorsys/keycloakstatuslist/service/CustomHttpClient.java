@@ -1,19 +1,30 @@
 package com.adorsys.keycloakstatuslist.service;
 
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.security.KeyStore;
+import java.security.cert.CertificateFactory;
+import java.security.cert.X509Certificate;
 import java.util.function.Function;
+import javax.net.ssl.SSLContext;
 import org.apache.hc.client5.http.HttpRequestRetryStrategy;
 import org.apache.hc.client5.http.config.RequestConfig;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.HttpClientBuilder;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
+import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManagerBuilder;
+import org.apache.hc.client5.http.io.HttpClientConnectionManager;
+import org.apache.hc.client5.http.ssl.NoopHostnameVerifier;
+import org.apache.hc.client5.http.ssl.SSLConnectionSocketFactoryBuilder;
+import org.apache.hc.client5.http.ssl.TrustAllStrategy;
 import org.apache.hc.core5.http.HttpHost;
 import org.apache.hc.core5.http.HttpRequest;
 import org.apache.hc.core5.http.HttpResponse;
 import org.apache.hc.core5.http.protocol.HttpContext;
+import org.apache.hc.core5.ssl.SSLContextBuilder;
 import org.apache.hc.core5.util.TimeValue;
 import org.apache.hc.core5.util.Timeout;
 import org.jboss.logging.Logger;
@@ -32,8 +43,7 @@ public class CustomHttpClient {
      * @return configured HTTP client
      */
     public static CloseableHttpClient getIssuanceHttpClient(StatusListConfig config) {
-        // Issuance path: minimal/no retries to avoid blocking the user thread for too long
-        return createHttpClient(config.getIssuanceTimeout(), 0);
+        return createHttpClient(config.getIssuanceTimeout(), 0, config);
     }
 
     /**
@@ -44,7 +54,7 @@ public class CustomHttpClient {
      * @return configured HTTP client
      */
     public static CloseableHttpClient getRegistrationHttpClient(StatusListConfig config) {
-        return createHttpClient(config.getRegistrationTimeout(), config.getRegistrationRetries());
+        return createHttpClient(config.getRegistrationTimeout(), config.getRegistrationRetries(), config);
     }
 
     /**
@@ -54,7 +64,7 @@ public class CustomHttpClient {
         return getIssuanceHttpClient(config);
     }
 
-    private static CloseableHttpClient createHttpClient(int timeoutMs, int maxRetries) {
+    private static CloseableHttpClient createHttpClient(int timeoutMs, int maxRetries, StatusListConfig config) {
         if (timeoutMs <= 0) {
             timeoutMs = DEFAULT_CONNECT_TIMEOUT;
         }
@@ -72,7 +82,85 @@ public class CustomHttpClient {
             logger.infof("Using HTTP proxy: %s", proxy);
         }
 
+        HttpClientConnectionManager connectionManager = buildConnectionManager(config);
+        if (connectionManager != null) {
+            builder.setConnectionManager(connectionManager);
+        }
+
         return builder.build();
+    }
+
+    /**
+     * Builds a connection manager with custom TLS configuration if needed.
+     *
+     * @param config the status list configuration containing TLS settings
+     * @return a configured connection manager, or null to use the default
+     */
+    static HttpClientConnectionManager buildConnectionManager(StatusListConfig config) {
+        SSLContext sslContext = buildSslContext(config);
+        if (sslContext == null) {
+            return null;
+        }
+
+        SSLConnectionSocketFactoryBuilder sslSocketBuilder =
+                SSLConnectionSocketFactoryBuilder.create().setSslContext(sslContext);
+
+        if (config.isTlsTrustAll()) {
+            sslSocketBuilder.setHostnameVerifier(NoopHostnameVerifier.INSTANCE);
+        }
+
+        return PoolingHttpClientConnectionManagerBuilder.create()
+                .setSSLSocketFactory(sslSocketBuilder.build())
+                .build();
+    }
+
+    /**
+     * Builds an SSLContext based on the TLS configuration.
+     * Returns null when the default JVM trust store should be used.
+     *
+     * @param config the status list configuration
+     * @return a custom SSLContext, or null for JVM defaults
+     */
+    static SSLContext buildSslContext(StatusListConfig config) {
+        try {
+            if (config.isTlsTrustAll()) {
+                logger.warn("TLS trust-all is enabled — all server certificates will be accepted");
+                return SSLContextBuilder.create()
+                        .loadTrustMaterial(TrustAllStrategy.INSTANCE)
+                        .build();
+            }
+
+            String caCertPath = config.getTlsCaCertPath();
+            if (caCertPath != null && !caCertPath.isEmpty()) {
+                logger.infof("Loading custom CA certificate from: %s", caCertPath);
+                return buildSslContextFromCaCert(caCertPath);
+            }
+        } catch (Exception e) {
+            logger.errorf(e, "Failed to build custom SSLContext, falling back to JVM defaults");
+        }
+        return null;
+    }
+
+    /**
+     * Builds an SSLContext that trusts a specific PEM-encoded CA certificate file.
+     *
+     * @param caCertPath path to the PEM-encoded CA certificate
+     * @return configured SSLContext
+     * @throws Exception if the certificate cannot be loaded or the SSLContext cannot be built
+     */
+    static SSLContext buildSslContextFromCaCert(String caCertPath) throws Exception {
+        CertificateFactory cf = CertificateFactory.getInstance("X.509");
+        X509Certificate caCert;
+        try (FileInputStream fis = new FileInputStream(caCertPath)) {
+            caCert = (X509Certificate) cf.generateCertificate(fis);
+        }
+        KeyStore trustStore = KeyStore.getInstance(KeyStore.getDefaultType());
+        trustStore.load(null, null);
+        trustStore.setCertificateEntry("status-list-ca", caCert);
+
+        return SSLContextBuilder.create()
+                .loadTrustMaterial(trustStore, null)
+                .build();
     }
 
     /**

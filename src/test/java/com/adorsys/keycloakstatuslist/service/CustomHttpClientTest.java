@@ -10,16 +10,21 @@ import static org.mockito.Mockito.when;
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import java.io.IOException;
 import java.lang.reflect.Method;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
+import javax.net.ssl.SSLContext;
 import org.apache.hc.client5.http.HttpRequestRetryStrategy;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.client5.http.io.HttpClientConnectionManager;
 import org.apache.hc.core5.http.HttpHost;
 import org.apache.hc.core5.http.HttpRequest;
 import org.apache.hc.core5.http.HttpResponse;
 import org.apache.hc.core5.http.protocol.HttpContext;
 import org.apache.hc.core5.util.TimeValue;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.keycloak.models.RealmModel;
 
 class CustomHttpClientTest {
@@ -156,6 +161,95 @@ class CustomHttpClientTest {
 
         assertNull(proxy);
     }
+
+    @Test
+    void buildSslContextShouldReturnNullWhenNoTlsConfigured() {
+        StatusListConfig config = configWithTls(false, null);
+
+        SSLContext result = CustomHttpClient.buildSslContext(config);
+
+        assertNull(result);
+    }
+
+    @Test
+    void buildSslContextShouldReturnContextWhenTrustAllEnabled() {
+        StatusListConfig config = configWithTls(true, null);
+
+        SSLContext result = CustomHttpClient.buildSslContext(config);
+
+        assertNotNull(result);
+    }
+
+    @Test
+    void buildSslContextShouldReturnContextForValidCaCert(@TempDir Path tempDir) throws Exception {
+        Path certFile = tempDir.resolve("ca.crt");
+        Files.writeString(certFile, TEST_CA_PEM);
+
+        StatusListConfig config = configWithTls(false, certFile.toString());
+
+        SSLContext result = CustomHttpClient.buildSslContext(config);
+
+        assertNotNull(result);
+    }
+
+    @Test
+    void buildSslContextShouldFallBackToNullForMissingCaCertFile() {
+        StatusListConfig config = configWithTls(false, "/nonexistent/ca.crt");
+
+        SSLContext result = CustomHttpClient.buildSslContext(config);
+
+        assertNull(result);
+    }
+
+    @Test
+    void buildConnectionManagerShouldReturnNullWhenNoTlsConfigured() {
+        StatusListConfig config = configWithTls(false, null);
+
+        HttpClientConnectionManager result = CustomHttpClient.buildConnectionManager(config);
+
+        assertNull(result);
+    }
+
+    @Test
+    void buildConnectionManagerShouldReturnManagerWhenTrustAllEnabled() {
+        StatusListConfig config = configWithTls(true, null);
+
+        HttpClientConnectionManager result = CustomHttpClient.buildConnectionManager(config);
+
+        assertNotNull(result);
+    }
+
+    private StatusListConfig configWithTls(boolean trustAll, String caCertPath) {
+        RealmModel realm = mock(RealmModel.class);
+        if (trustAll) {
+            when(realm.getAttribute(StatusListConfig.STATUS_LIST_TLS_TRUST_ALL)).thenReturn("true");
+        }
+        if (caCertPath != null) {
+            when(realm.getAttribute(StatusListConfig.STATUS_LIST_TLS_CA_CERT_PATH)).thenReturn(caCertPath);
+        }
+        return new StatusListConfig(realm);
+    }
+
+    private static final String TEST_CA_PEM =
+            "-----BEGIN CERTIFICATE-----\n"
+                    + "MIIDBTCCAe2gAwIBAgIUZ0BfKEPgqHS63KWkX3pC3nuvvKEwDQYJKoZIhvcNAQEL\n"
+                    + "BQAwEjEQMA4GA1UEAwwHVGVzdCBDQTAeFw0yNjA2MjUxMjA2MjZaFw0yNzA2MjUx\n"
+                    + "MjA2MjZaMBIxEDAOBgNVBAMMB1Rlc3QgQ0EwggEiMA0GCSqGSIb3DQEBAQUAA4IB\n"
+                    + "DwAwggEKAoIBAQDuIObFSYy/zTWPFhPhaLh8Q8JKkJjCmpye04hYFg212FWSV9iS\n"
+                    + "CkEIhEhsA9zm6hMzHAcBTCJ1hlM/CHJ7LA9bb0o4tO+lnP3a/kBEG7RPVD4f0run\n"
+                    + "sSTjGFrci4SAWCu8RhNV7KH6jv+6315w6onSO6RPyUEzodKP8D0NE3aTasyKpaW1\n"
+                    + "mn4dP+CrYnutHegQQNM+gxAqTbrL9ghMtt2cR//vOxaMSrL7N+IfTEu1qxVqeqU5\n"
+                    + "pgUsUNG5XNAjhANU5zfhR3TmZWm3pjhiGu+kO5cFgjDYeEFwiqhzvxjyhs1RA89Z\n"
+                    + "pvgbz5HtiAhEDrRH3nyiswzOjb8IcIrLxUO5AgMBAAGjUzBRMB0GA1UdDgQWBBQd\n"
+                    + "05/+gyT8HVBAHZvC1vWbz87e8jAfBgNVHSMEGDAWgBQd05/+gyT8HVBAHZvC1vWb\n"
+                    + "z87e8jAPBgNVHRMBAf8EBTADAQH/MA0GCSqGSIb3DQEBCwUAA4IBAQBOfXtezUxP\n"
+                    + "CUFklnuon3No/st1Hff6KedmLAmtCDrELuhEMMHh3kINmMcnR2jyXadSO3FIjcc5\n"
+                    + "VVTlj37g3+QRKJuFq18VNDnTT95ErzRPFQe4iBMcrxhNmuVJFx2TIgMtQUEljFJe\n"
+                    + "OlrsqzyPkJ39NIN8n7EAg7a5fIMe+lf0bm+VzsQ0i9O0BRFF5kB1lZbOh2n2rJtJ\n"
+                    + "6tvSzFaVh+YFMGhbspX5roRHFmM4IwiPSW8egEBSa6FkUY1kbLuo8sIBCwASmWBb\n"
+                    + "YQKr1usSnpXvftbJyMKGEFFfLYlQz8NxwgO+QBk2HH2WuNffKU7bf4lChsX6fPmk\n"
+                    + "zwk6Xo03geo5\n"
+                    + "-----END CERTIFICATE-----\n";
 
     private HttpRequestRetryStrategy getRetryStrategy(int maxRetries) {
         try {
