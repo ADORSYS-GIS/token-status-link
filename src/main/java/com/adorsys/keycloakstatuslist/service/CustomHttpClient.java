@@ -2,10 +2,15 @@ package com.adorsys.keycloakstatuslist.service;
 
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.util.function.Function;
 import org.apache.hc.client5.http.HttpRequestRetryStrategy;
 import org.apache.hc.client5.http.config.RequestConfig;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.client5.http.impl.classic.HttpClientBuilder;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
+import org.apache.hc.core5.http.HttpHost;
 import org.apache.hc.core5.http.HttpRequest;
 import org.apache.hc.core5.http.HttpResponse;
 import org.apache.hc.core5.http.protocol.HttpContext;
@@ -57,10 +62,59 @@ public class CustomHttpClient {
                 .setConnectionRequestTimeout(Timeout.ofMilliseconds(timeoutMs))
                 .setResponseTimeout(Timeout.ofMilliseconds(timeoutMs))
                 .build();
-        return HttpClients.custom()
+        HttpClientBuilder builder = HttpClients.custom()
                 .setDefaultRequestConfig(requestConfig)
-                .setRetryStrategy(getHttpRequestRetryStrategy(maxRetries))
-                .build();
+                .setRetryStrategy(getHttpRequestRetryStrategy(maxRetries));
+
+        HttpHost proxy = resolveProxy();
+        if (proxy != null) {
+            builder.setProxy(proxy);
+            logger.infof("Using HTTP proxy: %s", proxy);
+        }
+
+        return builder.build();
+    }
+
+    /**
+     * Resolves an HTTP proxy from the HTTPS_PROXY or HTTP_PROXY environment variables.
+     * Apache HttpClient 5 does not read these variables automatically.
+     *
+     * @return the proxy HttpHost, or null if no proxy is configured
+     */
+    static HttpHost resolveProxy() {
+        return resolveProxy(System::getenv);
+    }
+
+    /**
+     * Resolves an HTTP proxy using the provided environment variable lookup function.
+     * Checks HTTPS_PROXY, https_proxy, HTTP_PROXY, http_proxy in order.
+     *
+     * @param envLookup function to look up environment variable values by name
+     * @return the proxy HttpHost, or null if no proxy is configured
+     */
+    static HttpHost resolveProxy(Function<String, String> envLookup) {
+        String[] candidates = {"HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"};
+        String proxyUrl = null;
+        for (String name : candidates) {
+            proxyUrl = envLookup.apply(name);
+            if (proxyUrl != null && !proxyUrl.isEmpty()) {
+                break;
+            }
+        }
+        if (proxyUrl == null || proxyUrl.isEmpty()) {
+            return null;
+        }
+        try {
+            URI uri = new URI(proxyUrl);
+            int port = uri.getPort();
+            if (port < 0) {
+                port = "https".equalsIgnoreCase(uri.getScheme()) ? 443 : 80;
+            }
+            return new HttpHost(uri.getScheme(), uri.getHost(), port);
+        } catch (URISyntaxException e) {
+            logger.warnf("Invalid proxy URL '%s': %s", proxyUrl, e.getMessage());
+            return null;
+        }
     }
 
     private static HttpRequestRetryStrategy getHttpRequestRetryStrategy(int maxRetries) {

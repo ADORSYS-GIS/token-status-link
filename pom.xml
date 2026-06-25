@@ -14,7 +14,7 @@
     <url>https://github.com/ADORSYS-GIS/token-status-link</url>
 
     <properties>
-        <revision>1.0.0-SNAPSHOT</revision>
+        <revision>0.3.0</revision>
         <keycloak.version>26.6.3</keycloak.version>
         <jackson.version>2.19.2</jackson.version>
         <mockito.version>5.20.0</mockito.version>
