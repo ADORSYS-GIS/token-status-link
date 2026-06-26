@@ -15,11 +15,15 @@ import com.adorsys.keycloakstatuslist.service.CircuitBreaker;
 import com.adorsys.keycloakstatuslist.service.CryptoIdentityService;
 import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.ws.rs.core.UriBuilder;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.apache.commons.collections4.ListUtils;
@@ -42,7 +46,20 @@ import org.keycloak.provider.ProviderConfigProperty;
 public class StatusListProtocolMapper extends OID4VCMapper {
 
     private static final Logger logger = Logger.getLogger(StatusListProtocolMapper.class);
+    private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
     private static final List<ProviderConfigProperty> CONFIG_PROPERTIES = new ArrayList<>();
+
+    static {
+        ProviderConfigProperty metadataClaimPaths = new ProviderConfigProperty();
+        metadataClaimPaths.setName(Constants.METADATA_CLAIM_PATHS_KEY);
+        metadataClaimPaths.setLabel("Metadata Claim Paths");
+        metadataClaimPaths.setHelpText(
+                "Comma-separated list of claim paths to extract from the issued credential "
+                        + "and store as metadata (e.g. 'vct,sub.email'). "
+                        + "Nested claims use dot notation.");
+        metadataClaimPaths.setType(ProviderConfigProperty.STRING_TYPE);
+        CONFIG_PROPERTIES.add(metadataClaimPaths);
+    }
 
     private final KeycloakSession session;
     private final StatusListService statusListService;
@@ -178,7 +195,8 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         UserSessionModel userSession = session.getContext().getUserSession();
         String userId = userSession != null ? userSession.getUser().getId() : null;
 
-        Status status = sendStatusAndStoreIndexMapping(listId, uri.toString(), userId, tokenId);
+        String metadata = extractMetadata(claims);
+        Status status = sendStatusAndStoreIndexMapping(listId, uri.toString(), userId, tokenId, metadata);
 
         if (status == null) {
             if (config.isMandatory()) {
@@ -207,13 +225,22 @@ public class StatusListProtocolMapper extends OID4VCMapper {
 
     /**
      * Send status to server to create status list entry and store index mapping in database.
+     *
+     * @param statusListId the status list identifier
+     * @param uri the status list URI
+     * @param userId the user ID of the credential holder
+     * @param tokenId the credential/token identifier
+     * @param metadata JSON string of extracted claim metadata, or null if no metadata configured
+     * @return the Status claim to embed in the credential, or null on failure
      */
-    public Status sendStatusAndStoreIndexMapping(String statusListId, String uri, String userId, String tokenId) {
+    public Status sendStatusAndStoreIndexMapping(
+            String statusListId, String uri, String userId, String tokenId, String metadata) {
         StatusListMappingEntity mapping = new StatusListMappingEntity();
         mapping.setStatusListId(statusListId);
         mapping.setUserId(userId);
         mapping.setTokenId(tokenId);
         mapping.setRealmId(session.getContext().getRealm().getId());
+        mapping.setMetadata(metadata);
 
         try {
             logger.debugf(
@@ -259,6 +286,67 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         return status;
     }
 
+    /**
+     * Extracts configured claim values from the credential claims and serializes them as a JSON string.
+     *
+     * @param claims the credential claims map
+     * @return JSON string of extracted metadata, or null if no claim paths are configured
+     */
+    String extractMetadata(Map<String, Object> claims) {
+        if (mapperModel == null) {
+            return null;
+        }
+        String claimPathsConfig = mapperModel.getConfig().get(Constants.METADATA_CLAIM_PATHS_KEY);
+        if (claimPathsConfig == null || claimPathsConfig.isBlank()) {
+            return null;
+        }
+
+        List<String> paths = Arrays.stream(claimPathsConfig.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .toList();
+
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        for (String path : paths) {
+            Object value = resolveClaimPath(claims, path);
+            if (value != null) {
+                metadata.put(path, value);
+            }
+        }
+
+        if (metadata.isEmpty()) {
+            return null;
+        }
+
+        try {
+            return JSON_MAPPER.writeValueAsString(metadata);
+        } catch (JsonProcessingException e) {
+            logger.warnf("Failed to serialize metadata for claim paths [%s]: %s", claimPathsConfig, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Resolves a dot-separated claim path against a nested map structure.
+     *
+     * @param claims the root claims map
+     * @param path dot-separated path (e.g. "sub.email")
+     * @return the resolved value, or null if any segment is missing or not a map
+     */
+    @SuppressWarnings("unchecked")
+    static Object resolveClaimPath(Map<String, Object> claims, String path) {
+        String[] segments = path.split("\\.");
+        Object current = claims;
+        for (String segment : segments) {
+            if (current instanceof Map<?, ?> map) {
+                current = map.get(segment);
+            } else {
+                return null;
+            }
+        }
+        return current;
+    }
+
     private void sendStatusToServer(long idx, String statusListId) throws IOException, StatusListException {
         // Prepare payload
         StatusListService.StatusListPayload payload = new StatusListService.StatusListPayload(
@@ -274,6 +362,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
 
         String ID_CLAIM_KEY = "id";
         String STATUS_CLAIM_KEY = "status";
+        String METADATA_CLAIM_PATHS_KEY = "metadata.claim.paths";
 
         String HTTP_ENDPOINT_RETRIEVE_PATH = "/statuslists/%s";
     }

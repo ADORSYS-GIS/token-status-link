@@ -46,6 +46,9 @@ public class StatusListMappingEntity {
     @Column(name = "created_timestamp", nullable = false, updatable = false)
     private final Long createdTimestamp = Time.currentTimeMillis();
 
+    @Column(name = "metadata", columnDefinition = "clob")
+    private String metadata;
+
     // --- Getters and Setters ---
 
     public String getId() {
@@ -109,6 +112,14 @@ public class StatusListMappingEntity {
         return createdTimestamp;
     }
 
+    public String getMetadata() {
+        return metadata;
+    }
+
+    public void setMetadata(String metadata) {
+        this.metadata = metadata;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (o == null || getClass() != o.getClass()) return false;
@@ -120,7 +131,8 @@ public class StatusListMappingEntity {
                 && Objects.equals(getTokenId(), that.getTokenId())
                 && Objects.equals(getRealmId(), that.getRealmId())
                 && getStatus() == that.getStatus()
-                && Objects.equals(getCreatedTimestamp(), that.getCreatedTimestamp());
+                && Objects.equals(getCreatedTimestamp(), that.getCreatedTimestamp())
+                && Objects.equals(getMetadata(), that.getMetadata());
     }
 
     @Override
@@ -133,7 +145,8 @@ public class StatusListMappingEntity {
                 getTokenId(),
                 getRealmId(),
                 getStatus(),
-                getCreatedTimestamp());
+                getCreatedTimestamp(),
+                getMetadata());
     }
 
     public enum MappingStatus {
