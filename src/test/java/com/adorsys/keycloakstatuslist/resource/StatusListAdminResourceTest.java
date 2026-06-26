@@ -2,16 +2,23 @@ package com.adorsys.keycloakstatuslist.resource;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
 import com.adorsys.keycloakstatuslist.jpa.repository.StatusListRepository;
 import com.adorsys.keycloakstatuslist.model.CredentialStatusPage;
 import com.adorsys.keycloakstatuslist.model.CredentialStatusResponse;
+import com.adorsys.keycloakstatuslist.model.CredentialStatusUpdateRequest;
+import com.adorsys.keycloakstatuslist.service.StatusListService;
 import jakarta.ws.rs.core.Response;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -19,6 +26,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.keycloak.models.ClientModel;
 import org.keycloak.models.KeycloakContext;
 import org.keycloak.models.KeycloakSession;
@@ -28,6 +37,7 @@ import org.keycloak.models.UserModel;
 import org.keycloak.models.UserProvider;
 import org.keycloak.representations.AccessToken;
 import org.keycloak.services.resources.admin.AdminAuth;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -37,6 +47,7 @@ class StatusListAdminResourceTest {
     private static final String TEST_REALM_ID = "test-realm-id";
     private static final String TEST_USER_ID = "user-123";
     private static final String TEST_USERNAME = "testuser";
+    private static final String TEST_MAPPING_ID = "mapping-uuid-1";
 
     @Mock
     private KeycloakSession session;
@@ -49,6 +60,9 @@ class StatusListAdminResourceTest {
 
     @Mock
     private StatusListRepository repository;
+
+    @Mock
+    private StatusListService statusListService;
 
     @Mock
     private UserProvider userProvider;
@@ -68,8 +82,10 @@ class StatusListAdminResourceTest {
         lenient().when(realm.getId()).thenReturn(TEST_REALM_ID);
         lenient().when(session.users()).thenReturn(userProvider);
 
-        resource = spy(new StatusListAdminResource(session, repository));
+        resource = spy(new StatusListAdminResource(session, repository, statusListService));
     }
+
+    // --- GET tests ---
 
     @Test
     void shouldReturn401_WhenNotAuthenticated() {
@@ -113,7 +129,7 @@ class StatusListAdminResourceTest {
         doReturn(auth).when(resource).authenticateAdmin();
 
         StatusListMappingEntity mapping =
-                createMapping("token-1", TEST_USER_ID, "list-1", 5L, "{\"vct\":\"IdentityCredential\"}");
+                createMapping(TEST_MAPPING_ID, "token-1", TEST_USER_ID, "list-1", 5L, "{\"vct\":\"IdentityCredential\"}");
         when(repository.countMappings(TEST_REALM_ID)).thenReturn(1L);
         when(repository.getMappings(TEST_REALM_ID, 0, 20)).thenReturn(List.of(mapping));
 
@@ -129,6 +145,7 @@ class StatusListAdminResourceTest {
         assertEquals(1, page.items().size());
 
         CredentialStatusResponse item = page.items().get(0);
+        assertEquals(TEST_MAPPING_ID, item.id());
         assertEquals("token-1", item.tokenId());
         assertEquals(TEST_USER_ID, item.userId());
         assertEquals(TEST_USERNAME, item.username());
@@ -143,7 +160,8 @@ class StatusListAdminResourceTest {
         AdminAuth auth = mockAdminAuth(true);
         doReturn(auth).when(resource).authenticateAdmin();
 
-        StatusListMappingEntity mapping = createMapping("token-1", "deleted-user-id", "list-1", 0L, null);
+        StatusListMappingEntity mapping =
+                createMapping(TEST_MAPPING_ID, "token-1", "deleted-user-id", "list-1", 0L, null);
         when(repository.countMappings(TEST_REALM_ID)).thenReturn(1L);
         when(repository.getMappings(TEST_REALM_ID, 0, 20)).thenReturn(List.of(mapping));
         when(userProvider.getUserById(realm, "deleted-user-id")).thenReturn(null);
@@ -162,7 +180,7 @@ class StatusListAdminResourceTest {
         AdminAuth auth = mockAdminAuth(true);
         doReturn(auth).when(resource).authenticateAdmin();
 
-        StatusListMappingEntity mapping = createMapping("token-1", null, "list-1", 0L, null);
+        StatusListMappingEntity mapping = createMapping(TEST_MAPPING_ID, "token-1", null, "list-1", 0L, null);
         when(repository.countMappings(TEST_REALM_ID)).thenReturn(1L);
         when(repository.getMappings(TEST_REALM_ID, 0, 20)).thenReturn(List.of(mapping));
 
@@ -196,8 +214,8 @@ class StatusListAdminResourceTest {
         AdminAuth auth = mockAdminAuth(true);
         doReturn(auth).when(resource).authenticateAdmin();
 
-        StatusListMappingEntity mapping1 = createMapping("token-1", TEST_USER_ID, "list-1", 0L, null);
-        StatusListMappingEntity mapping2 = createMapping("token-2", TEST_USER_ID, "list-1", 1L, "{\"vct\":\"PID\"}");
+        StatusListMappingEntity mapping1 = createMapping("id-1", "token-1", TEST_USER_ID, "list-1", 0L, null);
+        StatusListMappingEntity mapping2 = createMapping("id-2", "token-2", TEST_USER_ID, "list-1", 1L, "{\"vct\":\"PID\"}");
         when(repository.countMappings(TEST_REALM_ID)).thenReturn(2L);
         when(repository.getMappings(TEST_REALM_ID, 0, 20)).thenReturn(List.of(mapping1, mapping2));
 
@@ -218,7 +236,7 @@ class StatusListAdminResourceTest {
         AdminAuth auth = mockAdminAuth(true);
         doReturn(auth).when(resource).authenticateAdmin();
 
-        StatusListMappingEntity mapping = createMapping("token-1", TEST_USER_ID, "list-1", 0L, null);
+        StatusListMappingEntity mapping = createMapping(TEST_MAPPING_ID, "token-1", TEST_USER_ID, "list-1", 0L, null);
         when(repository.countMappings(TEST_REALM_ID)).thenReturn(1L);
         when(repository.getMappings(TEST_REALM_ID, 0, 20)).thenReturn(List.of(mapping));
 
@@ -244,6 +262,160 @@ class StatusListAdminResourceTest {
         assertEquals(Response.Status.FORBIDDEN.getStatusCode(), response.getStatus());
     }
 
+    // --- PUT tests ---
+
+    @Test
+    void putShouldReturn401_WhenNotAuthenticated() {
+        doReturn(null).when(resource).authenticateAdmin();
+
+        Response response = resource.updateCredentialStatus(TEST_MAPPING_ID, new CredentialStatusUpdateRequest("INVALID"));
+
+        assertEquals(Response.Status.UNAUTHORIZED.getStatusCode(), response.getStatus());
+    }
+
+    @Test
+    void putShouldReturn403_WhenNotRealmAdmin() {
+        AdminAuth auth = mockAdminAuth(false);
+        doReturn(auth).when(resource).authenticateAdmin();
+
+        Response response = resource.updateCredentialStatus(TEST_MAPPING_ID, new CredentialStatusUpdateRequest("INVALID"));
+
+        assertEquals(Response.Status.FORBIDDEN.getStatusCode(), response.getStatus());
+    }
+
+    @Test
+    void putShouldReturn400_WhenRequestIsNull() {
+        AdminAuth auth = mockAdminAuth(true);
+        doReturn(auth).when(resource).authenticateAdmin();
+
+        Response response = resource.updateCredentialStatus(TEST_MAPPING_ID, null);
+
+        assertEquals(Response.Status.BAD_REQUEST.getStatusCode(), response.getStatus());
+    }
+
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = {"  "})
+    void putShouldReturn400_WhenStatusIsBlank(String status) {
+        AdminAuth auth = mockAdminAuth(true);
+        doReturn(auth).when(resource).authenticateAdmin();
+
+        Response response = resource.updateCredentialStatus(TEST_MAPPING_ID, new CredentialStatusUpdateRequest(status));
+
+        assertEquals(Response.Status.BAD_REQUEST.getStatusCode(), response.getStatus());
+    }
+
+    @Test
+    void putShouldReturn400_WhenStatusIsUnknown() {
+        AdminAuth auth = mockAdminAuth(true);
+        doReturn(auth).when(resource).authenticateAdmin();
+
+        Response response =
+                resource.updateCredentialStatus(TEST_MAPPING_ID, new CredentialStatusUpdateRequest("SUSPENDED"));
+
+        assertEquals(Response.Status.BAD_REQUEST.getStatusCode(), response.getStatus());
+    }
+
+    @Test
+    void putShouldReturn404_WhenMappingNotFound() {
+        AdminAuth auth = mockAdminAuth(true);
+        doReturn(auth).when(resource).authenticateAdmin();
+        when(repository.findById(TEST_MAPPING_ID)).thenReturn(null);
+
+        Response response = resource.updateCredentialStatus(TEST_MAPPING_ID, new CredentialStatusUpdateRequest("INVALID"));
+
+        assertEquals(Response.Status.NOT_FOUND.getStatusCode(), response.getStatus());
+    }
+
+    @Test
+    void putShouldReturn404_WhenMappingBelongsToDifferentRealm() {
+        AdminAuth auth = mockAdminAuth(true);
+        doReturn(auth).when(resource).authenticateAdmin();
+
+        StatusListMappingEntity mapping =
+                createMapping(TEST_MAPPING_ID, "token-1", TEST_USER_ID, "list-1", 5L, null);
+        mapping.setRealmId("other-realm-id");
+        when(repository.findById(TEST_MAPPING_ID)).thenReturn(mapping);
+
+        Response response = resource.updateCredentialStatus(TEST_MAPPING_ID, new CredentialStatusUpdateRequest("INVALID"));
+
+        assertEquals(Response.Status.NOT_FOUND.getStatusCode(), response.getStatus());
+    }
+
+    @Test
+    void putShouldRevokeCredentialSuccessfully() throws Exception {
+        AdminAuth auth = mockAdminAuth(true);
+        doReturn(auth).when(resource).authenticateAdmin();
+
+        StatusListMappingEntity mapping =
+                createMapping(TEST_MAPPING_ID, "token-1", TEST_USER_ID, "list-1", 5L, "{\"vct\":\"PID\"}");
+        when(repository.findById(TEST_MAPPING_ID)).thenReturn(mapping);
+
+        UserModel user = mock(UserModel.class);
+        when(user.getUsername()).thenReturn(TEST_USERNAME);
+        when(userProvider.getUserById(realm, TEST_USER_ID)).thenReturn(user);
+
+        Response response = resource.updateCredentialStatus(TEST_MAPPING_ID, new CredentialStatusUpdateRequest("INVALID"));
+
+        assertEquals(Response.Status.OK.getStatusCode(), response.getStatus());
+
+        ArgumentCaptor<StatusListService.StatusListPayload> payloadCaptor =
+                ArgumentCaptor.forClass(StatusListService.StatusListPayload.class);
+        verify(statusListService).updateStatusList(payloadCaptor.capture(), anyString());
+
+        StatusListService.StatusListPayload payload = payloadCaptor.getValue();
+        assertEquals("list-1", payload.listId());
+        assertEquals(1, payload.status().size());
+        assertEquals(5L, payload.status().get(0).index());
+        assertEquals("INVALID", payload.status().get(0).status());
+
+        CredentialStatusResponse result = (CredentialStatusResponse) response.getEntity();
+        assertEquals(TEST_MAPPING_ID, result.id());
+        assertEquals("token-1", result.tokenId());
+        assertEquals(TEST_USERNAME, result.username());
+    }
+
+    @Test
+    void putShouldRevalidateCredentialSuccessfully() throws Exception {
+        AdminAuth auth = mockAdminAuth(true);
+        doReturn(auth).when(resource).authenticateAdmin();
+
+        StatusListMappingEntity mapping =
+                createMapping(TEST_MAPPING_ID, "token-1", TEST_USER_ID, "list-1", 3L, null);
+        when(repository.findById(TEST_MAPPING_ID)).thenReturn(mapping);
+
+        UserModel user = mock(UserModel.class);
+        when(user.getUsername()).thenReturn(TEST_USERNAME);
+        when(userProvider.getUserById(realm, TEST_USER_ID)).thenReturn(user);
+
+        Response response = resource.updateCredentialStatus(TEST_MAPPING_ID, new CredentialStatusUpdateRequest("VALID"));
+
+        assertEquals(Response.Status.OK.getStatusCode(), response.getStatus());
+
+        ArgumentCaptor<StatusListService.StatusListPayload> payloadCaptor =
+                ArgumentCaptor.forClass(StatusListService.StatusListPayload.class);
+        verify(statusListService).updateStatusList(payloadCaptor.capture(), anyString());
+
+        assertEquals("VALID", payloadCaptor.getValue().status().get(0).status());
+    }
+
+    @Test
+    void putShouldReturn502_WhenStatusListServerFails() throws Exception {
+        AdminAuth auth = mockAdminAuth(true);
+        doReturn(auth).when(resource).authenticateAdmin();
+
+        StatusListMappingEntity mapping =
+                createMapping(TEST_MAPPING_ID, "token-1", TEST_USER_ID, "list-1", 5L, null);
+        when(repository.findById(TEST_MAPPING_ID)).thenReturn(mapping);
+        doThrow(new StatusListException("server unreachable"))
+                .when(statusListService)
+                .updateStatusList(any(), anyString());
+
+        Response response = resource.updateCredentialStatus(TEST_MAPPING_ID, new CredentialStatusUpdateRequest("INVALID"));
+
+        assertEquals(Response.Status.BAD_GATEWAY.getStatusCode(), response.getStatus());
+    }
+
     // --- Helper methods ---
 
     private AdminAuth mockAdminAuth(boolean isRealmAdmin) {
@@ -262,8 +434,9 @@ class StatusListAdminResourceTest {
     }
 
     private StatusListMappingEntity createMapping(
-            String tokenId, String userId, String statusListId, long idx, String metadata) {
+            String id, String tokenId, String userId, String statusListId, long idx, String metadata) {
         StatusListMappingEntity mapping = new StatusListMappingEntity();
+        mapping.setId(id);
         mapping.setTokenId(tokenId);
         mapping.setUserId(userId);
         mapping.setStatusListId(statusListId);

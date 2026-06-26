@@ -1,16 +1,25 @@
 package com.adorsys.keycloakstatuslist.resource;
 
+import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
 import com.adorsys.keycloakstatuslist.jpa.repository.StatusListRepository;
 import com.adorsys.keycloakstatuslist.model.CredentialStatusPage;
 import com.adorsys.keycloakstatuslist.model.CredentialStatusResponse;
+import com.adorsys.keycloakstatuslist.model.CredentialStatusUpdateRequest;
+import com.adorsys.keycloakstatuslist.model.TokenStatus;
+import com.adorsys.keycloakstatuslist.service.StatusListService;
+import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.GET;
+import jakarta.ws.rs.PUT;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import java.util.List;
+import java.util.UUID;
 import org.jboss.logging.Logger;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
@@ -20,7 +29,7 @@ import org.keycloak.services.managers.AuthenticationManager;
 import org.keycloak.services.resources.admin.AdminAuth;
 
 /**
- * Admin REST resource for querying credential status list mappings.
+ * Admin REST resource for querying and updating credential status list mappings.
  * Requires realm admin authentication (realm-admin role on the realm-management client).
  */
 public class StatusListAdminResource {
@@ -30,14 +39,17 @@ public class StatusListAdminResource {
 
     private final KeycloakSession session;
     private final StatusListRepository repository;
+    private final StatusListService statusListService;
 
-    public StatusListAdminResource(KeycloakSession session) {
-        this(session, new StatusListRepository(session));
+    public StatusListAdminResource(KeycloakSession session, StatusListService statusListService) {
+        this(session, new StatusListRepository(session), statusListService);
     }
 
-    StatusListAdminResource(KeycloakSession session, StatusListRepository repository) {
+    StatusListAdminResource(
+            KeycloakSession session, StatusListRepository repository, StatusListService statusListService) {
         this.session = session;
         this.repository = repository;
+        this.statusListService = statusListService;
     }
 
     /**
@@ -78,9 +90,74 @@ public class StatusListAdminResource {
         return Response.ok(page).build();
     }
 
+    /**
+     * Updates the token status of a credential on the status list server.
+     *
+     * @param id the primary key of the status list mapping entry
+     * @param request the update request containing the new status (VALID or INVALID)
+     * @return the updated credential status entry
+     */
+    @PUT
+    @Path("/{id}")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response updateCredentialStatus(@PathParam("id") String id, CredentialStatusUpdateRequest request) {
+        AdminAuth auth = authenticateAdmin();
+        if (auth == null) {
+            return Response.status(Response.Status.UNAUTHORIZED).build();
+        }
+
+        RealmModel realm = session.getContext().getRealm();
+        if (!hasRealmAdminRole(auth, realm)) {
+            return Response.status(Response.Status.FORBIDDEN).build();
+        }
+
+        if (request == null || request.status() == null || request.status().isBlank()) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("{\"error\":\"status is required\"}")
+                    .build();
+        }
+
+        TokenStatus newStatus;
+        try {
+            newStatus = TokenStatus.valueOf(request.status());
+        } catch (IllegalArgumentException e) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("{\"error\":\"status must be VALID or INVALID\"}")
+                    .build();
+        }
+
+        StatusListMappingEntity mapping = repository.findById(id);
+        if (mapping == null || !realm.getId().equals(mapping.getRealmId())) {
+            return Response.status(Response.Status.NOT_FOUND)
+                    .entity("{\"error\":\"credential not found\"}")
+                    .build();
+        }
+
+        String requestId = UUID.randomUUID().toString();
+        StatusListService.StatusListPayload payload = new StatusListService.StatusListPayload(
+                mapping.getStatusListId(),
+                List.of(new StatusListService.StatusListPayload.StatusEntry(mapping.getIdx(), newStatus.getValue())));
+
+        try {
+            statusListService.updateStatusList(payload, requestId);
+        } catch (StatusListException e) {
+            logger.errorf(
+                    "Request ID: %s, Failed to update credential status for mapping %s: %s",
+                    requestId, id, e.getMessage());
+            return Response.status(Response.Status.BAD_GATEWAY)
+                    .entity("{\"error\":\"failed to update status on status list server\"}")
+                    .build();
+        }
+
+        logger.infof("Request ID: %s, Updated credential %s to status %s", requestId, id, newStatus.getValue());
+        return Response.ok(toResponse(mapping, realm)).build();
+    }
+
     private CredentialStatusResponse toResponse(StatusListMappingEntity mapping, RealmModel realm) {
         String username = resolveUsername(mapping.getUserId(), realm);
         return new CredentialStatusResponse(
+                mapping.getId(),
                 mapping.getTokenId(),
                 mapping.getUserId(),
                 username,

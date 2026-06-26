@@ -76,6 +76,22 @@ public class StatusListRepository {
     }
 
     /**
+     * Finds a status list mapping by its primary key ID.
+     *
+     * @param id the entity's primary key
+     * @return the entity, or null if not found
+     */
+    public StatusListMappingEntity findById(String id) {
+        AtomicReference<StatusListMappingEntity> result = new AtomicReference<>();
+
+        withEntityManagerInTransaction(em -> {
+            result.set(em.find(StatusListMappingEntity.class, id));
+        });
+
+        return result.get();
+    }
+
+    /**
      * Returns a paginated list of status list mappings for the given realm, ordered by creation time descending.
      *
      * @param realmId the realm identifier

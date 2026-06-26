@@ -8,6 +8,7 @@ import com.fasterxml.jackson.annotation.JsonRawValue;
  * returned by the admin credentials endpoint.
  */
 public record CredentialStatusResponse(
+        @JsonProperty("id") String id,
         @JsonProperty("token_id") String tokenId,
         @JsonProperty("user_id") String userId,
         @JsonProperty("username") String username,
