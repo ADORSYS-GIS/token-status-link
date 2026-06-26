@@ -4,6 +4,7 @@ import com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import jakarta.persistence.TypedQuery;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
@@ -72,6 +73,75 @@ public class StatusListRepository {
         }
 
         return latest.getStatusListId();
+    }
+
+    /**
+     * Finds a status list mapping by its primary key ID.
+     *
+     * @param id the entity's primary key
+     * @return the entity, or null if not found
+     */
+    public StatusListMappingEntity findById(String id) {
+        AtomicReference<StatusListMappingEntity> result = new AtomicReference<>();
+
+        withEntityManagerInTransaction(em -> {
+            result.set(em.find(StatusListMappingEntity.class, id));
+        });
+
+        return result.get();
+    }
+
+    /**
+     * Returns a paginated list of status list mappings for the given realm, ordered by creation time descending.
+     *
+     * @param realmId the realm identifier
+     * @param offset zero-based offset for pagination
+     * @param limit maximum number of results to return
+     * @return list of matching entities, or empty list if none found
+     */
+    public List<StatusListMappingEntity> getMappings(String realmId, int offset, int limit) {
+        AtomicReference<List<StatusListMappingEntity>> result = new AtomicReference<>(Collections.emptyList());
+
+        withEntityManagerInTransaction(em -> {
+            String q = """
+                        SELECT m FROM StatusListMappingEntity m
+                        WHERE m.realmId = :realmId
+                        ORDER BY m.createdTimestamp DESC
+                    """;
+
+            TypedQuery<StatusListMappingEntity> query = em.createQuery(q, StatusListMappingEntity.class);
+            query.setParameter("realmId", realmId);
+            query.setFirstResult(offset);
+            query.setMaxResults(limit);
+
+            result.set(query.getResultList());
+        });
+
+        return result.get();
+    }
+
+    /**
+     * Returns the total number of status list mappings for the given realm.
+     *
+     * @param realmId the realm identifier
+     * @return total count of mappings
+     */
+    public long countMappings(String realmId) {
+        AtomicReference<Long> result = new AtomicReference<>(0L);
+
+        withEntityManagerInTransaction(em -> {
+            String q = """
+                        SELECT COUNT(m) FROM StatusListMappingEntity m
+                        WHERE m.realmId = :realmId
+                    """;
+
+            TypedQuery<Long> query = em.createQuery(q, Long.class);
+            query.setParameter("realmId", realmId);
+
+            result.set(query.getSingleResult());
+        });
+
+        return result.get();
     }
 
     /**

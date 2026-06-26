@@ -30,15 +30,21 @@ import com.adorsys.keycloakstatuslist.model.Status;
 import com.adorsys.keycloakstatuslist.model.StatusListClaim;
 import com.adorsys.keycloakstatuslist.model.TokenStatus;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.PersistenceException;
 import jakarta.ws.rs.core.UriBuilder;
 import java.net.URI;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 import nl.altindag.log.LogCaptor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.keycloak.models.ProtocolMapperModel;
 import org.keycloak.protocol.ProtocolMapper;
 import org.mockito.ArgumentCaptor;
@@ -60,9 +66,13 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
     StatusListProtocolMapper mapper;
     HashMap<String, Object> claims;
     StatusListRepository statusListRepository;
+    HashMap<String, String> mapperConfig;
 
     @BeforeEach
     void setup() {
+        mapperConfig = new HashMap<>();
+        lenient().when(mapperModel.getConfig()).thenReturn(mapperConfig);
+
         mapper = spy(new StatusListProtocolMapper(session));
         setPrivateField(mapper, "mapperModel", mapperModel);
         setPrivateField(mapper, "statusListService", statusListService);
@@ -109,7 +119,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         assertEquals("Status List Claim Mapper", mapper.getDisplayType());
         assertTrue(mapper.getHelpText().contains("status list claim"));
         assertFalse(mapper.includeInMetadata());
-        assertTrue(mapper.getIndividualConfigProperties().isEmpty());
+        assertFalse(mapper.getIndividualConfigProperties().isEmpty());
         mapper.close();
     }
 
@@ -312,6 +322,109 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         mapper.setClaim(claims, userSession);
 
         assertThat(claims.keySet(), hasItem(Constants.STATUS_CLAIM_KEY));
+    }
+
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = {"  ", " , "})
+    void shouldReturnNullMetadata_WhenNoClaimPathsConfigured(String configValue) {
+        mapperConfig.put(Constants.METADATA_CLAIM_PATHS_KEY, configValue);
+
+        String metadata = mapper.extractMetadata(claims);
+
+        assertEquals(null, metadata);
+    }
+
+    @Test
+    void shouldExtractTopLevelClaimAsMetadata() throws JsonProcessingException {
+        claims.put("vct", "IdentityCredential");
+        mapperConfig.put(Constants.METADATA_CLAIM_PATHS_KEY, "vct");
+
+        String metadata = mapper.extractMetadata(claims);
+
+        Map<?, ?> parsed = new ObjectMapper().readValue(metadata, Map.class);
+        assertEquals("IdentityCredential", parsed.get("vct"));
+        assertEquals(1, parsed.size());
+    }
+
+    @Test
+    void shouldExtractNestedClaimAsMetadata() throws JsonProcessingException {
+        claims.put("sub", Map.of("email", "user@example.com", "name", "Jane"));
+        mapperConfig.put(Constants.METADATA_CLAIM_PATHS_KEY, "sub.email");
+
+        String metadata = mapper.extractMetadata(claims);
+
+        Map<?, ?> parsed = new ObjectMapper().readValue(metadata, Map.class);
+        assertEquals("user@example.com", parsed.get("sub.email"));
+        assertEquals(1, parsed.size());
+    }
+
+    @Test
+    void shouldExtractMultipleClaimPathsAsMetadata() throws JsonProcessingException {
+        claims.put("vct", "IdentityCredential");
+        claims.put("sub", Map.of("email", "user@example.com"));
+        mapperConfig.put(Constants.METADATA_CLAIM_PATHS_KEY, "vct, sub.email");
+
+        String metadata = mapper.extractMetadata(claims);
+
+        Map<?, ?> parsed = new ObjectMapper().readValue(metadata, Map.class);
+        assertEquals("IdentityCredential", parsed.get("vct"));
+        assertEquals("user@example.com", parsed.get("sub.email"));
+        assertEquals(2, parsed.size());
+    }
+
+    @Test
+    void shouldSkipMissingClaimPaths() throws JsonProcessingException {
+        claims.put("vct", "IdentityCredential");
+        mapperConfig.put(Constants.METADATA_CLAIM_PATHS_KEY, "vct, nonexistent");
+
+        String metadata = mapper.extractMetadata(claims);
+
+        Map<?, ?> parsed = new ObjectMapper().readValue(metadata, Map.class);
+        assertEquals("IdentityCredential", parsed.get("vct"));
+        assertEquals(1, parsed.size());
+    }
+
+    @Test
+    void shouldReturnNullMetadata_WhenAllClaimPathsMissing() {
+        mapperConfig.put(Constants.METADATA_CLAIM_PATHS_KEY, "nonexistent, also.missing");
+
+        String metadata = mapper.extractMetadata(claims);
+
+        assertEquals(null, metadata);
+    }
+
+    @Test
+    void shouldStoreMetadataInEntity_WhenClaimPathsConfigured() {
+        claims.put("vct", "IdentityCredential");
+        mapperConfig.put(Constants.METADATA_CLAIM_PATHS_KEY, "vct");
+        mockGetNextIndex();
+
+        mapper.setClaim(claims, userSession);
+
+        var entityCaptor = ArgumentCaptor.forClass(StatusListMappingEntity.class);
+        verify(entityManager).persist(entityCaptor.capture());
+        StatusListMappingEntity capturedEntity = entityCaptor.getValue();
+        assertThat(capturedEntity.getMetadata(), containsString("IdentityCredential"));
+    }
+
+    @Test
+    void shouldResolveClaimPath_WhenPathPointsToMapValue() {
+        Map<String, Object> nested = Map.of("level2", Map.of("level3", "deepValue"));
+        Map<String, Object> testClaims = Map.of("level1", nested);
+
+        Object result = StatusListProtocolMapper.resolveClaimPath(testClaims, "level1.level2.level3");
+
+        assertEquals("deepValue", result);
+    }
+
+    @Test
+    void shouldReturnNull_WhenPathTraversesNonMapValue() {
+        Map<String, Object> testClaims = Map.of("key", "stringValue");
+
+        Object result = StatusListProtocolMapper.resolveClaimPath(testClaims, "key.sub");
+
+        assertEquals(null, result);
     }
 
     private void mockDefaultRealmConfig() {

@@ -58,4 +58,10 @@
         </createIndex>
     </changeSet>
 
+    <changeSet id="add-metadata-to-status-list-mapping" author="adorsys">
+        <addColumn tableName="status_list_mapping">
+            <column name="metadata" type="clob"/>
+        </addColumn>
+    </changeSet>
+
 </databaseChangeLog>
