@@ -3,6 +3,7 @@ package com.adorsys.keycloakstatuslist.resource;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
 import com.adorsys.keycloakstatuslist.jpa.repository.StatusListRepository;
+import com.adorsys.keycloakstatuslist.model.CredentialStatusFilter;
 import com.adorsys.keycloakstatuslist.model.CredentialStatusPage;
 import com.adorsys.keycloakstatuslist.model.CredentialStatusResponse;
 import com.adorsys.keycloakstatuslist.model.CredentialStatusUpdateRequest;
@@ -36,6 +37,7 @@ public class StatusListAdminResource {
 
     private static final Logger logger = Logger.getLogger(StatusListAdminResource.class);
     static final int MAX_LIMIT = 100;
+    static final String NON_MATCHING_USER_ID = "__non_matching__";
 
     private final KeycloakSession session;
     private final StatusListRepository repository;
@@ -53,17 +55,24 @@ public class StatusListAdminResource {
     }
 
     /**
-     * Returns a paginated list of credential status entries for the current realm.
+     * Returns a paginated list of credential status entries for the current realm,
+     * optionally filtered by username, token status, and metadata claims.
      *
-     * @param offset zero-based pagination offset
-     * @param limit maximum number of entries to return (capped at 100)
+     * @param offset   zero-based pagination offset
+     * @param limit    maximum number of entries to return (capped at 100)
+     * @param username filter by exact username (resolved to user ID)
+     * @param status   filter by token status (VALID or INVALID)
+     * @param claims   filter by metadata content (substring match, multiple values are ANDed)
      * @return paginated response with credential status entries
      */
     @GET
     @Produces(MediaType.APPLICATION_JSON)
     public Response getCredentials(
             @QueryParam("offset") @DefaultValue("0") int offset,
-            @QueryParam("limit") @DefaultValue("20") int limit) {
+            @QueryParam("limit") @DefaultValue("20") int limit,
+            @QueryParam("username") String username,
+            @QueryParam("status") String status,
+            @QueryParam("claims") List<String> claims) {
 
         AdminAuth auth = authenticateAdmin();
         if (auth == null) {
@@ -75,12 +84,20 @@ public class StatusListAdminResource {
             return Response.status(Response.Status.FORBIDDEN).build();
         }
 
+        CredentialStatusFilter filter = buildFilter(realm, username, status, claims);
+        if (filter == null) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity("{\"error\":\"status must be VALID or INVALID\"}")
+                    .build();
+        }
+
         int effectiveOffset = Math.max(0, offset);
         int effectiveLimit = Math.min(Math.max(1, limit), MAX_LIMIT);
         String realmId = realm.getId();
 
-        long total = repository.countMappings(realmId);
-        List<StatusListMappingEntity> mappings = repository.getMappings(realmId, effectiveOffset, effectiveLimit);
+        long total = repository.countMappings(realmId, filter);
+        List<StatusListMappingEntity> mappings =
+                repository.getMappings(realmId, filter, effectiveOffset, effectiveLimit);
 
         List<CredentialStatusResponse> items = mappings.stream()
                 .map(m -> toResponse(m, realm))
@@ -88,6 +105,36 @@ public class StatusListAdminResource {
 
         CredentialStatusPage page = new CredentialStatusPage(items, total, effectiveOffset, effectiveLimit);
         return Response.ok(page).build();
+    }
+
+    /**
+     * Builds a filter from the query parameters. Returns null if the status value is invalid.
+     */
+    CredentialStatusFilter buildFilter(RealmModel realm, String username, String status, List<String> claims) {
+        String userId = null;
+        if (username != null && !username.isBlank()) {
+            UserModel user = session.users().getUserByUsername(realm, username.trim());
+            if (user == null) {
+                userId = NON_MATCHING_USER_ID;
+            } else {
+                userId = user.getId();
+            }
+        }
+
+        TokenStatus tokenStatus = null;
+        if (status != null && !status.isBlank()) {
+            try {
+                tokenStatus = TokenStatus.valueOf(status.trim());
+            } catch (IllegalArgumentException e) {
+                return null;
+            }
+        }
+
+        List<String> effectiveClaims = claims != null
+                ? claims.stream().filter(c -> c != null && !c.isBlank()).toList()
+                : List.of();
+
+        return new CredentialStatusFilter(userId, tokenStatus, effectiveClaims);
     }
 
     /**

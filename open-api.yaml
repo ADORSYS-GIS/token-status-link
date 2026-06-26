@@ -119,7 +119,8 @@ paths:
       summary: List credential status entries
       description: >
         Returns a paginated list of credential status entries for the current
-        realm. Requires a Bearer token from a user with the `realm-admin` role
+        realm, optionally filtered by username, token status, and metadata
+        claims. Requires a Bearer token from a user with the `realm-admin` role
         on the `realm-management` client.
       operationId: getCredentialStatuses
       security:
@@ -142,6 +143,44 @@ paths:
             default: 20
             minimum: 1
             maximum: 100
+        - name: username
+          in: query
+          description: >
+            Filter by exact username. The username is resolved to a user ID
+            internally. If no user with the given username exists, an empty
+            result set is returned.
+          required: false
+          schema:
+            type: string
+        - name: status
+          in: query
+          description: Filter by token status
+          required: false
+          schema:
+            type: string
+            enum:
+              - VALID
+              - INVALID
+        - name: claims
+          in: query
+          description: >
+            Filter by metadata content (substring match). Can be repeated to
+            require multiple matches (AND logic). Each value is matched against
+            the JSON metadata stored at issuance time.
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
+          examples:
+            singleClaim:
+              summary: Filter by credential type
+              value: ["IdentityCredential"]
+            multipleClaims:
+              summary: Filter by type and country
+              value: ["IdentityCredential", "DE"]
       responses:
         "200":
           description: Paginated list of credential status entries
@@ -149,6 +188,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CredentialStatusPage"
+        "400":
+          description: Invalid status filter value
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "401":
           description: Missing or invalid Bearer token
         "403":
