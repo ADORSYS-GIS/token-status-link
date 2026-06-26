@@ -4,7 +4,7 @@
 
     <!-- TODO: Update package hierarchy in the codebase to match this groupId.
           Delayed to avoid giant conflicts given ongoing PRs. -->
-    <groupId>io.github.wistefan</groupId>
+    <groupId>io.github.adorsys-gis</groupId>
     <artifactId>keycloak-token-status-plugin</artifactId>
     <version>${revision}</version>
     <packaging>jar</packaging>
@@ -14,7 +14,7 @@
     <url>https://github.com/ADORSYS-GIS/token-status-link</url>
 
     <properties>
-        <revision>0.3.0</revision>
+        <revision>1.0.0-SNAPSHOT</revision>
         <keycloak.version>26.6.3</keycloak.version>
         <jackson.version>2.19.2</jackson.version>
         <mockito.version>5.20.0</mockito.version>
@@ -86,6 +86,12 @@
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter-api</artifactId>
+            <version>5.12.2</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-params</artifactId>
             <version>5.12.2</version>
             <scope>test</scope>
         </dependency>

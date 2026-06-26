@@ -4,12 +4,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import java.io.IOException;
 import java.lang.reflect.Method;
+import java.util.List;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
@@ -24,6 +26,8 @@ import org.apache.hc.core5.http.HttpResponse;
 import org.apache.hc.core5.http.protocol.HttpContext;
 import org.apache.hc.core5.util.TimeValue;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.api.io.TempDir;
 import org.keycloak.models.RealmModel;
 
@@ -160,6 +164,83 @@ class CustomHttpClientTest {
         HttpHost proxy = CustomHttpClient.resolveProxy(env::get);
 
         assertNull(proxy);
+    }
+
+    @Test
+    void resolveNoProxyShouldParsePatterns() {
+        Map<String, String> env = Map.of("NO_PROXY", "localhost,.example.com,internal.corp");
+
+        List<String> patterns = CustomHttpClient.resolveNoProxy(env::get);
+
+        assertEquals(List.of("localhost", ".example.com", "internal.corp"), patterns);
+    }
+
+    @Test
+    void resolveNoProxyShouldPreferUppercaseOverLowercase() {
+        Map<String, String> env = new HashMap<>();
+        env.put("NO_PROXY", "upper.com");
+        env.put("no_proxy", "lower.com");
+
+        List<String> patterns = CustomHttpClient.resolveNoProxy(env::get);
+
+        assertEquals(List.of("upper.com"), patterns);
+    }
+
+    @Test
+    void resolveNoProxyShouldFallBackToLowercaseVar() {
+        Map<String, String> env = Map.of("no_proxy", "fallback.com");
+
+        List<String> patterns = CustomHttpClient.resolveNoProxy(env::get);
+
+        assertEquals(List.of("fallback.com"), patterns);
+    }
+
+    @Test
+    void resolveNoProxyShouldReturnEmptyListWhenNoEnvVarSet() {
+        List<String> patterns = CustomHttpClient.resolveNoProxy(name -> null);
+
+        assertTrue(patterns.isEmpty());
+    }
+
+    @Test
+    void resolveNoProxyShouldTrimWhitespaceAndSkipEmptyEntries() {
+        Map<String, String> env = Map.of("NO_PROXY", " host1 , , host2 ");
+
+        List<String> patterns = CustomHttpClient.resolveNoProxy(env::get);
+
+        assertEquals(List.of("host1", "host2"), patterns);
+    }
+
+    @Test
+    void resolveNoProxyShouldLowercasePatterns() {
+        Map<String, String> env = Map.of("NO_PROXY", "MyHost.Example.COM");
+
+        List<String> patterns = CustomHttpClient.resolveNoProxy(env::get);
+
+        assertEquals(List.of("myhost.example.com"), patterns);
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+        "api.example.com, .example.com, true",
+        "example.com, .example.com, true",
+        "notexample.com, .example.com, false",
+        "api.example.com, example.com, true",
+        "example.com, example.com, true",
+        "notexample.com, example.com, false",
+        "anything.at.all, *, true",
+        "localhost, localhost, true",
+        "UPPER.EXAMPLE.COM, example.com, true",
+        "127.0.0.1, 127.0.0.1, true",
+        "10.0.0.1, 127.0.0.1, false",
+    })
+    void isNoProxyHostShouldMatchCorrectly(String hostname, String pattern, boolean expected) {
+        assertEquals(expected, CustomHttpClient.isNoProxyHost(hostname, List.of(pattern)));
+    }
+
+    @Test
+    void isNoProxyHostShouldReturnFalseForEmptyPatterns() {
+        assertFalse(CustomHttpClient.isNoProxyHost("example.com", List.of()));
     }
 
     @Test

@@ -1,6 +1,7 @@
 package com.adorsys.keycloakstatuslist.service;
 
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
+
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.net.URI;
@@ -8,18 +9,25 @@ import java.net.URISyntaxException;
 import java.security.KeyStore;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Locale;
 import java.util.function.Function;
 import javax.net.ssl.SSLContext;
+
 import org.apache.hc.client5.http.HttpRequestRetryStrategy;
 import org.apache.hc.client5.http.config.RequestConfig;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.HttpClientBuilder;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
+import org.apache.hc.client5.http.impl.routing.DefaultProxyRoutePlanner;
 import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManagerBuilder;
 import org.apache.hc.client5.http.io.HttpClientConnectionManager;
 import org.apache.hc.client5.http.ssl.NoopHostnameVerifier;
 import org.apache.hc.client5.http.ssl.SSLConnectionSocketFactoryBuilder;
 import org.apache.hc.client5.http.ssl.TrustAllStrategy;
+import org.apache.hc.core5.http.HttpException;
 import org.apache.hc.core5.http.HttpHost;
 import org.apache.hc.core5.http.HttpRequest;
 import org.apache.hc.core5.http.HttpResponse;
@@ -33,7 +41,11 @@ public class CustomHttpClient {
 
     private static final Logger logger = Logger.getLogger(CustomHttpClient.class);
 
+    private static final String[] PROXY_VARS = {"HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"};
+    private static final String[] NO_PROXY_VARS = {"NO_PROXY", "no_proxy"};
+
     public static final int DEFAULT_CONNECT_TIMEOUT = 30000;
+
 
     /**
      * Creates an HTTP client for issuance operations (runtime/foreground).
@@ -43,6 +55,7 @@ public class CustomHttpClient {
      * @return configured HTTP client
      */
     public static CloseableHttpClient getIssuanceHttpClient(StatusListConfig config) {
+        // Issuance path: minimal/no retries to avoid blocking the user thread for too long
         return createHttpClient(config.getIssuanceTimeout(), 0, config);
     }
 
@@ -76,10 +89,17 @@ public class CustomHttpClient {
                 .setDefaultRequestConfig(requestConfig)
                 .setRetryStrategy(getHttpRequestRetryStrategy(maxRetries));
 
+        // support usage of a http proxy - reuses the standard keycloak proxy/no-proxy env-vars
         HttpHost proxy = resolveProxy();
         if (proxy != null) {
-            builder.setProxy(proxy);
             logger.infof("Using HTTP proxy: %s", proxy);
+            List<String> noProxyPatterns = resolveNoProxy();
+            if (noProxyPatterns.isEmpty()) {
+                builder.setProxy(proxy);
+            } else {
+                builder.setRoutePlanner(new NoProxyAwareRoutePlanner(proxy, noProxyPatterns));
+                logger.infof("NO_PROXY patterns: %s", noProxyPatterns);
+            }
         }
 
         HttpClientConnectionManager connectionManager = buildConnectionManager(config);
@@ -181,9 +201,8 @@ public class CustomHttpClient {
      * @return the proxy HttpHost, or null if no proxy is configured
      */
     static HttpHost resolveProxy(Function<String, String> envLookup) {
-        String[] candidates = {"HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"};
         String proxyUrl = null;
-        for (String name : candidates) {
+        for (String name : PROXY_VARS) {
             proxyUrl = envLookup.apply(name);
             if (proxyUrl != null && !proxyUrl.isEmpty()) {
                 break;
@@ -206,6 +225,81 @@ public class CustomHttpClient {
             logger.warnf("Invalid proxy URL '%s': %s", proxyUrl, e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * Resolves the NO_PROXY exclusion list from environment variables.
+     *
+     * @return list of lowercase hostname patterns to bypass the proxy for
+     */
+    static List<String> resolveNoProxy() {
+        return resolveNoProxy(System::getenv);
+    }
+
+    /**
+     * Resolves the NO_PROXY exclusion list using the provided environment variable lookup function.
+     * Checks NO_PROXY and no_proxy in order.
+     *
+     * @param envLookup function to look up environment variable values by name
+     * @return list of lowercase hostname patterns to bypass the proxy for
+     */
+    static List<String> resolveNoProxy(Function<String, String> envLookup) {
+        String noProxy = null;
+        for (String name : NO_PROXY_VARS) {
+            noProxy = envLookup.apply(name);
+            if (noProxy != null && !noProxy.isEmpty()) {
+                break;
+            }
+        }
+        if (noProxy == null || noProxy.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<String> patterns = new ArrayList<>();
+        for (String entry : noProxy.split(",")) {
+            String trimmed = entry.trim();
+            if (!trimmed.isEmpty()) {
+                patterns.add(trimmed.toLowerCase(Locale.ROOT));
+            }
+        }
+        return patterns;
+    }
+
+    /**
+     * Checks whether the given hostname should bypass the proxy based on NO_PROXY patterns.
+     * <p>
+     * Matching rules:
+     * <ul>
+     *   <li>{@code *} matches all hosts</li>
+     *   <li>{@code .example.com} matches {@code example.com} and {@code sub.example.com}</li>
+     *   <li>{@code example.com} matches {@code example.com} and {@code sub.example.com}</li>
+     * </ul>
+     * Matching is case-insensitive.
+     *
+     * @param hostname        the target hostname
+     * @param noProxyPatterns lowercase patterns from NO_PROXY
+     * @return true if the proxy should be bypassed for this host
+     */
+    static boolean isNoProxyHost(String hostname, List<String> noProxyPatterns) {
+        if (noProxyPatterns.isEmpty()) {
+            return false;
+        }
+        String host = hostname.toLowerCase(Locale.ROOT);
+        for (String pattern : noProxyPatterns) {
+            if ("*".equals(pattern)) {
+                return true;
+            }
+            if (pattern.startsWith(".")) {
+                String domain = pattern.substring(1);
+                if (host.equals(domain) || host.endsWith(pattern)) {
+                    return true;
+                }
+            } else {
+                if (host.equals(pattern) || host.endsWith("." + pattern)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private static HttpRequestRetryStrategy getHttpRequestRetryStrategy(int maxRetries) {
@@ -235,5 +329,27 @@ public class CustomHttpClient {
                 return TimeValue.ofSeconds((long) Math.pow(2, execCount - 1));
             }
         };
+    }
+
+    /**
+     * Route planner that bypasses the proxy for hosts matching the NO_PROXY patterns.
+     */
+    private static class NoProxyAwareRoutePlanner extends DefaultProxyRoutePlanner {
+
+        private final List<String> noProxyPatterns;
+
+        NoProxyAwareRoutePlanner(HttpHost proxy, List<String> noProxyPatterns) {
+            super(proxy);
+            this.noProxyPatterns = noProxyPatterns;
+        }
+
+        @Override
+        protected HttpHost determineProxy(HttpHost target, HttpContext context) throws HttpException {
+            if (isNoProxyHost(target.getHostName(), noProxyPatterns)) {
+                logger.debugf("Bypassing proxy for host: %s (matched NO_PROXY)", target.getHostName());
+                return null;
+            }
+            return super.determineProxy(target, context);
+        }
     }
 }
