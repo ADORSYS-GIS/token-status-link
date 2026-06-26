@@ -1,5 +1,6 @@
 package com.adorsys.keycloakstatuslist.jpa.entity;
 
+import com.adorsys.keycloakstatuslist.model.TokenStatus;
 import jakarta.persistence.Access;
 import jakarta.persistence.AccessType;
 import jakarta.persistence.Column;
@@ -45,6 +46,10 @@ public class StatusListMappingEntity {
 
     @Column(name = "created_timestamp", nullable = false, updatable = false)
     private final Long createdTimestamp = Time.currentTimeMillis();
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "token_status")
+    private TokenStatus tokenStatus = TokenStatus.VALID;
 
     @Column(name = "metadata", columnDefinition = "clob")
     private String metadata;
@@ -112,6 +117,14 @@ public class StatusListMappingEntity {
         return createdTimestamp;
     }
 
+    public TokenStatus getTokenStatus() {
+        return tokenStatus;
+    }
+
+    public void setTokenStatus(TokenStatus tokenStatus) {
+        this.tokenStatus = tokenStatus;
+    }
+
     public String getMetadata() {
         return metadata;
     }
@@ -131,6 +144,7 @@ public class StatusListMappingEntity {
                 && Objects.equals(getTokenId(), that.getTokenId())
                 && Objects.equals(getRealmId(), that.getRealmId())
                 && getStatus() == that.getStatus()
+                && getTokenStatus() == that.getTokenStatus()
                 && Objects.equals(getCreatedTimestamp(), that.getCreatedTimestamp())
                 && Objects.equals(getMetadata(), that.getMetadata());
     }
@@ -145,6 +159,7 @@ public class StatusListMappingEntity {
                 getTokenId(),
                 getRealmId(),
                 getStatus(),
+                getTokenStatus(),
                 getCreatedTimestamp(),
                 getMetadata());
     }

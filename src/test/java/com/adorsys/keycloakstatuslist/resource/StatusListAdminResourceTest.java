@@ -18,6 +18,7 @@ import com.adorsys.keycloakstatuslist.jpa.repository.StatusListRepository;
 import com.adorsys.keycloakstatuslist.model.CredentialStatusPage;
 import com.adorsys.keycloakstatuslist.model.CredentialStatusResponse;
 import com.adorsys.keycloakstatuslist.model.CredentialStatusUpdateRequest;
+import com.adorsys.keycloakstatuslist.model.TokenStatus;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
 import jakarta.ws.rs.core.Response;
 import java.util.List;
@@ -149,7 +150,7 @@ class StatusListAdminResourceTest {
         assertEquals("token-1", item.tokenId());
         assertEquals(TEST_USER_ID, item.userId());
         assertEquals(TEST_USERNAME, item.username());
-        assertEquals("SUCCESS", item.status());
+        assertEquals("VALID", item.status());
         assertEquals("list-1", item.statusListId());
         assertEquals(5L, item.index());
         assertEquals("{\"vct\":\"IdentityCredential\"}", item.metadata());
@@ -369,10 +370,14 @@ class StatusListAdminResourceTest {
         assertEquals(5L, payload.status().get(0).index());
         assertEquals("INVALID", payload.status().get(0).status());
 
+        verify(repository).updateMapping(mapping);
+        assertEquals(TokenStatus.INVALID, mapping.getTokenStatus());
+
         CredentialStatusResponse result = (CredentialStatusResponse) response.getEntity();
         assertEquals(TEST_MAPPING_ID, result.id());
         assertEquals("token-1", result.tokenId());
         assertEquals(TEST_USERNAME, result.username());
+        assertEquals("INVALID", result.status());
     }
 
     @Test
@@ -397,6 +402,9 @@ class StatusListAdminResourceTest {
         verify(statusListService).updateStatusList(payloadCaptor.capture(), anyString());
 
         assertEquals("VALID", payloadCaptor.getValue().status().get(0).status());
+
+        verify(repository).updateMapping(mapping);
+        assertEquals(TokenStatus.VALID, mapping.getTokenStatus());
     }
 
     @Test
@@ -442,6 +450,7 @@ class StatusListAdminResourceTest {
         mapping.setStatusListId(statusListId);
         mapping.setIdx(idx);
         mapping.setStatus(StatusListMappingEntity.MappingStatus.SUCCESS);
+        mapping.setTokenStatus(TokenStatus.VALID);
         mapping.setMetadata(metadata);
         mapping.setRealmId(TEST_REALM_ID);
         return mapping;

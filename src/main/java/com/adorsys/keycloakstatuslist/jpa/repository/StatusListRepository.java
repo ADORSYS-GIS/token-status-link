@@ -92,6 +92,15 @@ public class StatusListRepository {
     }
 
     /**
+     * Merges the given entity into the persistence context within a transaction.
+     *
+     * @param entity the entity to update
+     */
+    public void updateMapping(StatusListMappingEntity entity) {
+        withEntityManagerInTransaction(em -> em.merge(entity));
+    }
+
+    /**
      * Returns a paginated list of status list mappings for the given realm, ordered by creation time descending.
      *
      * @param realmId the realm identifier

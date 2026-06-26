@@ -150,6 +150,9 @@ public class StatusListAdminResource {
                     .build();
         }
 
+        mapping.setTokenStatus(newStatus);
+        repository.updateMapping(mapping);
+
         logger.infof("Request ID: %s, Updated credential %s to status %s", requestId, id, newStatus.getValue());
         return Response.ok(toResponse(mapping, realm)).build();
     }
@@ -161,7 +164,7 @@ public class StatusListAdminResource {
                 mapping.getTokenId(),
                 mapping.getUserId(),
                 username,
-                mapping.getStatus() != null ? mapping.getStatus().name() : null,
+                mapping.getTokenStatus() != null ? mapping.getTokenStatus().name() : null,
                 mapping.getStatusListId(),
                 mapping.getIdx(),
                 mapping.getCreatedTimestamp(),
