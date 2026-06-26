@@ -31,6 +31,7 @@ import org.jboss.logging.Logger;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserSessionModel;
+import org.keycloak.models.oid4vci.CredentialScopeModel;
 import org.keycloak.protocol.ProtocolMapper;
 import org.keycloak.protocol.oid4vc.issuance.mappers.OID4VCMapper;
 import org.keycloak.protocol.oid4vc.model.VerifiableCredential;
@@ -59,6 +60,16 @@ public class StatusListProtocolMapper extends OID4VCMapper {
                         + "Nested claims use dot notation.");
         metadataClaimPaths.setType(ProviderConfigProperty.STRING_TYPE);
         CONFIG_PROPERTIES.add(metadataClaimPaths);
+
+        ProviderConfigProperty includeCredentialTypes = new ProviderConfigProperty();
+        includeCredentialTypes.setName(Constants.INCLUDE_CREDENTIAL_TYPES_KEY);
+        includeCredentialTypes.setLabel("Include Credential Types");
+        includeCredentialTypes.setHelpText(
+                "When enabled, includes the credential types from the parent credential scope "
+                        + "in the stored metadata under the 'type' key.");
+        includeCredentialTypes.setType(ProviderConfigProperty.BOOLEAN_TYPE);
+        includeCredentialTypes.setDefaultValue(Constants.INCLUDE_CREDENTIAL_TYPES_DEFAULT);
+        CONFIG_PROPERTIES.add(includeCredentialTypes);
     }
 
     private final KeycloakSession session;
@@ -195,7 +206,8 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         UserSessionModel userSession = session.getContext().getUserSession();
         String userId = userSession != null ? userSession.getUser().getId() : null;
 
-        String metadata = extractMetadata(claims);
+        List<String> credentialTypes = isIncludeCredentialTypes() ? findCredentialTypes() : List.of();
+        String metadata = extractMetadata(claims, credentialTypes);
         Status status = sendStatusAndStoreIndexMapping(listId, uri.toString(), userId, tokenId, metadata);
 
         if (status == null) {
@@ -290,28 +302,42 @@ public class StatusListProtocolMapper extends OID4VCMapper {
      * Extracts configured claim values from the credential claims and serializes them as a JSON string.
      *
      * @param claims the credential claims map
-     * @return JSON string of extracted metadata, or null if no claim paths are configured
+     * @return JSON string of extracted metadata, or null if no metadata is available
      */
     String extractMetadata(Map<String, Object> claims) {
-        if (mapperModel == null) {
-            return null;
-        }
-        String claimPathsConfig = mapperModel.getConfig().get(Constants.METADATA_CLAIM_PATHS_KEY);
-        if (claimPathsConfig == null || claimPathsConfig.isBlank()) {
-            return null;
-        }
+        return extractMetadata(claims, List.of());
+    }
 
-        List<String> paths = Arrays.stream(claimPathsConfig.split(","))
-                .map(String::trim)
-                .filter(s -> !s.isEmpty())
-                .toList();
-
+    /**
+     * Extracts configured claim values from the credential claims, optionally including
+     * credential types, and serializes them as a JSON string.
+     *
+     * @param claims          the credential claims map
+     * @param credentialTypes credential types from the parent scope to include under the "type" key
+     * @return JSON string of extracted metadata, or null if no metadata is available
+     */
+    String extractMetadata(Map<String, Object> claims, List<String> credentialTypes) {
         Map<String, Object> metadata = new LinkedHashMap<>();
-        for (String path : paths) {
-            Object value = resolveClaimPath(claims, path);
-            if (value != null) {
-                metadata.put(path, value);
+
+        if (mapperModel != null) {
+            String claimPathsConfig = mapperModel.getConfig().get(Constants.METADATA_CLAIM_PATHS_KEY);
+            if (claimPathsConfig != null && !claimPathsConfig.isBlank()) {
+                List<String> paths = Arrays.stream(claimPathsConfig.split(","))
+                        .map(String::trim)
+                        .filter(s -> !s.isEmpty())
+                        .toList();
+
+                for (String path : paths) {
+                    Object value = resolveClaimPath(claims, path);
+                    if (value != null) {
+                        metadata.put(path, value);
+                    }
+                }
             }
+        }
+
+        if (credentialTypes != null && !credentialTypes.isEmpty()) {
+            metadata.put(Constants.CREDENTIAL_TYPES_METADATA_KEY, credentialTypes);
         }
 
         if (metadata.isEmpty()) {
@@ -321,9 +347,46 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         try {
             return JSON_MAPPER.writeValueAsString(metadata);
         } catch (JsonProcessingException e) {
-            logger.warnf("Failed to serialize metadata for claim paths [%s]: %s", claimPathsConfig, e.getMessage());
+            logger.warnf("Failed to serialize metadata: %s", e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * Checks whether the credential types inclusion flag is enabled in the mapper configuration.
+     * Defaults to true if not explicitly configured.
+     *
+     * @return true if credential types should be included in metadata
+     */
+    private boolean isIncludeCredentialTypes() {
+        if (mapperModel == null) {
+            return true;
+        }
+        String value = mapperModel.getConfig().get(Constants.INCLUDE_CREDENTIAL_TYPES_KEY);
+        return value == null || Boolean.parseBoolean(value);
+    }
+
+    /**
+     * Finds the credential types configured on the parent credential scope of this mapper
+     * by searching all client scopes in the realm for one containing this mapper.
+     *
+     * @return the supported credential types, or an empty list if the scope cannot be found
+     */
+    List<String> findCredentialTypes() {
+        if (session == null || mapperModel == null) {
+            return List.of();
+        }
+        String mapperId = mapperModel.getId();
+        if (mapperId == null) {
+            return List.of();
+        }
+        return session.getContext().getRealm()
+                .getClientScopesStream()
+                .filter(cs -> cs.getProtocolMapperById(mapperId) != null)
+                .map(CredentialScopeModel::new)
+                .findFirst()
+                .map(CredentialScopeModel::getSupportedCredentialTypes)
+                .orElse(List.of());
     }
 
     /**
@@ -363,6 +426,9 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         String ID_CLAIM_KEY = "id";
         String STATUS_CLAIM_KEY = "status";
         String METADATA_CLAIM_PATHS_KEY = "metadata.claim.paths";
+        String INCLUDE_CREDENTIAL_TYPES_KEY = "include.credential.types";
+        String INCLUDE_CREDENTIAL_TYPES_DEFAULT = "true";
+        String CREDENTIAL_TYPES_METADATA_KEY = "type";
 
         String HTTP_ENDPOINT_RETRIEVE_PATH = "/statuslists/%s";
     }
