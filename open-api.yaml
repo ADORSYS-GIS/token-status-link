@@ -1,0 +1,412 @@
+openapi: 3.0.3
+info:
+  title: Token Status List Keycloak Plugin API
+  description: >
+    REST API endpoints added by the Token Status List Keycloak plugin.
+    This plugin enables credential status management using the Token Status List
+    specification (draft-ietf-oauth-status-list). It provides holder-initiated
+    revocation via SD-JWT VP as well as issuer-side admin endpoints for querying
+    and updating credential status.
+  version: 1.0.0
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+
+servers:
+  - url: "{keycloakBaseUrl}/realms/{realm}"
+    description: Keycloak realm base URL
+    variables:
+      keycloakBaseUrl:
+        default: http://localhost:8080
+        description: Base URL of the Keycloak instance
+      realm:
+        default: master
+        description: Name of the Keycloak realm
+
+paths:
+  /protocol/openid-connect/revoke/challenge:
+    get:
+      tags:
+        - Holder Revocation
+      summary: Get a revocation challenge
+      description: >
+        Issues a nonce challenge for credential revocation. This is the first
+        step of the two-step holder-initiated revocation flow. The returned
+        nonce must be included in the SD-JWT VP presented to the revocation
+        endpoint.
+      operationId: getRevocationChallenge
+      responses:
+        "200":
+          description: Challenge issued successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RevocationChallenge"
+        "500":
+          description: Nonce service unavailable or internal error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /protocol/openid-connect/revoke:
+    post:
+      tags:
+        - Holder Revocation
+      summary: Revoke a credential (holder-initiated)
+      description: >
+        Revokes a credential using an SD-JWT Verifiable Presentation. The holder
+        presents their credential as a Bearer token in the Authorization header.
+        The presentation must include a valid nonce obtained from the challenge
+        endpoint. When mode is not set to `credential_revocation`, the request
+        falls through to Keycloak's standard token revocation endpoint.
+      operationId: revokeCredential
+      parameters:
+        - name: Authorization
+          in: header
+          required: true
+          description: "Bearer token containing the SD-JWT Verifiable Presentation"
+          schema:
+            type: string
+            example: "Bearer <SD-JWT-VP>"
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - mode
+              properties:
+                mode:
+                  type: string
+                  description: Must be `credential_revocation` to trigger credential revocation
+                  enum:
+                    - credential_revocation
+                reason:
+                  type: string
+                  description: Optional reason for the revocation
+      responses:
+        "200":
+          description: Credential revoked successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CredentialRevocationResponse"
+        "400":
+          description: Invalid authorization header format or invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CredentialRevocationResponse"
+        "401":
+          description: Missing Authorization header
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CredentialRevocationResponse"
+        "500":
+          description: Service disabled, not configured, or internal error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CredentialRevocationResponse"
+
+  /status-list-admin:
+    get:
+      tags:
+        - Admin
+      summary: List credential status entries
+      description: >
+        Returns a paginated list of credential status entries for the current
+        realm, optionally filtered by username, token status, and metadata
+        claims. Requires a Bearer token from a user with the `realm-admin` role
+        on the `realm-management` client.
+      operationId: getCredentialStatuses
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: offset
+          in: query
+          description: Zero-based pagination offset
+          required: false
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+        - name: limit
+          in: query
+          description: Maximum number of entries to return (capped at 100)
+          required: false
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: username
+          in: query
+          description: >
+            Filter by exact username. The username is resolved to a user ID
+            internally. If no user with the given username exists, an empty
+            result set is returned.
+          required: false
+          schema:
+            type: string
+        - name: status
+          in: query
+          description: Filter by token status
+          required: false
+          schema:
+            type: string
+            enum:
+              - VALID
+              - INVALID
+        - name: claims
+          in: query
+          description: >
+            Filter by metadata content (substring match). Can be repeated to
+            require multiple matches (AND logic). Each value is matched against
+            the JSON metadata stored at issuance time.
+          required: false
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
+          examples:
+            singleClaim:
+              summary: Filter by credential type
+              value: ["IdentityCredential"]
+            multipleClaims:
+              summary: Filter by type and country
+              value: ["IdentityCredential", "DE"]
+      responses:
+        "200":
+          description: Paginated list of credential status entries
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CredentialStatusPage"
+        "400":
+          description: Invalid status filter value
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid Bearer token
+        "403":
+          description: Authenticated user does not have the realm-admin role
+
+  /status-list-admin/{id}:
+    put:
+      tags:
+        - Admin
+      summary: Update credential status
+      description: >
+        Updates the status of a credential on the external status list server.
+        The credential is identified by its internal mapping ID (as returned by
+        the GET endpoint). Requires a Bearer token from a user with the
+        `realm-admin` role on the `realm-management` client.
+      operationId: updateCredentialStatus
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Primary key of the status list mapping entry
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CredentialStatusUpdateRequest"
+      responses:
+        "200":
+          description: Status updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CredentialStatusResponse"
+        "400":
+          description: Missing or invalid status value
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid Bearer token
+        "403":
+          description: Authenticated user does not have the realm-admin role
+        "404":
+          description: Credential mapping not found in the current realm
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "502":
+          description: Failed to update status on the external status list server
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >
+        Keycloak access token for a user with the `realm-admin` role on the
+        `realm-management` client.
+
+  schemas:
+    RevocationChallenge:
+      type: object
+      description: Challenge response for the holder-initiated revocation flow
+      properties:
+        nonce:
+          type: string
+          description: One-time nonce to include in the SD-JWT VP
+        aud:
+          type: string
+          description: Expected audience (the revocation endpoint URL)
+        exp:
+          type: integer
+          format: int64
+          description: Expiration time as Unix epoch seconds
+        expires_in:
+          type: integer
+          description: Seconds until the challenge expires (deprecated, use `exp`)
+          deprecated: true
+      required:
+        - nonce
+        - aud
+        - exp
+        - expires_in
+
+    CredentialRevocationResponse:
+      type: object
+      description: Result of a credential revocation attempt
+      properties:
+        success:
+          type: boolean
+          description: Whether the revocation was successful
+        revoked_at:
+          type: string
+          format: date-time
+          description: Timestamp when the credential was revoked (null on failure)
+          nullable: true
+        revocation_reason:
+          type: string
+          description: Reason provided for the revocation (null on failure)
+          nullable: true
+        message:
+          type: string
+          description: Human-readable result message
+      required:
+        - success
+
+    CredentialStatusPage:
+      type: object
+      description: Paginated list of credential status entries
+      properties:
+        items:
+          type: array
+          description: Credential status entries for the current page
+          items:
+            $ref: "#/components/schemas/CredentialStatusResponse"
+        total:
+          type: integer
+          format: int64
+          description: Total number of credential status entries in the realm
+        offset:
+          type: integer
+          description: Zero-based offset used for this page
+        limit:
+          type: integer
+          description: Maximum number of entries per page
+      required:
+        - items
+        - total
+        - offset
+        - limit
+
+    CredentialStatusResponse:
+      type: object
+      description: A single credential's status list mapping entry
+      properties:
+        id:
+          type: string
+          description: Internal mapping entry ID
+        token_id:
+          type: string
+          description: Token identifier of the issued credential
+        user_id:
+          type: string
+          description: Keycloak user ID of the credential holder
+        username:
+          type: string
+          description: Username of the credential holder
+          nullable: true
+        status:
+          type: string
+          description: Current token status
+          enum:
+            - VALID
+            - INVALID
+        status_list_id:
+          type: string
+          description: Identifier of the status list this credential belongs to
+        index:
+          type: integer
+          format: int64
+          description: Index position within the status list
+        created_timestamp:
+          type: integer
+          format: int64
+          description: Creation time as Unix epoch milliseconds
+        metadata:
+          type: object
+          description: >
+            Arbitrary metadata extracted from credential claims at issuance time
+            (configured via the StatusListProtocolMapper). Structure depends on
+            the configured claim paths.
+          nullable: true
+          additionalProperties: true
+      required:
+        - id
+        - token_id
+        - user_id
+        - status
+        - status_list_id
+        - index
+        - created_timestamp
+
+    CredentialStatusUpdateRequest:
+      type: object
+      description: Request to update a credential's status
+      properties:
+        status:
+          type: string
+          description: New status value
+          enum:
+            - VALID
+            - INVALID
+      required:
+        - status
+
+    ErrorResponse:
+      type: object
+      description: Generic error response
+      properties:
+        error:
+          type: string
+          description: Error message
+      required:
+        - error

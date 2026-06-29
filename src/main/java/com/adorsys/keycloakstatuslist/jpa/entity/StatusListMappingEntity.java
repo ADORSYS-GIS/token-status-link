@@ -1,5 +1,6 @@
 package com.adorsys.keycloakstatuslist.jpa.entity;
 
+import com.adorsys.keycloakstatuslist.model.TokenStatus;
 import jakarta.persistence.Access;
 import jakarta.persistence.AccessType;
 import jakarta.persistence.Column;
@@ -45,6 +46,13 @@ public class StatusListMappingEntity {
 
     @Column(name = "created_timestamp", nullable = false, updatable = false)
     private final Long createdTimestamp = Time.currentTimeMillis();
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "token_status")
+    private TokenStatus tokenStatus = TokenStatus.VALID;
+
+    @Column(name = "metadata", columnDefinition = "clob")
+    private String metadata;
 
     // --- Getters and Setters ---
 
@@ -109,6 +117,22 @@ public class StatusListMappingEntity {
         return createdTimestamp;
     }
 
+    public TokenStatus getTokenStatus() {
+        return tokenStatus;
+    }
+
+    public void setTokenStatus(TokenStatus tokenStatus) {
+        this.tokenStatus = tokenStatus;
+    }
+
+    public String getMetadata() {
+        return metadata;
+    }
+
+    public void setMetadata(String metadata) {
+        this.metadata = metadata;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (o == null || getClass() != o.getClass()) return false;
@@ -120,7 +144,9 @@ public class StatusListMappingEntity {
                 && Objects.equals(getTokenId(), that.getTokenId())
                 && Objects.equals(getRealmId(), that.getRealmId())
                 && getStatus() == that.getStatus()
-                && Objects.equals(getCreatedTimestamp(), that.getCreatedTimestamp());
+                && getTokenStatus() == that.getTokenStatus()
+                && Objects.equals(getCreatedTimestamp(), that.getCreatedTimestamp())
+                && Objects.equals(getMetadata(), that.getMetadata());
     }
 
     @Override
@@ -133,7 +159,9 @@ public class StatusListMappingEntity {
                 getTokenId(),
                 getRealmId(),
                 getStatus(),
-                getCreatedTimestamp());
+                getTokenStatus(),
+                getCreatedTimestamp(),
+                getMetadata());
     }
 
     public enum MappingStatus {
