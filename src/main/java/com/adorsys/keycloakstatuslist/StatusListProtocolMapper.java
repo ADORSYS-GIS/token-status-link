@@ -76,6 +76,14 @@ public class StatusListProtocolMapper extends OID4VCMapper {
     private final StatusListService statusListService;
     private final StatusListRepository statusListRepository;
 
+    /**
+     * Holds the mapping entity persisted during {@link #setClaim(Map, UserSessionModel)}
+     * so that metadata can be extracted and attached later in
+     * {@link #setClaim(VerifiableCredential, UserSessionModel)} when all credential
+     * claims are fully populated.
+     */
+    private StatusListMappingEntity pendingMappingEntity;
+
     public StatusListProtocolMapper() {
         // An empty mapper constructor is required by Keycloak
         this.session = null;
@@ -160,7 +168,25 @@ public class StatusListProtocolMapper extends OID4VCMapper {
 
     @Override
     public void setClaim(VerifiableCredential verifiableCredential, UserSessionModel userSessionModel) {
-        // No-op. W3C Verifiable Credentials are not supported by this mapper.
+        if (pendingMappingEntity == null) {
+            return;
+        }
+
+        Map<String, Object> claims = verifiableCredential.getCredentialSubject().getClaims();
+        List<String> credentialTypes = isIncludeCredentialTypes() ? findCredentialTypes() : List.of();
+        String metadata = extractMetadata(claims, credentialTypes);
+
+        if (metadata != null) {
+            pendingMappingEntity.setMetadata(metadata);
+            try {
+                statusListRepository.withEntityManagerInTransaction(
+                        em -> em.merge(pendingMappingEntity));
+            } catch (Exception e) {
+                logger.error("Failed to persist metadata for status list mapping", e);
+            }
+        }
+
+        pendingMappingEntity = null;
     }
 
     @Override
@@ -206,9 +232,9 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         UserSessionModel userSession = session.getContext().getUserSession();
         String userId = userSession != null ? userSession.getUser().getId() : null;
 
-        List<String> credentialTypes = isIncludeCredentialTypes() ? findCredentialTypes() : List.of();
-        String metadata = extractMetadata(claims, credentialTypes);
-        Status status = sendStatusAndStoreIndexMapping(listId, uri.toString(), userId, tokenId, metadata);
+        StatusListMappingEntity mappingEntity = new StatusListMappingEntity();
+        Status status = sendStatusAndStoreIndexMapping(
+                listId, uri.toString(), userId, tokenId, null, mappingEntity);
 
         if (status == null) {
             if (config.isMandatory()) {
@@ -220,6 +246,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
             return;
         }
 
+        pendingMappingEntity = mappingEntity;
         logger.infof("Adding status claim of value: %s", status);
         claims.put(Constants.STATUS_CLAIM_KEY, status);
     }
@@ -247,7 +274,24 @@ public class StatusListProtocolMapper extends OID4VCMapper {
      */
     public Status sendStatusAndStoreIndexMapping(
             String statusListId, String uri, String userId, String tokenId, String metadata) {
-        StatusListMappingEntity mapping = new StatusListMappingEntity();
+        return sendStatusAndStoreIndexMapping(
+                statusListId, uri, userId, tokenId, metadata, new StatusListMappingEntity());
+    }
+
+    /**
+     * Send status to server to create status list entry and store index mapping in database.
+     *
+     * @param statusListId the status list identifier
+     * @param uri the status list URI
+     * @param userId the user ID of the credential holder
+     * @param tokenId the credential/token identifier
+     * @param metadata JSON string of extracted claim metadata, or null if no metadata configured
+     * @param mapping the entity to persist for this mapping
+     * @return the Status claim to embed in the credential, or null on failure
+     */
+    public Status sendStatusAndStoreIndexMapping(
+            String statusListId, String uri, String userId, String tokenId, String metadata,
+            StatusListMappingEntity mapping) {
         mapping.setStatusListId(statusListId);
         mapping.setUserId(userId);
         mapping.setTokenId(tokenId);

@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.spy;
@@ -49,6 +50,8 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.keycloak.models.ClientScopeModel;
 import org.keycloak.models.ProtocolMapperModel;
 import org.keycloak.protocol.ProtocolMapper;
+import org.keycloak.protocol.oid4vc.model.CredentialSubject;
+import org.keycloak.protocol.oid4vc.model.VerifiableCredential;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 
@@ -129,8 +132,9 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
     }
 
     @Test
-    void shouldNoOpForW3CVerifiableCredentialClaimSetter() {
-        mapper.setClaim((org.keycloak.protocol.oid4vc.model.VerifiableCredential) null, userSession);
+    void shouldNoOpForVerifiableCredentialClaimSetter_WhenNoPendingMapping() {
+        VerifiableCredential vc = new VerifiableCredential();
+        mapper.setClaim(vc, userSession);
     }
 
     @Test
@@ -407,9 +411,13 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
         mapper.setClaim(claims, userSession);
 
+        VerifiableCredential vc = buildVerifiableCredential(claims);
+        mapper.setClaim(vc, userSession);
+
         var entityCaptor = ArgumentCaptor.forClass(StatusListMappingEntity.class);
-        verify(entityManager).persist(entityCaptor.capture());
-        StatusListMappingEntity capturedEntity = entityCaptor.getValue();
+        verify(entityManager, atLeastOnce()).merge(entityCaptor.capture());
+        StatusListMappingEntity capturedEntity = entityCaptor.getAllValues()
+                .get(entityCaptor.getAllValues().size() - 1);
         assertThat(capturedEntity.getMetadata(), containsString("IdentityCredential"));
     }
 
@@ -464,6 +472,9 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
         mapper.setClaim(claims, userSession);
 
+        VerifiableCredential vc = buildVerifiableCredential(claims);
+        mapper.setClaim(vc, userSession);
+
         var entityCaptor = ArgumentCaptor.forClass(StatusListMappingEntity.class);
         verify(entityManager).persist(entityCaptor.capture());
         StatusListMappingEntity capturedEntity = entityCaptor.getValue();
@@ -477,9 +488,13 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
         mapper.setClaim(claims, userSession);
 
+        VerifiableCredential vc = buildVerifiableCredential(claims);
+        mapper.setClaim(vc, userSession);
+
         var entityCaptor = ArgumentCaptor.forClass(StatusListMappingEntity.class);
-        verify(entityManager).persist(entityCaptor.capture());
-        StatusListMappingEntity capturedEntity = entityCaptor.getValue();
+        verify(entityManager, atLeastOnce()).merge(entityCaptor.capture());
+        StatusListMappingEntity capturedEntity = entityCaptor.getAllValues()
+                .get(entityCaptor.getAllValues().size() - 1);
         Map<?, ?> parsed = new ObjectMapper().readValue(capturedEntity.getMetadata(), Map.class);
         assertEquals(List.of("VerifiableCredential", "UserCredential"), parsed.get("type"));
     }
@@ -561,6 +576,41 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         lenient().when(clientScope.getProtocolMapperById(mapperId)).thenReturn(mapperModel);
         lenient().when(clientScope.getAttribute("vc.supported_credential_types")).thenReturn(String.join(",", types));
         lenient().when(realm.getClientScopesStream()).thenAnswer(inv -> Stream.of(clientScope));
+    }
+
+    /**
+     * Builds a VerifiableCredential with the given claims set on its credential subject,
+     * simulating the state after all mappers have populated the claims map.
+     */
+    private VerifiableCredential buildVerifiableCredential(Map<String, Object> claimsMap) {
+        VerifiableCredential vc = new VerifiableCredential();
+        CredentialSubject subject = new CredentialSubject();
+        subject.setClaims(new HashMap<>(claimsMap));
+        vc.setCredentialSubject(subject);
+        return vc;
+    }
+
+    @Test
+    void shouldExtractMetadataFromAllClaims_WhenSetClaimVCIsCalledAfterAllMappers()
+            throws JsonProcessingException {
+        mapperConfig.put(Constants.METADATA_CLAIM_PATHS_KEY, "firstName, lastName");
+        mockGetNextIndex();
+
+        mapper.setClaim(claims, userSession);
+
+        claims.put("firstName", "Jane");
+        claims.put("lastName", "Doe");
+
+        VerifiableCredential vc = buildVerifiableCredential(claims);
+        mapper.setClaim(vc, userSession);
+
+        var entityCaptor = ArgumentCaptor.forClass(StatusListMappingEntity.class);
+        verify(entityManager, atLeastOnce()).merge(entityCaptor.capture());
+        StatusListMappingEntity capturedEntity = entityCaptor.getAllValues()
+                .get(entityCaptor.getAllValues().size() - 1);
+        Map<?, ?> parsed = new ObjectMapper().readValue(capturedEntity.getMetadata(), Map.class);
+        assertEquals("Jane", parsed.get("firstName"));
+        assertEquals("Doe", parsed.get("lastName"));
     }
 
     @SuppressWarnings("SameParameterValue")
