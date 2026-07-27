@@ -1,6 +1,7 @@
 package com.adorsys.keycloakstatuslist;
 
 import static com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity.MappingStatus;
+import static org.keycloak.OID4VCConstants.OPENID_CREDENTIAL;
 
 import com.adorsys.keycloakstatuslist.client.ApacheHttpStatusListClient;
 import com.adorsys.keycloakstatuslist.client.StatusListHttpClient;
@@ -15,6 +16,7 @@ import com.adorsys.keycloakstatuslist.service.CircuitBreaker;
 import com.adorsys.keycloakstatuslist.service.CryptoIdentityService;
 import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
+import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.UriBuilder;
 import java.io.IOException;
 import java.net.URI;
@@ -22,15 +24,22 @@ import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.apache.commons.collections4.ListUtils;
 import org.jboss.logging.Logger;
+import org.keycloak.TokenVerifier;
+import org.keycloak.common.VerificationException;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserSessionModel;
 import org.keycloak.protocol.ProtocolMapper;
 import org.keycloak.protocol.oid4vc.issuance.mappers.OID4VCMapper;
+import org.keycloak.protocol.oid4vc.model.OID4VCAuthorizationDetail;
 import org.keycloak.protocol.oid4vc.model.VerifiableCredential;
 import org.keycloak.provider.ProviderConfigProperty;
+import org.keycloak.representations.AccessToken;
+import org.keycloak.representations.AuthorizationDetailsJSONRepresentation;
+import org.keycloak.utils.StringUtil;
 
 /**
  * Protocol mapper for adding `status_list` claims to issued Verifiable
@@ -43,6 +52,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
 
     private static final Logger logger = Logger.getLogger(StatusListProtocolMapper.class);
     private static final List<ProviderConfigProperty> CONFIG_PROPERTIES = new ArrayList<>();
+    private static final String BEARER_PREFIX = "bearer";
 
     private final KeycloakSession session;
     private final StatusListService statusListService;
@@ -169,11 +179,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
                 .build();
         logger.debugf("Configuration: listId=%s, uri=%s", listId, uri);
 
-        // Get credential ID
-        String tokenId = null;
-        if (claims.get(Constants.ID_CLAIM_KEY) instanceof String id) {
-            tokenId = id;
-        }
+        String tokenId = resolveTokenId(claims);
 
         UserSessionModel userSession = session.getContext().getUserSession();
         String userId = userSession != null ? userSession.getUser().getId() : null;
@@ -203,6 +209,74 @@ public class StatusListProtocolMapper extends OID4VCMapper {
             logger.debugf("Invalid URL format: %s", url);
             return false;
         }
+    }
+
+    private String resolveTokenId(Map<String, Object> claims) {
+        Optional<String> issuedCredentialId = resolveIssuedCredentialIdFromAccessToken();
+        if (issuedCredentialId.isPresent()) {
+            return issuedCredentialId.get();
+        }
+
+        if (claims.get(Constants.ID_CLAIM_KEY) instanceof String id && StringUtil.isNotBlank(id)) {
+            return id;
+        }
+
+        return null;
+    }
+
+    private Optional<String> resolveIssuedCredentialIdFromAccessToken() {
+        return getBearerToken()
+                .flatMap(this::readAccessToken)
+                .map(AccessToken::getAuthorizationDetails)
+                .flatMap(this::findIssuedCredentialId);
+    }
+
+    private Optional<String> getBearerToken() {
+        try {
+            HttpHeaders headers = session.getContext().getRequestHeaders();
+            if (headers == null) {
+                return Optional.empty();
+            }
+
+            String authorizationHeader = headers.getHeaderString(HttpHeaders.AUTHORIZATION);
+            if (StringUtil.isBlank(authorizationHeader)) {
+                return Optional.empty();
+            }
+
+            String[] authParts = authorizationHeader.trim().split("\\s+", 2);
+            if (authParts.length != 2 || !BEARER_PREFIX.equalsIgnoreCase(authParts[0])) {
+                return Optional.empty();
+            }
+
+            String token = authParts[1].trim();
+            return StringUtil.isBlank(token) ? Optional.empty() : Optional.of(token);
+        } catch (RuntimeException e) {
+            logger.debug("Could not read bearer token from current request", e);
+            return Optional.empty();
+        }
+    }
+
+    private Optional<AccessToken> readAccessToken(String token) {
+        try {
+            return Optional.of(TokenVerifier.create(token, AccessToken.class).getToken());
+        } catch (VerificationException e) {
+            logger.debug("Could not parse current bearer token as Keycloak access token", e);
+            return Optional.empty();
+        }
+    }
+
+    private Optional<String> findIssuedCredentialId(List<AuthorizationDetailsJSONRepresentation> authorizationDetails) {
+        if (authorizationDetails == null || authorizationDetails.isEmpty()) {
+            return Optional.empty();
+        }
+
+        return authorizationDetails.stream()
+                .filter(detail -> OPENID_CREDENTIAL.equals(detail.getType()))
+                .map(detail -> detail.getCustomData().get(OID4VCAuthorizationDetail.ISSUED_CREDENTIAL_ID))
+                .filter(String.class::isInstance)
+                .map(String.class::cast)
+                .filter(StringUtil::isNotBlank)
+                .findFirst();
     }
 
     /**
