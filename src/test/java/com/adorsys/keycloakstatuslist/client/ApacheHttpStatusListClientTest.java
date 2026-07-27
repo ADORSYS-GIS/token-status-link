@@ -79,6 +79,9 @@ class ApacheHttpStatusListClientTest {
         assertEquals(
                 "https://status.example.com/api/v1/status-lists/list-1",
                 okRequestCaptor.getValue().getUri().toString());
+        assertEquals(
+                "application/statuslist+jwt",
+                okRequestCaptor.getValue().getFirstHeader("Accept").getValue());
 
         CloseableHttpClient notFoundClient = mock(CloseableHttpClient.class);
         mockGetResponse(notFoundClient, 404, "");

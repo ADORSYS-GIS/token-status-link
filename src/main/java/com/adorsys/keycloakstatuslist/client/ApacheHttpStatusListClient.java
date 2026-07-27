@@ -37,6 +37,7 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
     private static final String STATUS_LISTS_PATH = API_V1_PATH + "/status-lists";
     private static final String STATUS_LIST_STATUSES_PATH = "statuses";
     private static final String HEALTH_PATH = "health";
+    private static final String STATUS_LIST_JWT_MEDIA_TYPE = "application/statuslist+jwt";
 
     private final String serverUrl;
     private final String authToken;
@@ -117,6 +118,7 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
 
         HttpGet httpGet = new HttpGet(statusListUrl(statusListId));
         configureCommonHeaders(httpGet, requestId);
+        httpGet.setHeader("Accept", STATUS_LIST_JWT_MEDIA_TYPE);
 
         try {
             return httpClient.execute(
