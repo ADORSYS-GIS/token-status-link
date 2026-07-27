@@ -25,6 +25,8 @@ public class StatusListConfig {
             "status-list-circuit-breaker-failure-threshold";
     public static final String STATUS_LIST_MANDATORY = "status-list-mandatory";
     public static final String STATUS_LIST_MAX_ENTRIES = "status-list-max-entries";
+    public static final String STATUS_LIST_TLS_TRUST_ALL = "status-list-tls-trust-all";
+    public static final String STATUS_LIST_TLS_CA_CERT_PATH = "status-list-tls-ca-cert-path";
 
     // Default values
     public static final boolean DEFAULT_ENABLED = true;
@@ -178,6 +180,25 @@ public class StatusListConfig {
      */
     public int getCircuitBreakerCooldownSeconds() {
         return DEFAULT_COOLDOWN_SECONDS;
+    }
+
+    /**
+     * Checks if TLS certificate verification should be skipped for the status list server.
+     *
+     * @return true if all certificates should be trusted, false otherwise
+     */
+    public boolean isTlsTrustAll() {
+        String value = realm.getAttribute(STATUS_LIST_TLS_TRUST_ALL);
+        return value != null && Boolean.parseBoolean(value);
+    }
+
+    /**
+     * Gets the path to a PEM-encoded CA certificate file for verifying the status list server's TLS certificate.
+     *
+     * @return the CA certificate file path, or null if not configured
+     */
+    public String getTlsCaCertPath() {
+        return realm.getAttribute(STATUS_LIST_TLS_CA_CERT_PATH);
     }
 
     /**

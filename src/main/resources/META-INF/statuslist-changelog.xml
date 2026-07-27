@@ -58,4 +58,16 @@
         </createIndex>
     </changeSet>
 
+    <changeSet id="add-metadata-to-status-list-mapping" author="adorsys">
+        <addColumn tableName="status_list_mapping">
+            <column name="metadata" type="clob"/>
+        </addColumn>
+    </changeSet>
+
+    <changeSet id="add-token-status-to-status-list-mapping" author="adorsys">
+        <addColumn tableName="status_list_mapping">
+            <column name="token_status" type="varchar(32)" defaultValue="VALID"/>
+        </addColumn>
+    </changeSet>
+
 </databaseChangeLog>

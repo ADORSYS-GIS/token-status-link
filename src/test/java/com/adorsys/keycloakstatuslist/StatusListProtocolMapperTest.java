@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.spy;
@@ -30,17 +31,27 @@ import com.adorsys.keycloakstatuslist.model.Status;
 import com.adorsys.keycloakstatuslist.model.StatusListClaim;
 import com.adorsys.keycloakstatuslist.model.TokenStatus;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.PersistenceException;
 import jakarta.ws.rs.core.UriBuilder;
 import java.net.URI;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.stream.Stream;
 import nl.altindag.log.LogCaptor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.keycloak.models.ClientScopeModel;
 import org.keycloak.models.ProtocolMapperModel;
 import org.keycloak.protocol.ProtocolMapper;
+import org.keycloak.protocol.oid4vc.model.CredentialSubject;
+import org.keycloak.protocol.oid4vc.model.VerifiableCredential;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 
@@ -57,12 +68,19 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
     @Mock
     StatusListService statusListService;
 
+    @Mock
+    ClientScopeModel clientScope;
+
     StatusListProtocolMapper mapper;
     HashMap<String, Object> claims;
     StatusListRepository statusListRepository;
+    HashMap<String, String> mapperConfig;
 
     @BeforeEach
     void setup() {
+        mapperConfig = new HashMap<>();
+        lenient().when(mapperModel.getConfig()).thenReturn(mapperConfig);
+
         mapper = spy(new StatusListProtocolMapper(session));
         setPrivateField(mapper, "mapperModel", mapperModel);
         setPrivateField(mapper, "statusListService", statusListService);
@@ -109,13 +127,14 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         assertEquals("Status List Claim Mapper", mapper.getDisplayType());
         assertTrue(mapper.getHelpText().contains("status list claim"));
         assertFalse(mapper.includeInMetadata());
-        assertTrue(mapper.getIndividualConfigProperties().isEmpty());
+        assertFalse(mapper.getIndividualConfigProperties().isEmpty());
         mapper.close();
     }
 
     @Test
-    void shouldNoOpForW3CVerifiableCredentialClaimSetter() {
-        mapper.setClaim((org.keycloak.protocol.oid4vc.model.VerifiableCredential) null, userSession);
+    void shouldNoOpForVerifiableCredentialClaimSetter_WhenNoPendingMapping() {
+        VerifiableCredential vc = new VerifiableCredential();
+        mapper.setClaim(vc, userSession);
     }
 
     @Test
@@ -314,6 +333,207 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         assertThat(claims.keySet(), hasItem(Constants.STATUS_CLAIM_KEY));
     }
 
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = {"  ", " , "})
+    void shouldReturnNullMetadata_WhenNoClaimPathsConfigured(String configValue) {
+        mapperConfig.put(Constants.METADATA_CLAIM_PATHS_KEY, configValue);
+
+        String metadata = mapper.extractMetadata(claims);
+
+        assertEquals(null, metadata);
+    }
+
+    @Test
+    void shouldExtractTopLevelClaimAsMetadata() throws JsonProcessingException {
+        claims.put("vct", "IdentityCredential");
+        mapperConfig.put(Constants.METADATA_CLAIM_PATHS_KEY, "vct");
+
+        String metadata = mapper.extractMetadata(claims);
+
+        Map<?, ?> parsed = new ObjectMapper().readValue(metadata, Map.class);
+        assertEquals("IdentityCredential", parsed.get("vct"));
+        assertEquals(1, parsed.size());
+    }
+
+    @Test
+    void shouldExtractNestedClaimAsMetadata() throws JsonProcessingException {
+        claims.put("sub", Map.of("email", "user@example.com", "name", "Jane"));
+        mapperConfig.put(Constants.METADATA_CLAIM_PATHS_KEY, "sub.email");
+
+        String metadata = mapper.extractMetadata(claims);
+
+        Map<?, ?> parsed = new ObjectMapper().readValue(metadata, Map.class);
+        assertEquals("user@example.com", parsed.get("sub.email"));
+        assertEquals(1, parsed.size());
+    }
+
+    @Test
+    void shouldExtractMultipleClaimPathsAsMetadata() throws JsonProcessingException {
+        claims.put("vct", "IdentityCredential");
+        claims.put("sub", Map.of("email", "user@example.com"));
+        mapperConfig.put(Constants.METADATA_CLAIM_PATHS_KEY, "vct, sub.email");
+
+        String metadata = mapper.extractMetadata(claims);
+
+        Map<?, ?> parsed = new ObjectMapper().readValue(metadata, Map.class);
+        assertEquals("IdentityCredential", parsed.get("vct"));
+        assertEquals("user@example.com", parsed.get("sub.email"));
+        assertEquals(2, parsed.size());
+    }
+
+    @Test
+    void shouldSkipMissingClaimPaths() throws JsonProcessingException {
+        claims.put("vct", "IdentityCredential");
+        mapperConfig.put(Constants.METADATA_CLAIM_PATHS_KEY, "vct, nonexistent");
+
+        String metadata = mapper.extractMetadata(claims);
+
+        Map<?, ?> parsed = new ObjectMapper().readValue(metadata, Map.class);
+        assertEquals("IdentityCredential", parsed.get("vct"));
+        assertEquals(1, parsed.size());
+    }
+
+    @Test
+    void shouldReturnNullMetadata_WhenAllClaimPathsMissing() {
+        mapperConfig.put(Constants.METADATA_CLAIM_PATHS_KEY, "nonexistent, also.missing");
+
+        String metadata = mapper.extractMetadata(claims);
+
+        assertEquals(null, metadata);
+    }
+
+    @Test
+    void shouldStoreMetadataInEntity_WhenClaimPathsConfigured() {
+        claims.put("vct", "IdentityCredential");
+        mapperConfig.put(Constants.METADATA_CLAIM_PATHS_KEY, "vct");
+        mockGetNextIndex();
+
+        mapper.setClaim(claims, userSession);
+
+        VerifiableCredential vc = buildVerifiableCredential(claims);
+        mapper.setClaim(vc, userSession);
+
+        var entityCaptor = ArgumentCaptor.forClass(StatusListMappingEntity.class);
+        verify(entityManager, atLeastOnce()).merge(entityCaptor.capture());
+        StatusListMappingEntity capturedEntity = entityCaptor.getAllValues()
+                .get(entityCaptor.getAllValues().size() - 1);
+        assertThat(capturedEntity.getMetadata(), containsString("IdentityCredential"));
+    }
+
+    @Test
+    void shouldResolveClaimPath_WhenPathPointsToMapValue() {
+        Map<String, Object> nested = Map.of("level2", Map.of("level3", "deepValue"));
+        Map<String, Object> testClaims = Map.of("level1", nested);
+
+        Object result = StatusListProtocolMapper.resolveClaimPath(testClaims, "level1.level2.level3");
+
+        assertEquals("deepValue", result);
+    }
+
+    @Test
+    void shouldReturnNull_WhenPathTraversesNonMapValue() {
+        Map<String, Object> testClaims = Map.of("key", "stringValue");
+
+        Object result = StatusListProtocolMapper.resolveClaimPath(testClaims, "key.sub");
+
+        assertEquals(null, result);
+    }
+
+    @Test
+    void shouldIncludeCredentialTypesInMetadata_ByDefault() throws JsonProcessingException {
+        mockCredentialScope("VerifiableCredential", "UserCredential");
+
+        String metadata = mapper.extractMetadata(claims, List.of("VerifiableCredential", "UserCredential"));
+
+        Map<?, ?> parsed = new ObjectMapper().readValue(metadata, Map.class);
+        assertEquals(List.of("VerifiableCredential", "UserCredential"), parsed.get("type"));
+        assertEquals(1, parsed.size());
+    }
+
+    @Test
+    void shouldIncludeCredentialTypesAlongsideClaimPaths() throws JsonProcessingException {
+        claims.put("vct", "IdentityCredential");
+        mapperConfig.put(Constants.METADATA_CLAIM_PATHS_KEY, "vct");
+
+        String metadata = mapper.extractMetadata(claims, List.of("VerifiableCredential", "UserCredential"));
+
+        Map<?, ?> parsed = new ObjectMapper().readValue(metadata, Map.class);
+        assertEquals("IdentityCredential", parsed.get("vct"));
+        assertEquals(List.of("VerifiableCredential", "UserCredential"), parsed.get("type"));
+        assertEquals(2, parsed.size());
+    }
+
+    @Test
+    void shouldNotIncludeCredentialTypes_WhenFlagIsDisabled() {
+        mapperConfig.put(Constants.INCLUDE_CREDENTIAL_TYPES_KEY, "false");
+        mockCredentialScope("VerifiableCredential", "UserCredential");
+        mockGetNextIndex();
+
+        mapper.setClaim(claims, userSession);
+
+        VerifiableCredential vc = buildVerifiableCredential(claims);
+        mapper.setClaim(vc, userSession);
+
+        var entityCaptor = ArgumentCaptor.forClass(StatusListMappingEntity.class);
+        verify(entityManager).persist(entityCaptor.capture());
+        StatusListMappingEntity capturedEntity = entityCaptor.getValue();
+        assertEquals(null, capturedEntity.getMetadata());
+    }
+
+    @Test
+    void shouldStoreCredentialTypesInEntity_WhenFlagIsEnabled() throws JsonProcessingException {
+        mockCredentialScope("VerifiableCredential", "UserCredential");
+        mockGetNextIndex();
+
+        mapper.setClaim(claims, userSession);
+
+        VerifiableCredential vc = buildVerifiableCredential(claims);
+        mapper.setClaim(vc, userSession);
+
+        var entityCaptor = ArgumentCaptor.forClass(StatusListMappingEntity.class);
+        verify(entityManager, atLeastOnce()).merge(entityCaptor.capture());
+        StatusListMappingEntity capturedEntity = entityCaptor.getAllValues()
+                .get(entityCaptor.getAllValues().size() - 1);
+        Map<?, ?> parsed = new ObjectMapper().readValue(capturedEntity.getMetadata(), Map.class);
+        assertEquals(List.of("VerifiableCredential", "UserCredential"), parsed.get("type"));
+    }
+
+    @Test
+    void shouldFindCredentialTypes_FromParentScope() {
+        mockCredentialScope("VerifiableCredential", "UserCredential");
+
+        List<String> types = mapper.findCredentialTypes();
+
+        assertEquals(List.of("VerifiableCredential", "UserCredential"), types);
+    }
+
+    @Test
+    void shouldReturnEmptyCredentialTypes_WhenNoMatchingScope() {
+        when(mapperModel.getId()).thenReturn("test-mapper-id");
+        when(realm.getClientScopesStream()).thenAnswer(inv -> Stream.empty());
+
+        List<String> types = mapper.findCredentialTypes();
+
+        assertEquals(List.of(), types);
+    }
+
+    @Test
+    void shouldReturnEmptyCredentialTypes_WhenMapperIdIsNull() {
+        when(mapperModel.getId()).thenReturn(null);
+
+        List<String> types = mapper.findCredentialTypes();
+
+        assertEquals(List.of(), types);
+    }
+
+    @Test
+    void shouldReturnNullMetadata_WhenNoClaimPathsAndNoCredentialTypes() {
+        String metadata = mapper.extractMetadata(claims, List.of());
+
+        assertEquals(null, metadata);
+    }
+
     private void mockDefaultRealmConfig() {
         lenient()
                 .when(realm.getAttribute(StatusListConfig.STATUS_LIST_ENABLED))
@@ -347,6 +567,50 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         lenient().doReturn(nextIndex).when(statusListRepository).getNextIndex(any(), anyString());
 
         return nextIndex;
+    }
+
+    private void mockCredentialScope(String... types) {
+        String mapperId = "test-mapper-id";
+        lenient().when(mapperModel.getId()).thenReturn(mapperId);
+        lenient().when(clientScope.getProtocol()).thenReturn("oid4vc");
+        lenient().when(clientScope.getProtocolMapperById(mapperId)).thenReturn(mapperModel);
+        lenient().when(clientScope.getAttribute("vc.supported_credential_types")).thenReturn(String.join(",", types));
+        lenient().when(realm.getClientScopesStream()).thenAnswer(inv -> Stream.of(clientScope));
+    }
+
+    /**
+     * Builds a VerifiableCredential with the given claims set on its credential subject,
+     * simulating the state after all mappers have populated the claims map.
+     */
+    private VerifiableCredential buildVerifiableCredential(Map<String, Object> claimsMap) {
+        VerifiableCredential vc = new VerifiableCredential();
+        CredentialSubject subject = new CredentialSubject();
+        subject.setClaims(new HashMap<>(claimsMap));
+        vc.setCredentialSubject(subject);
+        return vc;
+    }
+
+    @Test
+    void shouldExtractMetadataFromAllClaims_WhenSetClaimVCIsCalledAfterAllMappers()
+            throws JsonProcessingException {
+        mapperConfig.put(Constants.METADATA_CLAIM_PATHS_KEY, "firstName, lastName");
+        mockGetNextIndex();
+
+        mapper.setClaim(claims, userSession);
+
+        claims.put("firstName", "Jane");
+        claims.put("lastName", "Doe");
+
+        VerifiableCredential vc = buildVerifiableCredential(claims);
+        mapper.setClaim(vc, userSession);
+
+        var entityCaptor = ArgumentCaptor.forClass(StatusListMappingEntity.class);
+        verify(entityManager, atLeastOnce()).merge(entityCaptor.capture());
+        StatusListMappingEntity capturedEntity = entityCaptor.getAllValues()
+                .get(entityCaptor.getAllValues().size() - 1);
+        Map<?, ?> parsed = new ObjectMapper().readValue(capturedEntity.getMetadata(), Map.class);
+        assertEquals("Jane", parsed.get("firstName"));
+        assertEquals("Doe", parsed.get("lastName"));
     }
 
     @SuppressWarnings("SameParameterValue")

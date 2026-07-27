@@ -23,18 +23,24 @@ The status list server should implement the OAuth 2.0 Status List pattern.
 
 The plugin can be configured at the realm level with the following properties:
 
-| Property                                        | Description                                                                                                               | Default Value                         |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
-| `status-list-enabled`                           | Enables or disables the status list service                                                                               | `true`                                |
+| Property                                        | Description                                                                                                               | Default Value                        |
+| ----------------------------------------------- |---------------------------------------------------------------------------------------------------------------------------|--------------------------------------|
+| `status-list-enabled`                           | Enables or disables the status list service                                                                               | `true`                               |
 | `status-list-server-url`                        | URL of the status list server                                                                                             | `https://statuslist.eudi-adorsys.com` |
-| `status-list-token-issuer-prefix`               | Prefix for building the Token Issuer ID                                                                                   | `Generated UUID`                      |
-| `status-list-issuance-timeout`                  | Timeout in milliseconds for **issuance** operations (runtime). Non-positive values disable circuit breaker                | `10000`                               |
-| `status-list-registration-timeout`              | Timeout in milliseconds for **background registration** operations                                                        | `30000`                               |
-| `status-list-registration-retries`              | Number of retries for background registration operations                                                                  | `1`                                   |
-| `status-list-registration-cooldown`             | Cooldown period in **milliseconds** between registration attempts for the same realm                                      | `60000`                               |
-| `status-list-circuit-breaker-failure-threshold` | Number of failures/timeouts before opening the circuit breaker                                                            | `5`                                   |
-| `status-list-mandatory`                         | If true, publication failures block issuance; if false, failures are logged and issuance continues without a status claim | `false`                               |
-| `status-list-max-entries`                       | Maximum number of entries to publish under the same status list                                                           | `10000`                               |
+| `status-list-token-issuer-prefix`               | Prefix for building the Token Issuer ID                                                                                   | `Generated UUID`                     |
+| `status-list-issuance-timeout`                  | Timeout in milliseconds for **issuance** operations (runtime). Non-positive values disable circuit breaker                | `10000`                              |
+| `status-list-registration-timeout`              | Timeout in milliseconds for **background registration** operations                                                        | `30000`                              |
+| `status-list-registration-retries`              | Number of retries for background registration operations                                                                  | `1`                                  |
+| `status-list-registration-cooldown`             | Cooldown period in **milliseconds** between registration attempts for the same realm                                      | `60000`                              |
+| `status-list-circuit-breaker-failure-threshold` | Number of failures/timeouts before opening the circuit breaker                                                            | `5`                                  |
+| `status-list-mandatory`                         | If true, publication failures block issuance; if false, failures are logged and issuance continues without a status claim | `false`                              |
+| `status-list-max-entries`                       | Maximum number of entries to publish under the same status list                                                           | `10000`                              |
+| `status-list-tls-trust-all`                     | Instructs the status-list-server http-client to trust all ssl-certificates. **DO NOT USE IN PRODUCTION**                  | `false`                              |
+| `status-list-tls-ca-cert-path`                  | Path to an additional tls-ca file to be trusted by the status-list-server http-client                                     | `false`                              |
+
+### Proxy support
+
+Usage of HTTP/S-Proxies for the Status-List-Client is supported through the standard Keycloak-Proxy Environment Variables: [Keycloak Outgoing Proxy Config](https://www.keycloak.org/server/outgoinghttp#_proxy_mappings_for_outgoing_http_requests)
 
 ## Compatibility
 
