@@ -2,6 +2,7 @@ package com.adorsys.keycloakstatuslist.service;
 
 import com.adorsys.keycloakstatuslist.client.StatusListHttpClient;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
+import com.adorsys.keycloakstatuslist.model.TokenStatus;
 import java.util.List;
 import java.util.UUID;
 import org.jboss.logging.Logger;
@@ -88,6 +89,6 @@ public class StatusListService {
     }
 
     public record StatusListPayload(String listId, List<StatusEntry> status) {
-        public record StatusEntry(long index, String status) {}
+        public record StatusEntry(long index, TokenStatus status) {}
     }
 }

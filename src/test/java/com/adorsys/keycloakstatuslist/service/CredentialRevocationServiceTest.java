@@ -21,6 +21,7 @@ import com.adorsys.keycloakstatuslist.jpa.repository.StatusListRepository;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationResponse;
 import com.adorsys.keycloakstatuslist.model.RevocationChallenge;
+import com.adorsys.keycloakstatuslist.model.TokenStatus;
 import com.adorsys.keycloakstatuslist.service.nonce.NonceCacheService;
 import com.adorsys.keycloakstatuslist.service.nonce.NonceCacheServiceProviderFactory;
 import com.adorsys.keycloakstatuslist.service.validation.SdJwtVPValidationService;
@@ -146,7 +147,7 @@ class CredentialRevocationServiceTest {
         assertEquals("list-1", captured.listId());
         assertEquals(1, captured.status().size());
         assertEquals(1L, captured.status().get(0).index());
-        assertEquals("INVALID", captured.status().get(0).status());
+        assertEquals(TokenStatus.INVALID, captured.status().get(0).status());
 
         verify(sdJwtVPValidationService).parseAndValidateSdJwtVP(eq(token), anyString());
         verify(sdJwtVPValidationService).extractNonceFromKeyBindingJWT(sdJwtVP);
@@ -317,7 +318,7 @@ class CredentialRevocationServiceTest {
         assertEquals("list-1", payload.listId());
         assertEquals(1, payload.status().size());
         assertEquals(7L, payload.status().get(0).index());
-        assertEquals("INVALID", payload.status().get(0).status());
+        assertEquals(TokenStatus.INVALID, payload.status().get(0).status());
         verify(userProvider).removeIssuedVerifiableCredential("issued-1");
     }
 

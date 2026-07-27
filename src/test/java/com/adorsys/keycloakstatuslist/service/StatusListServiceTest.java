@@ -13,6 +13,7 @@ import static org.mockito.Mockito.when;
 
 import com.adorsys.keycloakstatuslist.client.StatusListHttpClient;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
+import com.adorsys.keycloakstatuslist.model.TokenStatus;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -75,7 +76,7 @@ class StatusListServiceTest {
         doNothing().when(httpClient).publishStatusList(any(), anyString());
 
         StatusListService.StatusListPayload payload = new StatusListService.StatusListPayload(
-                "list-id", List.of(new StatusListService.StatusListPayload.StatusEntry(1, "VALID")));
+                "list-id", List.of(new StatusListService.StatusListPayload.StatusEntry(1, TokenStatus.VALID)));
 
         statusListService.publishOrUpdate(payload);
 
@@ -90,7 +91,7 @@ class StatusListServiceTest {
         doNothing().when(httpClient).updateStatusList(any(), anyString());
 
         StatusListService.StatusListPayload payload = new StatusListService.StatusListPayload(
-                "list-id", List.of(new StatusListService.StatusListPayload.StatusEntry(1, "INVALID")));
+                "list-id", List.of(new StatusListService.StatusListPayload.StatusEntry(1, TokenStatus.INVALID)));
 
         statusListService.publishOrUpdate(payload);
 
@@ -104,7 +105,7 @@ class StatusListServiceTest {
         when(httpClient.checkStatusListExists("list-id")).thenThrow(new StatusListException("Connection failed"));
 
         StatusListService.StatusListPayload payload = new StatusListService.StatusListPayload(
-                "list-id", List.of(new StatusListService.StatusListPayload.StatusEntry(1, "VALID")));
+                "list-id", List.of(new StatusListService.StatusListPayload.StatusEntry(1, TokenStatus.VALID)));
 
         StatusListException exception =
                 assertThrows(StatusListException.class, () -> statusListService.publishOrUpdate(payload));
@@ -116,7 +117,7 @@ class StatusListServiceTest {
     @Test
     void updateStatusList_delegatesToHttpClient() throws StatusListException {
         StatusListService.StatusListPayload payload = new StatusListService.StatusListPayload(
-                "list-id", List.of(new StatusListService.StatusListPayload.StatusEntry(1, "INVALID")));
+                "list-id", List.of(new StatusListService.StatusListPayload.StatusEntry(1, TokenStatus.INVALID)));
         doNothing().when(httpClient).updateStatusList(any(), anyString());
 
         statusListService.updateStatusList(payload, "request-123");

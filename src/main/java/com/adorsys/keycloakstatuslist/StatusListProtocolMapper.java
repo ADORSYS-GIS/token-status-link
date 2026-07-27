@@ -262,8 +262,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
     private void sendStatusToServer(long idx, String statusListId) throws IOException, StatusListException {
         // Prepare payload
         StatusListService.StatusListPayload payload = new StatusListService.StatusListPayload(
-                statusListId,
-                List.of(new StatusListService.StatusListPayload.StatusEntry(idx, TokenStatus.VALID.getValue())));
+                statusListId, List.of(new StatusListService.StatusListPayload.StatusEntry(idx, TokenStatus.VALID)));
 
         // Publish or update status list on server
         statusListService.publishOrUpdate(payload);

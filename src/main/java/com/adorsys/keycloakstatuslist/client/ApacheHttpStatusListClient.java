@@ -3,7 +3,6 @@ package com.adorsys.keycloakstatuslist.client;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.exception.StatusListServerException;
 import com.adorsys.keycloakstatuslist.model.IssuerRegistrationPayload;
-import com.adorsys.keycloakstatuslist.model.TokenStatus;
 import com.adorsys.keycloakstatuslist.service.CircuitBreaker;
 import com.adorsys.keycloakstatuslist.service.StatusListService.StatusListPayload;
 import java.io.IOException;
@@ -233,8 +232,7 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
         List<StatusEntryPayload> statusEntries = new ArrayList<>();
         for (StatusListPayload.StatusEntry statusEntry : payload.status()) {
             statusEntries.add(new StatusEntryPayload(
-                    statusEntry.index(),
-                    TokenStatus.fromValue(statusEntry.status()).getCode()));
+                    statusEntry.index(), statusEntry.status().getCode()));
         }
 
         return JsonSerialization.mapper.writeValueAsString(new StatusesPayload(statusEntries));

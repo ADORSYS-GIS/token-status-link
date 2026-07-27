@@ -140,7 +140,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         assertThat(capturedPayload.listId(), equalTo(TEST_LIST_ID));
         assertThat(capturedPayload.status().size(), equalTo(1));
         assertThat(capturedPayload.status().get(0).index(), equalTo(idx));
-        assertThat(capturedPayload.status().get(0).status(), equalTo(TokenStatus.VALID.getValue()));
+        assertThat(capturedPayload.status().get(0).status(), equalTo(TokenStatus.VALID));
 
         // 3. Verify DB persist was called
         var entityCaptor = ArgumentCaptor.forClass(StatusListMappingEntity.class);

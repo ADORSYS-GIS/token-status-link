@@ -12,6 +12,7 @@ import static org.mockito.Mockito.when;
 
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.exception.StatusListServerException;
+import com.adorsys.keycloakstatuslist.model.TokenStatus;
 import com.adorsys.keycloakstatuslist.service.CircuitBreaker;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
 import java.io.IOException;
@@ -104,9 +105,9 @@ class ApacheHttpStatusListClientTest {
         ApacheHttpStatusListClient client =
                 new ApacheHttpStatusListClient("https://status.example.com", "token", httpClient, null);
         StatusListService.StatusListPayload payload = new StatusListService.StatusListPayload(
-                "list-1", List.of(new StatusListService.StatusListPayload.StatusEntry(1, "VALID")));
+                "list-1", List.of(new StatusListService.StatusListPayload.StatusEntry(1, TokenStatus.VALID)));
         StatusListService.StatusListPayload revocationPayload = new StatusListService.StatusListPayload(
-                "list-1", List.of(new StatusListService.StatusListPayload.StatusEntry(1, "INVALID")));
+                "list-1", List.of(new StatusListService.StatusListPayload.StatusEntry(1, TokenStatus.INVALID)));
 
         client.publishStatusList(payload, "req-1");
         client.updateStatusList(revocationPayload, "req-2");

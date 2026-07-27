@@ -187,7 +187,7 @@ public class CredentialRevocationService {
                     .orElseThrow(() -> new StatusListException("Issued credential not found", 404));
 
             StatusListMappingEntity mapping = findStatusListMapping(realm.getId(), userId, issuedCredential);
-            StatusEntry statusEntry = new StatusEntry(mapping.getIdx(), TokenStatus.INVALID.getValue());
+            StatusEntry statusEntry = new StatusEntry(mapping.getIdx(), TokenStatus.INVALID);
             StatusListPayload revocationPayload =
                     new StatusListPayload(mapping.getStatusListId(), List.of(statusEntry));
             getStatusListService().updateStatusList(revocationPayload, requestId);
@@ -271,7 +271,7 @@ public class CredentialRevocationService {
         long idx = status.getStatusList().getIdx();
         String listId = URI.create(status.getStatusList().getUri()).getPath().replaceAll(".*/", "");
 
-        StatusEntry statusEntry = new StatusEntry(idx, TokenStatus.INVALID.getValue());
+        StatusEntry statusEntry = new StatusEntry(idx, TokenStatus.INVALID);
         return new StatusListPayload(listId, List.of(statusEntry));
     }
 
