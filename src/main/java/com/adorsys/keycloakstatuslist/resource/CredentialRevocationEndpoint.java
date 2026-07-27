@@ -1,6 +1,8 @@
 package com.adorsys.keycloakstatuslist.resource;
 
+import static com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest.CREDENTIAL_ID_KEY;
 import static com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest.CREDENTIAL_REVOCATION_MODE;
+import static com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest.ISSUED_CREDENTIAL_REVOCATION_MODE;
 import static com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest.REVOCATION_MODE_KEY;
 import static com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest.REVOCATION_REASON_KEY;
 
@@ -20,6 +22,8 @@ import org.keycloak.events.EventBuilder;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.protocol.oidc.endpoints.TokenRevocationEndpoint;
+import org.keycloak.services.managers.AppAuthManager;
+import org.keycloak.services.managers.AuthenticationManager.AuthResult;
 import org.keycloak.utils.StringUtil;
 
 public class CredentialRevocationEndpoint extends TokenRevocationEndpoint {
@@ -62,8 +66,10 @@ public class CredentialRevocationEndpoint extends TokenRevocationEndpoint {
         MultivaluedMap<String, String> form =
                 session.getContext().getHttpRequest().getDecodedFormParameters();
         String authorizationHeader = getHeaders().getHeaderString(HttpHeaders.AUTHORIZATION);
+        String revocationMode = form.getFirst(REVOCATION_MODE_KEY);
 
-        if (!Objects.equals(CREDENTIAL_REVOCATION_MODE, form.getFirst(REVOCATION_MODE_KEY))) {
+        if (!Objects.equals(CREDENTIAL_REVOCATION_MODE, revocationMode)
+                && !Objects.equals(ISSUED_CREDENTIAL_REVOCATION_MODE, revocationMode)) {
             logger.debugf("Not in credential revocation mode. Falling back to standard revocation logic.");
             return super.revoke();
         }
@@ -95,32 +101,41 @@ public class CredentialRevocationEndpoint extends TokenRevocationEndpoint {
 
         String token = authParts[1].trim();
 
-        logger.infof("Attempting credential revocation via Token Status List");
+        logger.infof("Attempting credential revocation via Token Status List. Mode: %s", revocationMode);
 
         try {
             CredentialRevocationRequest request = new CredentialRevocationRequest();
-            request.setRevocationMode(form.getFirst(REVOCATION_MODE_KEY));
+            request.setRevocationMode(revocationMode);
             request.setRevocationReason(form.getFirst(REVOCATION_REASON_KEY));
+            request.setCredentialId(form.getFirst(CREDENTIAL_ID_KEY));
 
-            CredentialRevocationResponse revocationResponse =
-                    getRevocationService().revokeCredential(request, token);
+            CredentialRevocationResponse revocationResponse;
+            if (Objects.equals(ISSUED_CREDENTIAL_REVOCATION_MODE, revocationMode)) {
+                AuthResult authResult = authenticateBearerToken(token);
+                if (authResult == null || authResult.getUser() == null) {
+                    return createErrorResponse(Response.Status.UNAUTHORIZED, "Invalid bearer token");
+                }
+                revocationResponse = getRevocationService().revokeIssuedCredential(request, authResult);
+            } else {
+                revocationResponse = getRevocationService().revokeCredential(request, token);
+            }
             logger.infof("Successfully revoked credential via status list.");
 
             return Response.ok(revocationResponse)
                     .type(MediaType.APPLICATION_JSON)
                     .build();
         } catch (StatusListException e) {
-            logger.errorf(e, "SD-JWT VP based revocation failed due to status list error.");
+            logger.errorf(e, "Credential revocation failed due to status list error. Mode: %s", revocationMode);
             int statusCode = e.getHttpStatus();
             return Response.status(statusCode)
                     .entity(CredentialRevocationResponse.error(e.getMessage()))
                     .type(MediaType.APPLICATION_JSON)
                     .build();
         } catch (IllegalArgumentException e) {
-            logger.errorf(e, "SD-JWT VP based revocation failed due to invalid input.");
+            logger.errorf(e, "Credential revocation failed due to invalid input. Mode: %s", revocationMode);
             return createErrorResponse(Response.Status.BAD_REQUEST, e.getMessage());
         } catch (Exception e) {
-            logger.errorf(e, "SD-JWT VP based revocation failed due to unexpected error.");
+            logger.errorf(e, "Credential revocation failed due to unexpected error. Mode: %s", revocationMode);
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
                     .entity(
                             "{\"error\":\"server_error\",\"error_description\":\"Internal error during credential revocation\"}")
@@ -147,6 +162,20 @@ public class CredentialRevocationEndpoint extends TokenRevocationEndpoint {
      */
     protected CredentialRevocationService getRevocationService() {
         return revocationService;
+    }
+
+    /**
+     * Authenticates a standard Keycloak bearer access token. Made protected for testability.
+     */
+    protected AuthResult authenticateBearerToken(String token) {
+        return new AppAuthManager.BearerTokenAuthenticator(session)
+                .setRealm(session.getContext().getRealm())
+                .setUriInfo(session.getContext().getUri())
+                .setConnection(session.getContext().getConnection())
+                .setHeaders(getHeaders())
+                .setRequest(session.getContext().getHttpRequest())
+                .setTokenString(token)
+                .authenticate();
     }
 
     /**

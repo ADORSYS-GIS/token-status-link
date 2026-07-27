@@ -11,14 +11,19 @@ public class CredentialRevocationRequest {
 
     public static final String REVOCATION_MODE_KEY = "mode";
     public static final String REVOCATION_REASON_KEY = "reason";
+    public static final String CREDENTIAL_ID_KEY = "credential_id";
 
     public static final String CREDENTIAL_REVOCATION_MODE = "credential_revocation";
+    public static final String ISSUED_CREDENTIAL_REVOCATION_MODE = "issued_credential_revocation";
 
     @JsonProperty(REVOCATION_MODE_KEY)
     private String revocationMode;
 
     @JsonProperty(REVOCATION_REASON_KEY)
     private String revocationReason;
+
+    @JsonProperty(CREDENTIAL_ID_KEY)
+    private String credentialId;
 
     public CredentialRevocationRequest() {
         // Default constructor for JSON deserialization
@@ -27,6 +32,12 @@ public class CredentialRevocationRequest {
     public CredentialRevocationRequest(String revocationMode, String revocationReason) {
         this.revocationMode = revocationMode;
         this.revocationReason = revocationReason;
+    }
+
+    public CredentialRevocationRequest(String revocationMode, String revocationReason, String credentialId) {
+        this.revocationMode = revocationMode;
+        this.revocationReason = revocationReason;
+        this.credentialId = credentialId;
     }
 
     public String getRevocationMode() {
@@ -43,5 +54,13 @@ public class CredentialRevocationRequest {
 
     public void setRevocationReason(String revocationReason) {
         this.revocationReason = revocationReason;
+    }
+
+    public String getCredentialId() {
+        return credentialId;
+    }
+
+    public void setCredentialId(String credentialId) {
+        this.credentialId = credentialId;
     }
 }

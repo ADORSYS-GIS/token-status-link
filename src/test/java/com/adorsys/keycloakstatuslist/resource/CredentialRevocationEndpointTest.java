@@ -1,6 +1,8 @@
 package com.adorsys.keycloakstatuslist.resource;
 
+import static com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest.CREDENTIAL_ID_KEY;
 import static com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest.CREDENTIAL_REVOCATION_MODE;
+import static com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest.ISSUED_CREDENTIAL_REVOCATION_MODE;
 import static com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest.REVOCATION_MODE_KEY;
 import static com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest.REVOCATION_REASON_KEY;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -29,6 +31,8 @@ import org.keycloak.http.HttpRequest;
 import org.keycloak.models.KeycloakContext;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
+import org.keycloak.models.UserModel;
+import org.keycloak.services.managers.AuthenticationManager.AuthResult;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -53,7 +57,7 @@ class CredentialRevocationEndpointTest {
     @Mock
     private EventBuilder eventBuilder;
 
-    private CredentialRevocationEndpoint endpoint;
+    private TestableCredentialRevocationEndpoint endpoint;
     private FakeCredentialRevocationService revocationService;
 
     @BeforeEach
@@ -69,7 +73,7 @@ class CredentialRevocationEndpointTest {
                 .thenReturn("https://status.example.com");
 
         revocationService = new FakeCredentialRevocationService();
-        endpoint = new CredentialRevocationEndpoint(session, eventBuilder, revocationService);
+        endpoint = new TestableCredentialRevocationEndpoint(session, eventBuilder, revocationService);
     }
 
     @Test
@@ -203,6 +207,43 @@ class CredentialRevocationEndpointTest {
     }
 
     @Test
+    void shouldRevokeIssuedCredentialInIssuedCredentialMode() throws Exception {
+        UserModel user = org.mockito.Mockito.mock(UserModel.class);
+        AuthResult authResult = new AuthResult(user, null, null, null);
+        endpoint.authResult = authResult;
+        setIssuedCredentialRevocationForm("issued-credential-1", "user-request");
+        when(headers.getHeaderString(HttpHeaders.AUTHORIZATION)).thenReturn("Bearer   keycloak-access-token  ");
+        revocationService.response = CredentialRevocationResponse.success(Instant.now(), "user-request");
+
+        Response response = endpoint.revoke();
+
+        assertEquals(200, response.getStatus());
+        assertInstanceOf(CredentialRevocationResponse.class, response.getEntity());
+        assertTrue(((CredentialRevocationResponse) response.getEntity()).isSuccess());
+
+        assertNull(revocationService.lastToken);
+        assertEquals(authResult, revocationService.lastAuthResult);
+        CredentialRevocationRequest capturedRequest = revocationService.lastRequest;
+        assertNotNull(capturedRequest);
+        assertEquals(ISSUED_CREDENTIAL_REVOCATION_MODE, capturedRequest.getRevocationMode());
+        assertEquals("user-request", capturedRequest.getRevocationReason());
+        assertEquals("issued-credential-1", capturedRequest.getCredentialId());
+    }
+
+    @Test
+    void shouldReturnUnauthorizedWhenIssuedCredentialBearerTokenIsInvalid() {
+        endpoint.authResult = null;
+        setIssuedCredentialRevocationForm("issued-credential-1", "user-request");
+        when(headers.getHeaderString(HttpHeaders.AUTHORIZATION)).thenReturn("Bearer keycloak-access-token");
+
+        Response response = endpoint.revoke();
+
+        assertEquals(401, response.getStatus());
+        assertEquals("Invalid bearer token", ((CredentialRevocationResponse) response.getEntity()).getMessage());
+        assertNoRevocationAttempt();
+    }
+
+    @Test
     void shouldMapStatusListExceptionToConfiguredHttpStatus() throws Exception {
         setCredentialRevocationForm("status-list-error");
         when(headers.getHeaderString(HttpHeaders.AUTHORIZATION)).thenReturn("Bearer test-token");
@@ -242,6 +283,7 @@ class CredentialRevocationEndpointTest {
     private void assertNoRevocationAttempt() {
         assertNull(revocationService.lastRequest);
         assertNull(revocationService.lastToken);
+        assertNull(revocationService.lastAuthResult);
     }
 
     private void setCredentialRevocationForm(String reason) {
@@ -251,9 +293,32 @@ class CredentialRevocationEndpointTest {
         when(httpRequest.getDecodedFormParameters()).thenReturn(form);
     }
 
+    private void setIssuedCredentialRevocationForm(String credentialId, String reason) {
+        MultivaluedMap<String, String> form = new MultivaluedHashMap<>();
+        form.add(REVOCATION_MODE_KEY, ISSUED_CREDENTIAL_REVOCATION_MODE);
+        form.add(CREDENTIAL_ID_KEY, credentialId);
+        form.add(REVOCATION_REASON_KEY, reason);
+        when(httpRequest.getDecodedFormParameters()).thenReturn(form);
+    }
+
+    private static final class TestableCredentialRevocationEndpoint extends CredentialRevocationEndpoint {
+        private AuthResult authResult;
+
+        private TestableCredentialRevocationEndpoint(
+                KeycloakSession session, EventBuilder event, CredentialRevocationService revocationService) {
+            super(session, event, revocationService);
+        }
+
+        @Override
+        protected AuthResult authenticateBearerToken(String token) {
+            return authResult;
+        }
+    }
+
     private static final class FakeCredentialRevocationService extends CredentialRevocationService {
         private CredentialRevocationRequest lastRequest;
         private String lastToken;
+        private AuthResult lastAuthResult;
         private CredentialRevocationResponse response = CredentialRevocationResponse.success(Instant.now(), "ok");
         private StatusListException statusListException;
         private IllegalArgumentException illegalArgumentException;
@@ -268,6 +333,23 @@ class CredentialRevocationEndpointTest {
                 throws StatusListException {
             this.lastRequest = request;
             this.lastToken = sdJwtVpToken;
+            if (statusListException != null) {
+                throw statusListException;
+            }
+            if (illegalArgumentException != null) {
+                throw illegalArgumentException;
+            }
+            if (runtimeException != null) {
+                throw runtimeException;
+            }
+            return response;
+        }
+
+        @Override
+        public CredentialRevocationResponse revokeIssuedCredential(
+                CredentialRevocationRequest request, AuthResult authResult) throws StatusListException {
+            this.lastRequest = request;
+            this.lastAuthResult = authResult;
             if (statusListException != null) {
                 throw statusListException;
             }

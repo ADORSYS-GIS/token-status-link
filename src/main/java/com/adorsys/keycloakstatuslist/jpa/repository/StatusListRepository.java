@@ -4,7 +4,9 @@ import com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import jakarta.persistence.TypedQuery;
+import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import org.jboss.logging.Logger;
@@ -95,5 +97,39 @@ public class StatusListRepository {
         });
 
         return result.get();
+    }
+
+    /**
+     * Finds the successful status-list mapping for one of the supplied issued credential identifiers.
+     */
+    public Optional<StatusListMappingEntity> findSuccessfulMappingByTokenIds(
+            String realmId, String userId, Collection<String> tokenIds) {
+        if (tokenIds == null || tokenIds.isEmpty()) {
+            return Optional.empty();
+        }
+
+        AtomicReference<StatusListMappingEntity> result = new AtomicReference<>();
+
+        withEntityManagerInTransaction(em -> {
+            String q = """
+                        SELECT m FROM StatusListMappingEntity m
+                        WHERE m.realmId = :realmId
+                          AND m.userId = :userId
+                          AND m.tokenId IN :tokenIds
+                          AND m.status = :status
+                        ORDER BY m.createdTimestamp DESC
+                    """;
+
+            TypedQuery<StatusListMappingEntity> query = em.createQuery(q, StatusListMappingEntity.class);
+            query.setParameter("realmId", realmId);
+            query.setParameter("userId", userId);
+            query.setParameter("tokenIds", tokenIds);
+            query.setParameter("status", StatusListMappingEntity.MappingStatus.SUCCESS);
+            query.setMaxResults(1);
+
+            result.set(query.getResultStream().findFirst().orElse(null));
+        });
+
+        return Optional.ofNullable(result.get());
     }
 }
