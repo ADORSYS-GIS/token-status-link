@@ -3,10 +3,12 @@ package com.adorsys.keycloakstatuslist.client;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.exception.StatusListServerException;
 import com.adorsys.keycloakstatuslist.model.IssuerRegistrationPayload;
+import com.adorsys.keycloakstatuslist.model.TokenStatus;
 import com.adorsys.keycloakstatuslist.service.CircuitBreaker;
 import com.adorsys.keycloakstatuslist.service.StatusListService.StatusListPayload;
 import java.io.IOException;
 import java.io.InterruptedIOException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import org.apache.hc.client5.http.classic.methods.HttpGet;
@@ -228,10 +230,19 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
     }
 
     private String statusEntriesJson(StatusListPayload payload) throws IOException {
-        return JsonSerialization.mapper.writeValueAsString(new StatusesPayload(payload.status()));
+        List<StatusEntryPayload> statusEntries = new ArrayList<>();
+        for (StatusListPayload.StatusEntry statusEntry : payload.status()) {
+            statusEntries.add(new StatusEntryPayload(
+                    statusEntry.index(),
+                    TokenStatus.fromValue(statusEntry.status()).getCode()));
+        }
+
+        return JsonSerialization.mapper.writeValueAsString(new StatusesPayload(statusEntries));
     }
 
-    private record StatusesPayload(List<StatusListPayload.StatusEntry> statuses) {}
+    private record StatusesPayload(List<StatusEntryPayload> statuses) {}
+
+    private record StatusEntryPayload(long index, int status) {}
 
     /**
      * Handles HTTP response with success/error logic, logging, and circuit breaker recording.

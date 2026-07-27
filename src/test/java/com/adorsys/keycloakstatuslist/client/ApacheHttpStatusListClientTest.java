@@ -105,9 +105,11 @@ class ApacheHttpStatusListClientTest {
                 new ApacheHttpStatusListClient("https://status.example.com", "token", httpClient, null);
         StatusListService.StatusListPayload payload = new StatusListService.StatusListPayload(
                 "list-1", List.of(new StatusListService.StatusListPayload.StatusEntry(1, "VALID")));
+        StatusListService.StatusListPayload revocationPayload = new StatusListService.StatusListPayload(
+                "list-1", List.of(new StatusListService.StatusListPayload.StatusEntry(1, "INVALID")));
 
         client.publishStatusList(payload, "req-1");
-        client.updateStatusList(payload, "req-2");
+        client.updateStatusList(revocationPayload, "req-2");
 
         ArgumentCaptor<HttpPut> putCaptor = ArgumentCaptor.forClass(HttpPut.class);
         ArgumentCaptor<HttpPatch> patchCaptor = ArgumentCaptor.forClass(HttpPatch.class);
@@ -125,8 +127,12 @@ class ApacheHttpStatusListClientTest {
         String updateBody = EntityUtils.toString(patchCaptor.getValue().getEntity());
         assertTrue(publishBody.contains("\"statuses\""));
         assertTrue(updateBody.contains("\"statuses\""));
+        assertTrue(publishBody.contains("\"status\":0"));
+        assertTrue(updateBody.contains("\"status\":1"));
         assertFalse(publishBody.contains("\"list_id\""));
         assertFalse(updateBody.contains("\"list_id\""));
+        assertFalse(publishBody.contains("\"VALID\""));
+        assertFalse(updateBody.contains("\"INVALID\""));
     }
 
     @Test
