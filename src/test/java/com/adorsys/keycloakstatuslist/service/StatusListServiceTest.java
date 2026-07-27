@@ -65,7 +65,7 @@ class StatusListServiceTest {
 
         String uri = statusListService.getStatusListUri("list-123");
 
-        assertEquals(SERVER_URL + "statuslists/list-123", uri);
+        assertEquals(SERVER_URL + "api/v1/status-lists/list-123", uri);
         verify(httpClient).getServerUrl();
     }
 

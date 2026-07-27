@@ -7,10 +7,12 @@ import com.adorsys.keycloakstatuslist.service.CircuitBreaker;
 import com.adorsys.keycloakstatuslist.service.StatusListService.StatusListPayload;
 import java.io.IOException;
 import java.io.InterruptedIOException;
+import java.util.List;
 import java.util.UUID;
 import org.apache.hc.client5.http.classic.methods.HttpGet;
 import org.apache.hc.client5.http.classic.methods.HttpPatch;
 import org.apache.hc.client5.http.classic.methods.HttpPost;
+import org.apache.hc.client5.http.classic.methods.HttpPut;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.core5.http.ClassicHttpResponse;
 import org.apache.hc.core5.http.HttpRequest;
@@ -29,10 +31,10 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
 
     private static final Logger logger = Logger.getLogger(ApacheHttpStatusListClient.class);
 
-    private static final String CREDENTIALS_PATH = "credentials";
-    private static final String STATUS_LISTS_PATH = "statuslists";
-    private static final String STATUS_LISTS_PUBLISH_PATH = "statuslists/publish";
-    private static final String STATUS_LISTS_UPDATE_PATH = "statuslists/update";
+    private static final String API_V1_PATH = "api/v1";
+    private static final String CREDENTIALS_PATH = API_V1_PATH + "/credentials";
+    private static final String STATUS_LISTS_PATH = API_V1_PATH + "/status-lists";
+    private static final String STATUS_LIST_STATUSES_PATH = "statuses";
     private static final String HEALTH_PATH = "health";
 
     private final String serverUrl;
@@ -75,7 +77,7 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
             String jsonPayload = JsonSerialization.mapper.writeValueAsString(issuerRecord);
             logger.debugf("Request ID: %s, Registering issuer: %s, Payload: %s", requestId, issuerId, jsonPayload);
 
-            HttpPost httpPost = new HttpPost(serverUrl + CREDENTIALS_PATH);
+            HttpPost httpPost = new HttpPost(credentialsUrl());
             configureJsonRequest(httpPost, requestId, jsonPayload);
 
             httpClient.execute(httpPost, response -> {
@@ -112,7 +114,7 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
         String requestId = UUID.randomUUID().toString();
         logger.debugf("Request ID: %s, Checking if status list exists: %s", requestId, statusListId);
 
-        HttpGet httpGet = new HttpGet(serverUrl + STATUS_LISTS_PATH + "/" + statusListId);
+        HttpGet httpGet = new HttpGet(statusListUrl(statusListId));
         configureCommonHeaders(httpGet, requestId);
 
         try {
@@ -137,12 +139,12 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
         logger.debugf("Request ID: %s, Publishing new status list: %s", requestId, listId);
 
         try {
-            String jsonPayload = JsonSerialization.mapper.writeValueAsString(payload);
-            HttpPost httpPost = new HttpPost(serverUrl + STATUS_LISTS_PUBLISH_PATH);
-            configureJsonRequest(httpPost, requestId, jsonPayload);
+            String jsonPayload = statusEntriesJson(payload);
+            HttpPut httpPut = new HttpPut(statusListStatusesUrl(listId));
+            configureJsonRequest(httpPut, requestId, jsonPayload);
 
             httpClient.execute(
-                    httpPost,
+                    httpPut,
                     response -> handleResponse(
                             response,
                             requestId,
@@ -164,8 +166,8 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
         logger.debugf("Request ID: %s, Updating existing status list: %s", requestId, listId);
 
         try {
-            String jsonPayload = JsonSerialization.mapper.writeValueAsString(payload);
-            HttpPatch httpPatch = new HttpPatch(serverUrl + STATUS_LISTS_UPDATE_PATH);
+            String jsonPayload = statusEntriesJson(payload);
+            HttpPatch httpPatch = new HttpPatch(statusListStatusesUrl(listId));
             configureJsonRequest(httpPatch, requestId, jsonPayload);
 
             httpClient.execute(
@@ -212,6 +214,24 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
     public String getServerUrl() {
         return serverUrl;
     }
+
+    private String credentialsUrl() {
+        return serverUrl + CREDENTIALS_PATH;
+    }
+
+    private String statusListUrl(String statusListId) {
+        return serverUrl + STATUS_LISTS_PATH + "/" + statusListId;
+    }
+
+    private String statusListStatusesUrl(String statusListId) {
+        return statusListUrl(statusListId) + "/" + STATUS_LIST_STATUSES_PATH;
+    }
+
+    private String statusEntriesJson(StatusListPayload payload) throws IOException {
+        return JsonSerialization.mapper.writeValueAsString(new StatusesPayload(payload.status()));
+    }
+
+    private record StatusesPayload(List<StatusListPayload.StatusEntry> statuses) {}
 
     /**
      * Handles HTTP response with success/error logic, logging, and circuit breaker recording.
@@ -353,9 +373,9 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
     }
 
     /**
-     * Configures a POST or PATCH request with JSON payload and common headers.
+     * Configures a JSON request with payload and common headers.
      *
-     * @param request the HTTP request to configure (HttpPost or HttpPatch)
+     * @param request the HTTP request to configure
      * @param requestId the request ID to set in the X-Request-ID header
      * @param jsonPayload the JSON payload to set as the request entity
      */
@@ -364,6 +384,8 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
         configureCommonHeaders(request, requestId);
         if (request instanceof HttpPost) {
             ((HttpPost) request).setEntity(new StringEntity(jsonPayload));
+        } else if (request instanceof HttpPut) {
+            ((HttpPut) request).setEntity(new StringEntity(jsonPayload));
         } else if (request instanceof HttpPatch) {
             ((HttpPatch) request).setEntity(new StringEntity(jsonPayload));
         }

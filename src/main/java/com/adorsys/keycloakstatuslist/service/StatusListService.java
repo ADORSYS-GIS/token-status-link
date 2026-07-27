@@ -2,7 +2,6 @@ package com.adorsys.keycloakstatuslist.service;
 
 import com.adorsys.keycloakstatuslist.client.StatusListHttpClient;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
-import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
 import java.util.UUID;
 import org.jboss.logging.Logger;
@@ -75,7 +74,7 @@ public class StatusListService {
         return httpClient.checkServerHealth();
     }
 
-    private static final String STATUS_LISTS_PATH = "statuslists";
+    private static final String STATUS_LISTS_PATH = "api/v1/status-lists";
 
     /**
      * Gets the URI for a status list without making any HTTP calls.
@@ -88,7 +87,7 @@ public class StatusListService {
         return serverUrl + STATUS_LISTS_PATH + "/" + listId;
     }
 
-    public record StatusListPayload(@JsonProperty("list_id") String listId, List<StatusEntry> status) {
+    public record StatusListPayload(String listId, List<StatusEntry> status) {
         public record StatusEntry(long index, String status) {}
     }
 }

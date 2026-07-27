@@ -21,12 +21,15 @@ import java.util.List;
 import org.apache.hc.client5.http.classic.methods.HttpGet;
 import org.apache.hc.client5.http.classic.methods.HttpPatch;
 import org.apache.hc.client5.http.classic.methods.HttpPost;
+import org.apache.hc.client5.http.classic.methods.HttpPut;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.core5.http.Header;
 import org.apache.hc.core5.http.io.HttpClientResponseHandler;
+import org.apache.hc.core5.http.io.entity.EntityUtils;
 import org.apache.hc.core5.http.io.entity.StringEntity;
 import org.junit.jupiter.api.Test;
 import org.keycloak.jose.jwk.JWK;
+import org.mockito.ArgumentCaptor;
 
 @SuppressWarnings("unchecked")
 class ApacheHttpStatusListClientTest {
@@ -40,7 +43,11 @@ class ApacheHttpStatusListClientTest {
 
         client.registerIssuer("issuer-1", mock(JWK.class));
 
-        verify(httpClient).execute(any(HttpPost.class), any(HttpClientResponseHandler.class));
+        ArgumentCaptor<HttpPost> requestCaptor = ArgumentCaptor.forClass(HttpPost.class);
+        verify(httpClient).execute(requestCaptor.capture(), any(HttpClientResponseHandler.class));
+        assertEquals(
+                "https://status.example.com/api/v1/credentials",
+                requestCaptor.getValue().getUri().toString());
     }
 
     @Test
@@ -52,7 +59,11 @@ class ApacheHttpStatusListClientTest {
 
         client.registerIssuer("issuer-1", mock(JWK.class));
 
-        verify(httpClient).execute(any(HttpPost.class), any(HttpClientResponseHandler.class));
+        ArgumentCaptor<HttpPost> requestCaptor = ArgumentCaptor.forClass(HttpPost.class);
+        verify(httpClient).execute(requestCaptor.capture(), any(HttpClientResponseHandler.class));
+        assertEquals(
+                "https://status.example.com/api/v1/credentials",
+                requestCaptor.getValue().getUri().toString());
     }
 
     @Test
@@ -62,6 +73,11 @@ class ApacheHttpStatusListClientTest {
         ApacheHttpStatusListClient ok =
                 new ApacheHttpStatusListClient("https://status.example.com/", "token", okClient, null);
         assertTrue(ok.checkStatusListExists("list-1"));
+        ArgumentCaptor<HttpGet> okRequestCaptor = ArgumentCaptor.forClass(HttpGet.class);
+        verify(okClient).execute(okRequestCaptor.capture(), any(HttpClientResponseHandler.class));
+        assertEquals(
+                "https://status.example.com/api/v1/status-lists/list-1",
+                okRequestCaptor.getValue().getUri().toString());
 
         CloseableHttpClient notFoundClient = mock(CloseableHttpClient.class);
         mockGetResponse(notFoundClient, 404, "");
@@ -83,7 +99,7 @@ class ApacheHttpStatusListClientTest {
     @Test
     void publishAndUpdateShouldUseExpectedEndpoints() throws Exception {
         CloseableHttpClient httpClient = mock(CloseableHttpClient.class);
-        mockPostResponse(httpClient, 200, "{\"ok\":true}");
+        mockPutResponse(httpClient, 201, "{\"ok\":true}");
         mockPatchResponse(httpClient, 200, "{\"ok\":true}");
         ApacheHttpStatusListClient client =
                 new ApacheHttpStatusListClient("https://status.example.com", "token", httpClient, null);
@@ -93,8 +109,24 @@ class ApacheHttpStatusListClientTest {
         client.publishStatusList(payload, "req-1");
         client.updateStatusList(payload, "req-2");
 
-        verify(httpClient).execute(any(HttpPost.class), any(HttpClientResponseHandler.class));
-        verify(httpClient).execute(any(HttpPatch.class), any(HttpClientResponseHandler.class));
+        ArgumentCaptor<HttpPut> putCaptor = ArgumentCaptor.forClass(HttpPut.class);
+        ArgumentCaptor<HttpPatch> patchCaptor = ArgumentCaptor.forClass(HttpPatch.class);
+        verify(httpClient).execute(putCaptor.capture(), any(HttpClientResponseHandler.class));
+        verify(httpClient).execute(patchCaptor.capture(), any(HttpClientResponseHandler.class));
+
+        assertEquals(
+                "https://status.example.com/api/v1/status-lists/list-1/statuses",
+                putCaptor.getValue().getUri().toString());
+        assertEquals(
+                "https://status.example.com/api/v1/status-lists/list-1/statuses",
+                patchCaptor.getValue().getUri().toString());
+
+        String publishBody = EntityUtils.toString(putCaptor.getValue().getEntity());
+        String updateBody = EntityUtils.toString(patchCaptor.getValue().getEntity());
+        assertTrue(publishBody.contains("\"statuses\""));
+        assertTrue(updateBody.contains("\"statuses\""));
+        assertFalse(publishBody.contains("\"list_id\""));
+        assertFalse(updateBody.contains("\"list_id\""));
     }
 
     @Test
@@ -168,6 +200,18 @@ class ApacheHttpStatusListClientTest {
 
     private void mockPostResponse(CloseableHttpClient httpClient, int statusCode, String body) throws Exception {
         when(httpClient.execute(any(HttpPost.class), any(HttpClientResponseHandler.class)))
+                .thenAnswer(invocation -> {
+                    HttpClientResponseHandler<Object> handler = invocation.getArgument(1);
+                    var response = mock(org.apache.hc.client5.http.impl.classic.CloseableHttpResponse.class);
+                    when(response.getCode()).thenReturn(statusCode);
+                    when(response.getHeaders()).thenReturn(new Header[0]);
+                    when(response.getEntity()).thenReturn(new StringEntity(body));
+                    return handler.handleResponse(response);
+                });
+    }
+
+    private void mockPutResponse(CloseableHttpClient httpClient, int statusCode, String body) throws Exception {
+        when(httpClient.execute(any(HttpPut.class), any(HttpClientResponseHandler.class)))
                 .thenAnswer(invocation -> {
                     HttpClientResponseHandler<Object> handler = invocation.getArgument(1);
                     var response = mock(org.apache.hc.client5.http.impl.classic.CloseableHttpResponse.class);

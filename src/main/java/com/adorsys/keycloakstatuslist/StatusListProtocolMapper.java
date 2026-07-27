@@ -275,6 +275,6 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         String ID_CLAIM_KEY = "id";
         String STATUS_CLAIM_KEY = "status";
 
-        String HTTP_ENDPOINT_RETRIEVE_PATH = "/statuslists/%s";
+        String HTTP_ENDPOINT_RETRIEVE_PATH = "/api/v1/status-lists/%s";
     }
 }
