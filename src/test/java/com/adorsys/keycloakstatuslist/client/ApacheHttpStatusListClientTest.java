@@ -19,6 +19,7 @@ import java.io.IOException;
 import java.io.InterruptedIOException;
 import java.lang.reflect.Method;
 import java.util.List;
+import java.util.UUID;
 import org.apache.hc.client5.http.classic.methods.HttpGet;
 import org.apache.hc.client5.http.classic.methods.HttpPatch;
 import org.apache.hc.client5.http.classic.methods.HttpPost;
@@ -137,6 +138,24 @@ class ApacheHttpStatusListClientTest {
         assertFalse(updateBody.contains("\"list_id\""));
         assertFalse(publishBody.contains("\"VALID\""));
         assertFalse(updateBody.contains("\"INVALID\""));
+    }
+
+    @Test
+    void publishConflictShouldNotCountAsCircuitBreakerFailure() throws Exception {
+        CloseableHttpClient httpClient = mock(CloseableHttpClient.class);
+        mockPutResponse(httpClient, 409, "{\"error\":\"status_list_already_exists\"}");
+        CircuitBreaker breaker = createBreaker("client-cb-conflict-" + UUID.randomUUID(), 1, 60, 30);
+        ApacheHttpStatusListClient client =
+                new ApacheHttpStatusListClient("https://status.example.com", "token", httpClient, breaker);
+        StatusListService.StatusListPayload payload = new StatusListService.StatusListPayload(
+                "list-1", List.of(new StatusListService.StatusListPayload.StatusEntry(1, TokenStatus.VALID)));
+
+        StatusListServerException exception =
+                assertThrows(StatusListServerException.class, () -> client.publishStatusList(payload, "req-1"));
+
+        assertEquals(409, exception.getStatusCode());
+        assertEquals(0, breaker.getFailureCount());
+        assertEquals("CLOSED", breaker.getState());
     }
 
     @Test

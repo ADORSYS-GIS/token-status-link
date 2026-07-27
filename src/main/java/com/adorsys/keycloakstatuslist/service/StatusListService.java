@@ -2,9 +2,11 @@ package com.adorsys.keycloakstatuslist.service;
 
 import com.adorsys.keycloakstatuslist.client.StatusListHttpClient;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
+import com.adorsys.keycloakstatuslist.exception.StatusListServerException;
 import com.adorsys.keycloakstatuslist.model.TokenStatus;
 import java.util.List;
 import java.util.UUID;
+import org.apache.hc.core5.http.HttpStatus;
 import org.jboss.logging.Logger;
 import org.keycloak.jose.jwk.JWK;
 
@@ -37,12 +39,18 @@ public class StatusListService {
         String listId = payload.listId();
 
         try {
-            boolean exists = checkStatusListExists(listId);
-            if (exists) {
+            publishStatusList(payload, requestId);
+        } catch (StatusListServerException e) {
+            if (e.getStatusCode() == HttpStatus.SC_CONFLICT) {
+                logger.infof(
+                        "Request ID: %s, Status list %s already exists; updating existing list", requestId, listId);
                 updateStatusList(payload, requestId);
-            } else {
-                publishStatusList(payload, requestId);
+                return;
             }
+            logger.errorf(
+                    "Request ID: %s, Failed to publish or update status list %s: %s",
+                    requestId, listId, e.getMessage(), e);
+            throw e;
         } catch (StatusListException e) {
             logger.errorf(
                     "Request ID: %s, Failed to publish or update status list %s: %s",

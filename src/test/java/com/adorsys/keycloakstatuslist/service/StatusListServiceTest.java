@@ -7,14 +7,17 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.adorsys.keycloakstatuslist.client.StatusListHttpClient;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
+import com.adorsys.keycloakstatuslist.exception.StatusListServerException;
 import com.adorsys.keycloakstatuslist.model.TokenStatus;
 import java.util.List;
+import org.apache.hc.core5.http.HttpStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -71,8 +74,7 @@ class StatusListServiceTest {
     }
 
     @Test
-    void publishOrUpdate_whenListDoesNotExist_publishesNewList() throws StatusListException {
-        when(httpClient.checkStatusListExists("list-id")).thenReturn(false);
+    void publishOrUpdate_publishesNewListWithoutExistenceCheck() throws StatusListException {
         doNothing().when(httpClient).publishStatusList(any(), anyString());
 
         StatusListService.StatusListPayload payload = new StatusListService.StatusListPayload(
@@ -80,14 +82,16 @@ class StatusListServiceTest {
 
         statusListService.publishOrUpdate(payload);
 
-        verify(httpClient).checkStatusListExists("list-id");
+        verify(httpClient, never()).checkStatusListExists("list-id");
         verify(httpClient).publishStatusList(eq(payload), anyString());
         verify(httpClient, never()).updateStatusList(any(), anyString());
     }
 
     @Test
-    void publishOrUpdate_whenListExists_updatesList() throws StatusListException {
-        when(httpClient.checkStatusListExists("list-id")).thenReturn(true);
+    void publishOrUpdate_whenPublishConflicts_updatesExistingList() throws StatusListException {
+        doThrow(new StatusListServerException("already exists", HttpStatus.SC_CONFLICT))
+                .when(httpClient)
+                .publishStatusList(any(), anyString());
         doNothing().when(httpClient).updateStatusList(any(), anyString());
 
         StatusListService.StatusListPayload payload = new StatusListService.StatusListPayload(
@@ -95,14 +99,14 @@ class StatusListServiceTest {
 
         statusListService.publishOrUpdate(payload);
 
-        verify(httpClient).checkStatusListExists("list-id");
+        verify(httpClient, never()).checkStatusListExists("list-id");
+        verify(httpClient).publishStatusList(eq(payload), anyString());
         verify(httpClient).updateStatusList(eq(payload), anyString());
-        verify(httpClient, never()).publishStatusList(any(), anyString());
     }
 
     @Test
-    void publishOrUpdate_whenCheckFails_throws() throws StatusListException {
-        when(httpClient.checkStatusListExists("list-id")).thenThrow(new StatusListException("Connection failed"));
+    void publishOrUpdate_whenPublishFailsWithNonConflict_throws() throws StatusListException {
+        doThrow(new StatusListException("Connection failed")).when(httpClient).publishStatusList(any(), anyString());
 
         StatusListService.StatusListPayload payload = new StatusListService.StatusListPayload(
                 "list-id", List.of(new StatusListService.StatusListPayload.StatusEntry(1, TokenStatus.VALID)));
@@ -112,6 +116,7 @@ class StatusListServiceTest {
 
         assertTrue(exception.getMessage().contains("Connection failed")
                 || exception.getMessage().contains("Failed to publish or update"));
+        verify(httpClient, never()).updateStatusList(any(), anyString());
     }
 
     @Test

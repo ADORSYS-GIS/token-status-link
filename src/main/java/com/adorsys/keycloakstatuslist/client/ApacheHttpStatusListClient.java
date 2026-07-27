@@ -279,6 +279,12 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
             }
             logger.infof("Request ID: %s, %s", requestId, fullMessage);
             recordSuccess();
+        } else if (statusCode == HttpStatus.SC_CONFLICT) {
+            logger.infof(
+                    "Request ID: %s, %s. Status code: %d, Response: %s",
+                    requestId, errorMessagePrefix, statusCode, responseBody);
+            recordSuccess();
+            throw new StatusListServerException(errorMessagePrefix + ". Status code: " + statusCode, statusCode);
         } else {
             logger.errorf(
                     "Request ID: %s, %s. Status code: %d, Response: %s",
@@ -339,10 +345,15 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
     private void handleException(Exception e, String requestId, String timeoutMessage, String ioErrorMessage)
             throws StatusListException, StatusListServerException {
         if (e instanceof StatusListServerException) {
-            // StatusListServerException is already a domain exception, rethrow directly
+            StatusListServerException serverException = (StatusListServerException) e;
+            if (serverException.getStatusCode() == HttpStatus.SC_CONFLICT) {
+                logger.infof("Request ID: %s, Server conflict: %s", requestId, e.getMessage());
+                throw serverException;
+            }
+
             recordFailure();
             logger.errorf(e, "Request ID: %s, Server error: %s", requestId, e.getMessage());
-            throw (StatusListServerException) e;
+            throw serverException;
         }
 
         if (e instanceof IOException) {
