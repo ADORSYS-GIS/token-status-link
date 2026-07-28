@@ -1,7 +1,6 @@
 package com.adorsys.keycloakstatuslist.resource;
 
 import static com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest.CREDENTIAL_ID_KEY;
-import static com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest.CREDENTIAL_REVOCATION_MODE;
 import static com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest.ISSUED_CREDENTIAL_REVOCATION_MODE;
 import static com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest.REVOCATION_MODE_KEY;
 import static com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest.REVOCATION_REASON_KEY;
@@ -77,14 +76,8 @@ class CredentialRevocationEndpointTest {
     }
 
     @Test
-    void shouldExposeChallengeSubResource() {
-        Object challengeResource = endpoint.challenge();
-        assertInstanceOf(RevocationChallengeResource.class, challengeResource);
-    }
-
-    @Test
     void shouldReturnUnauthorizedWhenAuthorizationHeaderMissing() {
-        setCredentialRevocationForm("manual-check");
+        setIssuedCredentialRevocationForm("issued-credential-1", "manual-check");
         when(headers.getHeaderString(HttpHeaders.AUTHORIZATION)).thenReturn(null);
 
         Response response = endpoint.revoke();
@@ -98,7 +91,7 @@ class CredentialRevocationEndpointTest {
 
     @Test
     void shouldReturnBadRequestWhenAuthorizationHeaderIsMalformed() {
-        setCredentialRevocationForm("manual-check");
+        setIssuedCredentialRevocationForm("issued-credential-1", "manual-check");
         when(headers.getHeaderString(HttpHeaders.AUTHORIZATION)).thenReturn("invalid-format");
 
         Response response = endpoint.revoke();
@@ -112,7 +105,7 @@ class CredentialRevocationEndpointTest {
 
     @Test
     void shouldReturnBadRequestWhenBearerTokenValueIsMissing() {
-        setCredentialRevocationForm("manual-check");
+        setIssuedCredentialRevocationForm("issued-credential-1", "manual-check");
         when(headers.getHeaderString(HttpHeaders.AUTHORIZATION)).thenReturn("Bearer    ");
 
         Response response = endpoint.revoke();
@@ -126,7 +119,7 @@ class CredentialRevocationEndpointTest {
 
     @Test
     void shouldReturnServerErrorWhenServiceIsDisabled() {
-        setCredentialRevocationForm("manual-check");
+        setIssuedCredentialRevocationForm("issued-credential-1", "manual-check");
         when(realm.getAttribute(StatusListConfig.STATUS_LIST_ENABLED)).thenReturn("false");
         when(headers.getHeaderString(HttpHeaders.AUTHORIZATION)).thenReturn("Bearer test-token");
 
@@ -141,7 +134,7 @@ class CredentialRevocationEndpointTest {
 
     @Test
     void shouldReturnServerErrorWhenServiceEnabledCheckFails() {
-        setCredentialRevocationForm("manual-check");
+        setIssuedCredentialRevocationForm("issued-credential-1", "manual-check");
         when(realm.getAttribute(StatusListConfig.STATUS_LIST_ENABLED))
                 .thenThrow(new RuntimeException("realm misconfigured"));
         when(headers.getHeaderString(HttpHeaders.AUTHORIZATION)).thenReturn("Bearer test-token");
@@ -157,7 +150,7 @@ class CredentialRevocationEndpointTest {
 
     @Test
     void shouldReturnServerErrorWhenServiceIsNotConfigured() {
-        setCredentialRevocationForm("manual-check");
+        setIssuedCredentialRevocationForm("issued-credential-1", "manual-check");
         when(realm.getAttribute(StatusListConfig.STATUS_LIST_SERVER_URL)).thenReturn(" ");
         when(headers.getHeaderString(HttpHeaders.AUTHORIZATION)).thenReturn("Bearer test-token");
 
@@ -172,7 +165,7 @@ class CredentialRevocationEndpointTest {
 
     @Test
     void shouldReturnServerErrorWhenServiceConfigurationCheckFails() {
-        setCredentialRevocationForm("manual-check");
+        setIssuedCredentialRevocationForm("issued-credential-1", "manual-check");
         when(realm.getAttribute(StatusListConfig.STATUS_LIST_ENABLED)).thenReturn("true");
         when(realm.getAttribute(StatusListConfig.STATUS_LIST_SERVER_URL))
                 .thenThrow(new RuntimeException("missing attribute"));
@@ -185,25 +178,6 @@ class CredentialRevocationEndpointTest {
                 "Credential revocation service is not configured",
                 ((CredentialRevocationResponse) response.getEntity()).getMessage());
         assertNoRevocationAttempt();
-    }
-
-    @Test
-    void shouldRevokeCredentialInCredentialMode() throws Exception {
-        setCredentialRevocationForm("test-reason");
-        when(headers.getHeaderString(HttpHeaders.AUTHORIZATION)).thenReturn("Bearer   test-token  ");
-        revocationService.response = CredentialRevocationResponse.success(Instant.now(), "test-reason");
-
-        Response response = endpoint.revoke();
-
-        assertEquals(200, response.getStatus());
-        assertInstanceOf(CredentialRevocationResponse.class, response.getEntity());
-        assertTrue(((CredentialRevocationResponse) response.getEntity()).isSuccess());
-
-        assertEquals("test-token", revocationService.lastToken);
-        CredentialRevocationRequest capturedRequest = revocationService.lastRequest;
-        assertNotNull(capturedRequest);
-        assertEquals(CREDENTIAL_REVOCATION_MODE, capturedRequest.getRevocationMode());
-        assertEquals("test-reason", capturedRequest.getRevocationReason());
     }
 
     @Test
@@ -221,7 +195,6 @@ class CredentialRevocationEndpointTest {
         assertInstanceOf(CredentialRevocationResponse.class, response.getEntity());
         assertTrue(((CredentialRevocationResponse) response.getEntity()).isSuccess());
 
-        assertNull(revocationService.lastToken);
         assertEquals(authResult, revocationService.lastAuthResult);
         CredentialRevocationRequest capturedRequest = revocationService.lastRequest;
         assertNotNull(capturedRequest);
@@ -231,7 +204,7 @@ class CredentialRevocationEndpointTest {
     }
 
     @Test
-    void shouldReturnUnauthorizedWhenIssuedCredentialBearerTokenIsInvalid() {
+    void shouldReturnUnauthorizedWhenBearerTokenIsInvalid() {
         endpoint.authResult = null;
         setIssuedCredentialRevocationForm("issued-credential-1", "user-request");
         when(headers.getHeaderString(HttpHeaders.AUTHORIZATION)).thenReturn("Bearer keycloak-access-token");
@@ -244,8 +217,23 @@ class CredentialRevocationEndpointTest {
     }
 
     @Test
+    void shouldReturnUnauthorizedWhenBearerTokenHasNoUser() {
+        endpoint.authResult = new AuthResult(null, null, null, null);
+        setIssuedCredentialRevocationForm("issued-credential-1", "user-request");
+        when(headers.getHeaderString(HttpHeaders.AUTHORIZATION)).thenReturn("Bearer keycloak-access-token");
+
+        Response response = endpoint.revoke();
+
+        assertEquals(401, response.getStatus());
+        assertEquals("Invalid bearer token", ((CredentialRevocationResponse) response.getEntity()).getMessage());
+        assertNoRevocationAttempt();
+    }
+
+    @Test
     void shouldMapStatusListExceptionToConfiguredHttpStatus() throws Exception {
-        setCredentialRevocationForm("status-list-error");
+        UserModel user = org.mockito.Mockito.mock(UserModel.class);
+        endpoint.authResult = new AuthResult(user, null, null, null);
+        setIssuedCredentialRevocationForm("issued-credential-1", "status-list-error");
         when(headers.getHeaderString(HttpHeaders.AUTHORIZATION)).thenReturn("Bearer test-token");
         revocationService.statusListException = new StatusListException("unprocessable", 422);
 
@@ -258,19 +246,23 @@ class CredentialRevocationEndpointTest {
 
     @Test
     void shouldMapIllegalArgumentExceptionToBadRequest() throws Exception {
-        setCredentialRevocationForm("bad-vp");
+        UserModel user = org.mockito.Mockito.mock(UserModel.class);
+        endpoint.authResult = new AuthResult(user, null, null, null);
+        setIssuedCredentialRevocationForm("issued-credential-1", "bad-request");
         when(headers.getHeaderString(HttpHeaders.AUTHORIZATION)).thenReturn("Bearer test-token");
-        revocationService.illegalArgumentException = new IllegalArgumentException("Malformed VP");
+        revocationService.illegalArgumentException = new IllegalArgumentException("Malformed request");
 
         Response response = endpoint.revoke();
 
         assertEquals(400, response.getStatus());
-        assertEquals("Malformed VP", ((CredentialRevocationResponse) response.getEntity()).getMessage());
+        assertEquals("Malformed request", ((CredentialRevocationResponse) response.getEntity()).getMessage());
     }
 
     @Test
     void shouldMapUnexpectedExceptionToInternalServerError() throws Exception {
-        setCredentialRevocationForm("unexpected");
+        UserModel user = org.mockito.Mockito.mock(UserModel.class);
+        endpoint.authResult = new AuthResult(user, null, null, null);
+        setIssuedCredentialRevocationForm("issued-credential-1", "unexpected");
         when(headers.getHeaderString(HttpHeaders.AUTHORIZATION)).thenReturn("Bearer test-token");
         revocationService.runtimeException = new RuntimeException("boom");
 
@@ -282,15 +274,7 @@ class CredentialRevocationEndpointTest {
 
     private void assertNoRevocationAttempt() {
         assertNull(revocationService.lastRequest);
-        assertNull(revocationService.lastToken);
         assertNull(revocationService.lastAuthResult);
-    }
-
-    private void setCredentialRevocationForm(String reason) {
-        MultivaluedMap<String, String> form = new MultivaluedHashMap<>();
-        form.add(REVOCATION_MODE_KEY, CREDENTIAL_REVOCATION_MODE);
-        form.add(REVOCATION_REASON_KEY, reason);
-        when(httpRequest.getDecodedFormParameters()).thenReturn(form);
     }
 
     private void setIssuedCredentialRevocationForm(String credentialId, String reason) {
@@ -317,7 +301,6 @@ class CredentialRevocationEndpointTest {
 
     private static final class FakeCredentialRevocationService extends CredentialRevocationService {
         private CredentialRevocationRequest lastRequest;
-        private String lastToken;
         private AuthResult lastAuthResult;
         private CredentialRevocationResponse response = CredentialRevocationResponse.success(Instant.now(), "ok");
         private StatusListException statusListException;
@@ -326,23 +309,6 @@ class CredentialRevocationEndpointTest {
 
         private FakeCredentialRevocationService() {
             super(null, null, null);
-        }
-
-        @Override
-        public CredentialRevocationResponse revokeCredential(CredentialRevocationRequest request, String sdJwtVpToken)
-                throws StatusListException {
-            this.lastRequest = request;
-            this.lastToken = sdJwtVpToken;
-            if (statusListException != null) {
-                throw statusListException;
-            }
-            if (illegalArgumentException != null) {
-                throw illegalArgumentException;
-            }
-            if (runtimeException != null) {
-                throw runtimeException;
-            }
-            return response;
         }
 
         @Override

@@ -1,7 +1,6 @@
 package com.adorsys.keycloakstatuslist.resource;
 
 import static com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest.CREDENTIAL_ID_KEY;
-import static com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest.CREDENTIAL_REVOCATION_MODE;
 import static com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest.ISSUED_CREDENTIAL_REVOCATION_MODE;
 import static com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest.REVOCATION_MODE_KEY;
 import static com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest.REVOCATION_REASON_KEY;
@@ -11,12 +10,10 @@ import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationResponse;
 import com.adorsys.keycloakstatuslist.service.CredentialRevocationService;
-import jakarta.ws.rs.Path;
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.MultivaluedMap;
 import jakarta.ws.rs.core.Response;
-import java.util.Objects;
 import org.jboss.logging.Logger;
 import org.keycloak.events.EventBuilder;
 import org.keycloak.models.KeycloakSession;
@@ -40,7 +37,7 @@ public class CredentialRevocationEndpoint extends TokenRevocationEndpoint {
      *
      * @param session           Keycloak session
      * @param event             EventBuilder for logging
-     * @param revocationService Credential revocation service (can be injected fortesting)
+     * @param revocationService Credential revocation service (can be injected for testing)
      */
     public CredentialRevocationEndpoint(
             KeycloakSession session, EventBuilder event, CredentialRevocationService revocationService) {
@@ -50,17 +47,6 @@ public class CredentialRevocationEndpoint extends TokenRevocationEndpoint {
         this.headers = session.getContext().getRequestHeaders();
     }
 
-    /**
-     * Provides the challenge sub-resource for the revocation endpoint.
-     * Handles: GET /protocol/openid-connect/revoke/challenge
-     *
-     * @return RevocationChallengeResource instance for handling challenge requests
-     */
-    @Path("challenge")
-    public Object challenge() {
-        return new RevocationChallengeResource(this.session);
-    }
-
     @Override
     public Response revoke() {
         MultivaluedMap<String, String> form =
@@ -68,8 +54,7 @@ public class CredentialRevocationEndpoint extends TokenRevocationEndpoint {
         String authorizationHeader = getHeaders().getHeaderString(HttpHeaders.AUTHORIZATION);
         String revocationMode = form.getFirst(REVOCATION_MODE_KEY);
 
-        if (!Objects.equals(CREDENTIAL_REVOCATION_MODE, revocationMode)
-                && !Objects.equals(ISSUED_CREDENTIAL_REVOCATION_MODE, revocationMode)) {
+        if (!ISSUED_CREDENTIAL_REVOCATION_MODE.equals(revocationMode)) {
             logger.debugf("Not in credential revocation mode. Falling back to standard revocation logic.");
             return super.revoke();
         }
@@ -109,16 +94,12 @@ public class CredentialRevocationEndpoint extends TokenRevocationEndpoint {
             request.setRevocationReason(form.getFirst(REVOCATION_REASON_KEY));
             request.setCredentialId(form.getFirst(CREDENTIAL_ID_KEY));
 
-            CredentialRevocationResponse revocationResponse;
-            if (Objects.equals(ISSUED_CREDENTIAL_REVOCATION_MODE, revocationMode)) {
-                AuthResult authResult = authenticateBearerToken(token);
-                if (authResult == null || authResult.getUser() == null) {
-                    return createErrorResponse(Response.Status.UNAUTHORIZED, "Invalid bearer token");
-                }
-                revocationResponse = getRevocationService().revokeIssuedCredential(request, authResult);
-            } else {
-                revocationResponse = getRevocationService().revokeCredential(request, token);
+            AuthResult authResult = authenticateBearerToken(token);
+            if (authResult == null || authResult.user() == null) {
+                return createErrorResponse(Response.Status.UNAUTHORIZED, "Invalid bearer token");
             }
+            CredentialRevocationResponse revocationResponse =
+                    getRevocationService().revokeIssuedCredential(request, authResult);
             logger.infof("Successfully revoked credential via status list.");
 
             return Response.ok(revocationResponse)

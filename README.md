@@ -101,30 +101,21 @@ corresponding to a specific credential's configuration. Below is a sample such c
 
 ## Revocation Protocol
 
-Revocation requires a pre-issued server challenge to ensure proper Verifiable Presentation (VP) verification.
-Before submitting a revocation request, clients must first obtain a challenge from the `/revoke/challenge` endpoint.
-This challenge includes a cryptographically strong nonce, the audience (revocation endpoint URL), and an
-expiration timestamp.
+Issued credential revocation is initiated by the client application, not by the wallet. The client calls Keycloak's
+standard `/revoke` endpoint with the authenticated user's Keycloak access token as the bearer token. The form payload
+must identify the Keycloak-issued credential to revoke:
 
-The revocation plugin strictly validates the incoming VP against these server-issued values:
+```http
+POST /realms/{realm}/protocol/openid-connect/revoke
+Authorization: Bearer <user-access-token>
+Content-Type: application/x-www-form-urlencoded
 
-- The `nonce` in the VP must exactly match the issued nonce. It must neither be expired nor replayed (it is a one-time
-  use value).
-- The `aud` (audience) in the VP must exactly match the configured revocation endpoint URL.
-
-After obtaining the challenge, the next step is to submit the prepared SD-JWT VP token of the credential to the
-`/revoke` endpoint. The request payload must include both the token (as authorization bearer token) and a body payload
-indicating the `credential_revocation` mode and a revocation reason. For example:
-
-```json
-{
-  "mode": "credential_revocation",
-  "reason": "some reason"
-}
+mode=issued_credential_revocation&credential_id=<issued-credential-id>&reason=<optional reason>
 ```
 
-The `mode` parameter is required to ensure that the plugin’s credential revocation logic is used instead of Keycloak’s
-default revocation behavior.
+The plugin verifies that the bearer token belongs to the user who owns the issued credential, updates the credential's
+status-list entry to `INVALID`, then removes the issued credential record from Keycloak. Requests that do not use
+`mode=issued_credential_revocation` continue through Keycloak's default token revocation behavior.
 
 ## Development and Testing
 
@@ -154,11 +145,6 @@ For manual testing with a local status list server:
 
 1. Configure the `status-list-server-url` to point to your test server
 2. Enable debug logging to see detailed request/response information
-
-## TODO
-
-- Ensure nonce cache logic is compatible with clustered environments
-- Document the plugin's HTTP endpoints and expected request/response formats in more detail
 
 ## License
 
