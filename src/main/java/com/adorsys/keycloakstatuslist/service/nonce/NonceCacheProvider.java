@@ -23,15 +23,4 @@ public interface NonceCacheProvider {
      * @return the RevocationChallenge if valid and not expired, null otherwise
      */
     RevocationChallenge consumeNonce(String nonce);
-
-    /**
-     * Gets the current cache size for monitoring purposes.
-     * @return the number of active nonces in the cache
-     */
-    long getCacheSize();
-
-    /**
-     * Clears all nonces from the cache.
-     */
-    void clearCache();
 }

@@ -10,27 +10,17 @@ import org.keycloak.services.resource.RealmResourceProviderFactory;
 /**
  * Factory for the NonceCacheService.
  * Implements RealmResourceProviderFactory so Keycloak can discover it via standard SPI.
+ * Creates a per-session instance so each request uses that session's SingleUseObjectProvider.
  */
 public class NonceCacheServiceProviderFactory implements RealmResourceProviderFactory {
 
     private static final Logger logger = Logger.getLogger(NonceCacheServiceProviderFactory.class);
     public static final String PROVIDER_ID = "nonce-cache";
 
-    // Singleton instance of the service (shared across all realms and sessions)
-    private static NonceCacheService instance;
-
     @Override
     public RealmResourceProvider create(KeycloakSession session) {
-        if (instance == null) {
-            synchronized (NonceCacheServiceProviderFactory.class) {
-                if (instance == null) {
-                    instance = new NonceCacheService();
-                    logger.info("Created NonceCacheService singleton instance");
-                }
-            }
-        }
-        logger.debugf("Returning NonceCacheService instance for session");
-        return instance;
+        logger.debugf("Creating NonceCacheService for session");
+        return new NonceCacheService(session);
     }
 
     @Override
@@ -45,11 +35,7 @@ public class NonceCacheServiceProviderFactory implements RealmResourceProviderFa
 
     @Override
     public void close() {
-        if (instance != null) {
-            instance.close();
-            instance = null;
-            logger.info("Closed NonceCacheService");
-        }
+        // No singleton to close; instances are session-scoped.
     }
 
     @Override

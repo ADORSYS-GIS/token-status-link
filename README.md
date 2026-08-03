@@ -94,6 +94,15 @@ corresponding to a specific credential's configuration. Below is a sample such c
 - **On-Demand (Lazy) Trigger**: Registration is triggered on-demand when a realm's OIDC endpoints are first accessed, but the trigger itself is non-blocking to the caller's thread.
 - **Configurable Timeouts**: Timeouts are configurable via `status-list-issuance-timeout` (default: 10s for runtime) and `status-list-registration-timeout` (default: 30s for background).
 
+## Clustering
+
+Revocation challenge nonces are stored in Keycloak’s built-in **single-use object store** (Infinispan-backed). That means:
+
+- A challenge issued on one cluster node can be consumed on another node in the same cluster
+- Nonces remain one-time-use and expire after ~10 minutes
+- Sticky sessions are **not** required for the challenge → revoke flow
+- Single-node deployments behave the same as before
+
 ## Security Features
 
 - Secure communication using TLS 1.2/1.3
@@ -157,7 +166,6 @@ For manual testing with a local status list server:
 
 ## TODO
 
-- Ensure nonce cache logic is compatible with clustered environments
 - Document the plugin's HTTP endpoints and expected request/response formats in more detail
 
 ## License

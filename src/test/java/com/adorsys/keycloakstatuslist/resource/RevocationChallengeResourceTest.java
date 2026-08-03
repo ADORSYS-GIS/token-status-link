@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -19,6 +20,7 @@ import org.keycloak.models.KeycloakContext;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakUriInfo;
 import org.keycloak.models.RealmModel;
+import org.keycloak.models.SingleUseObjectProvider;
 import org.keycloak.services.Urls;
 import org.keycloak.services.resource.RealmResourceProvider;
 
@@ -38,7 +40,9 @@ class RevocationChallengeResourceTest {
         context = mock(KeycloakContext.class);
         realm = mock(RealmModel.class);
         uriInfo = mock(KeycloakUriInfo.class);
-        nonceCacheService = new NonceCacheService();
+        SingleUseObjectProvider singleUseObjects = mock(SingleUseObjectProvider.class);
+        when(session.getProvider(SingleUseObjectProvider.class)).thenReturn(singleUseObjects);
+        nonceCacheService = new NonceCacheService(session);
 
         when(session.getContext()).thenReturn(context);
         when(context.getRealm()).thenReturn(realm);
@@ -85,8 +89,10 @@ class RevocationChallengeResourceTest {
 
     @Test
     void shouldReturnServerErrorWhenNonceIssuanceThrows() {
+        NonceCacheService throwing = mock(NonceCacheService.class);
+        when(throwing.issueNonce(anyString())).thenThrow(new RuntimeException("cache unavailable"));
         when(session.getProvider(RealmResourceProvider.class, NonceCacheServiceProviderFactory.PROVIDER_ID))
-                .thenReturn(new ThrowingNonceCacheService());
+                .thenReturn(throwing);
 
         Response response = resource.getChallenge();
 
@@ -97,12 +103,5 @@ class RevocationChallengeResourceTest {
         Map<String, String> body = (Map<String, String>) response.getEntity();
         assertNotNull(body.get("error"));
         assertTrue(body.get("error").contains("Failed to issue challenge"));
-    }
-
-    private static final class ThrowingNonceCacheService extends NonceCacheService {
-        @Override
-        public RevocationChallenge issueNonce(String audience) {
-            throw new RuntimeException("cache unavailable");
-        }
     }
 }
