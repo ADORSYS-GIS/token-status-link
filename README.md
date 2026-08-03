@@ -112,7 +112,7 @@ corresponding to a specific credential's configuration. Below is a sample such c
 - Secure communication using TLS 1.2/1.3
 - Bearer token authentication support for the status list server
 
-## Revocation Protocol
+## HTTP Endpoints (Revocation Protocol)
 
 Issued credential revocation is initiated by the client application, not by the wallet. The client calls Keycloak's
 standard `/revoke` endpoint with the authenticated user's Keycloak access token as the bearer token. The form payload
