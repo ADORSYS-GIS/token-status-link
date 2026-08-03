@@ -78,13 +78,15 @@ class NonceCacheServiceTest {
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Map<String, String>> notesCaptor = ArgumentCaptor.forClass(Map.class);
 
-        verify(singleUseObjects)
-                .put(keyCaptor.capture(), eq((long) NONCE_EXPIRATION_SECONDS), notesCaptor.capture());
+        verify(singleUseObjects).put(keyCaptor.capture(), eq((long) NONCE_EXPIRATION_SECONDS), notesCaptor.capture());
 
         assertEquals(KEY_PREFIX + challenge.getNonce(), keyCaptor.getValue());
         assertEquals("https://example.com/revoke", notesCaptor.getValue().get(NOTE_AUD));
-        assertEquals(Long.toString(challenge.getExpiresAt()), notesCaptor.getValue().get(NOTE_EXP));
-        assertEquals(Integer.toString(NONCE_EXPIRATION_SECONDS), notesCaptor.getValue().get(NOTE_EXPIRES_IN));
+        assertEquals(
+                Long.toString(challenge.getExpiresAt()), notesCaptor.getValue().get(NOTE_EXP));
+        assertEquals(
+                Integer.toString(NONCE_EXPIRATION_SECONDS),
+                notesCaptor.getValue().get(NOTE_EXPIRES_IN));
     }
 
     @Test
