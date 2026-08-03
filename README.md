@@ -99,32 +99,138 @@ corresponding to a specific credential's configuration. Below is a sample such c
 - Secure communication using TLS 1.2/1.3
 - Bearer token authentication support for the status list server
 
-## Revocation Protocol
+## HTTP Endpoints (Revocation Protocol)
 
-Revocation requires a pre-issued server challenge to ensure proper Verifiable Presentation (VP) verification.
-Before submitting a revocation request, clients must first obtain a challenge from the `/revoke/challenge` endpoint.
-This challenge includes a cryptographically strong nonce, the audience (revocation endpoint URL), and an
-expiration timestamp.
+The plugin customizes Keycloak’s standard OIDC revocation path and adds a challenge sub-resource.
+These are the only inbound HTTP endpoints exposed by the plugin.
 
-The revocation plugin strictly validates the incoming VP against these server-issued values:
+Base path (realm-scoped):
 
-- The `nonce` in the VP must exactly match the issued nonce. It must neither be expired nor replayed (it is a one-time
-  use value).
-- The `aud` (audience) in the VP must exactly match the configured revocation endpoint URL.
+```text
+{keycloak-base}/realms/{realm}/protocol/openid-connect
+```
 
-After obtaining the challenge, the next step is to submit the prepared SD-JWT VP token of the credential to the
-`/revoke` endpoint. The request payload must include both the token (as authorization bearer token) and a body payload
-indicating the `credential_revocation` mode and a revocation reason. For example:
+Example: `https://keycloak.example.com/realms/my-realm/protocol/openid-connect`
+
+Revocation is a two-step flow:
+
+1. Obtain a server-issued challenge (`GET .../revoke/challenge`)
+2. Submit an SD-JWT Verifiable Presentation (VP) to revoke (`POST .../revoke`)
+
+The plugin validates the VP against the challenge:
+
+- The `nonce` in the Key Binding JWT must exactly match the issued nonce (one-time use; not expired or replayed)
+- The `aud` (audience) in the Key Binding JWT must exactly match the issued challenge audience (the revocation endpoint URL)
+
+### 1. Get revocation challenge
+
+```http
+GET /realms/{realm}/protocol/openid-connect/revoke/challenge
+Accept: application/json
+```
+
+No request body or authentication is required for this step.
+
+**Success response** — `200 OK`, `Content-Type: application/json`:
 
 ```json
 {
-  "mode": "credential_revocation",
-  "reason": "some reason"
+  "nonce": "AbCdEf123...",
+  "aud": "https://keycloak.example.com/realms/my-realm/protocol/openid-connect/revoke",
+  "exp": 1735689600,
+  "expires_in": 600
 }
 ```
 
-The `mode` parameter is required to ensure that the plugin’s credential revocation logic is used instead of Keycloak’s
-default revocation behavior.
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `nonce` | string | Cryptographically strong one-time challenge value to embed in the VP Key Binding JWT |
+| `aud` | string | Expected audience — the full revocation endpoint URL for this realm |
+| `exp` | number | Unix timestamp (seconds) when the challenge expires |
+| `expires_in` | number | Lifetime in seconds (**deprecated**; currently `600` / 10 minutes). Prefer `exp` |
+
+**Error responses:**
+
+| Status | Body | When |
+| ------ | ---- | ---- |
+| `500` | `{"error":"..."}` | Nonce service unavailable, or challenge issuance failed |
+
+### 2. Revoke credential
+
+```http
+POST /realms/{realm}/protocol/openid-connect/revoke
+Authorization: Bearer <sd-jwt-vp>
+Content-Type: application/x-www-form-urlencoded
+```
+
+**Form fields:**
+
+| Field | Required | Description |
+| ----- | -------- | ----------- |
+| `mode` | yes (for plugin path) | Must be `credential_revocation` to use this plugin’s logic |
+| `reason` | no | Human-readable revocation reason, echoed in the success response |
+
+Example:
+
+```bash
+curl -X POST \
+  "https://keycloak.example.com/realms/my-realm/protocol/openid-connect/revoke" \
+  -H "Authorization: Bearer <sd-jwt-vp>" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "mode=credential_revocation&reason=compromised"
+```
+
+The bearer token must be an SD-JWT VP that:
+
+- Includes the challenge `nonce` in the Key Binding JWT
+- Includes the challenge `aud` in the Key Binding JWT
+- Proves possession of the credential being revoked
+
+**Success response** — `200 OK`, `Content-Type: application/json`:
+
+```json
+{
+  "success": true,
+  "revoked_at": "2026-08-03T10:30:00Z",
+  "revocation_reason": "compromised",
+  "message": "Credential revoked successfully"
+}
+```
+
+**Error responses** (credential revocation mode) — usually `Content-Type: application/json` with:
+
+```json
+{
+  "success": false,
+  "revoked_at": null,
+  "revocation_reason": null,
+  "message": "<error description>"
+}
+```
+
+| Status | Typical cause |
+| ------ | ------------- |
+| `400` | Invalid `Authorization` header format, malformed VP, or other bad input |
+| `401` | Missing `Authorization` header; invalid/expired/replayed nonce; invalid VP signature |
+| `500` | Service disabled/not configured; nonce service unavailable; unexpected server error |
+
+Unexpected failures may also return:
+
+```json
+{
+  "error": "server_error",
+  "error_description": "Internal error during credential revocation"
+}
+```
+
+Status list / validation failures may use other HTTP status codes carried from `StatusListException` (for example upstream status list server errors).
+
+### Fallback to standard Keycloak token revocation
+
+If `mode` is **not** `credential_revocation` (missing or any other value), the plugin does **not** run credential revocation.
+It delegates to Keycloak’s standard OIDC token revocation endpoint (`TokenRevocationEndpoint`).
+
+Use `mode=credential_revocation` when you intend to revoke a verifiable credential via the status list.
 
 ## Development and Testing
 
@@ -158,7 +264,6 @@ For manual testing with a local status list server:
 ## TODO
 
 - Ensure nonce cache logic is compatible with clustered environments
-- Document the plugin's HTTP endpoints and expected request/response formats in more detail
 
 ## License
 
