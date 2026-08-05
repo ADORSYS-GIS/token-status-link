@@ -118,11 +118,13 @@ status-list entry to `INVALID`, and keeps the issued credential record in Keyclo
 it with a revoked status. Requests that do not use `mode=issued_credential_revocation` continue through Keycloak's
 default token revocation behavior.
 
-The status-list mapping is linked to the Keycloak issued credential through the verifiable credential id. During
-issuance, the protocol mapper stores the credential `id` claim in the status-list mapping table. During revocation, the
-service loads the authenticated user's `IssuedVerifiableCredentialModel` by Keycloak issued credential id, reads
-`getVerifiableCredentialId()`, and uses that value to locate the status-list mapping. This avoids matching by issuance
-time or request token details.
+The status-list mapping is linked to the Keycloak issued credential id. During token issuance, Keycloak creates an
+`IssuedVerifiableCredentialModel` and stores its id in the access token `authorization_details` as
+`issued_credential_id`. The credential endpoint authenticates and validates that token before protocol mappers run, so
+the status-list mapper reads this value only as the correlation key for the mapping row. During revocation, the service
+loads the authenticated user's issued credential by the submitted Keycloak issued credential id and uses that same id to
+locate the status-list mapping. Authorization is not based on the token claim: it is enforced by reloading the issued
+credential from the authenticated user's own Keycloak credential store.
 
 ### Client credential list and status
 

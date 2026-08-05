@@ -87,9 +87,8 @@ class CredentialRevocationServiceTest {
 
         when(user.getId()).thenReturn("user-1");
         when(issuedCredential.getId()).thenReturn("issued-1");
-        when(issuedCredential.getVerifiableCredentialId()).thenReturn("credential-1");
         when(userProvider.getIssuedVerifiableCredentialsStreamByUser("user-1")).thenReturn(Stream.of(issuedCredential));
-        when(statusListRepository.findSuccessfulMappingByTokenId("realm-1", "user-1", "credential-1"))
+        when(statusListRepository.findSuccessfulMappingByTokenId("realm-1", "user-1", "issued-1"))
                 .thenReturn(Optional.of(mapping));
         doNothing().when(statusListService).updateStatusList(any(), anyString());
 
@@ -173,9 +172,8 @@ class CredentialRevocationServiceTest {
 
         when(user.getId()).thenReturn("user-1");
         when(issuedCredential.getId()).thenReturn("issued-1");
-        when(issuedCredential.getVerifiableCredentialId()).thenReturn("credential-1");
         when(userProvider.getIssuedVerifiableCredentialsStreamByUser("user-1")).thenReturn(Stream.of(issuedCredential));
-        when(statusListRepository.findSuccessfulMappingByTokenId("realm-1", "user-1", "credential-1"))
+        when(statusListRepository.findSuccessfulMappingByTokenId("realm-1", "user-1", "issued-1"))
                 .thenReturn(Optional.empty());
 
         StatusListException exception =
@@ -188,25 +186,6 @@ class CredentialRevocationServiceTest {
     }
 
     @Test
-    void revokeIssuedCredential_missingVerifiableCredentialId_throws409() throws Exception {
-        CredentialRevocationRequest request = issuedRevocationRequest("issued-1", "reason");
-        AuthResult authResult = new AuthResult(user, null, null, null);
-
-        when(user.getId()).thenReturn("user-1");
-        when(issuedCredential.getId()).thenReturn("issued-1");
-        when(issuedCredential.getVerifiableCredentialId()).thenReturn(" ");
-        when(userProvider.getIssuedVerifiableCredentialsStreamByUser("user-1")).thenReturn(Stream.of(issuedCredential));
-
-        StatusListException exception =
-                assertThrows(StatusListException.class, () -> service.revokeIssuedCredential(request, authResult));
-
-        assertEquals(409, exception.getHttpStatus());
-        assertTrue(exception.getMessage().contains("verifiable credential id"));
-        verify(statusListService, never()).updateStatusList(any(), anyString());
-        verify(userProvider, never()).removeIssuedVerifiableCredential(anyString());
-    }
-
-    @Test
     void revokeIssuedCredential_statusListUpdateFails_doesNotRemoveIssuedCredential() throws Exception {
         CredentialRevocationRequest request = issuedRevocationRequest("issued-1", "reason");
         AuthResult authResult = new AuthResult(user, null, null, null);
@@ -214,9 +193,8 @@ class CredentialRevocationServiceTest {
 
         when(user.getId()).thenReturn("user-1");
         when(issuedCredential.getId()).thenReturn("issued-1");
-        when(issuedCredential.getVerifiableCredentialId()).thenReturn("credential-1");
         when(userProvider.getIssuedVerifiableCredentialsStreamByUser("user-1")).thenReturn(Stream.of(issuedCredential));
-        when(statusListRepository.findSuccessfulMappingByTokenId("realm-1", "user-1", "credential-1"))
+        when(statusListRepository.findSuccessfulMappingByTokenId("realm-1", "user-1", "issued-1"))
                 .thenReturn(Optional.of(mapping));
         doThrow(new StatusListException("Status list server unavailable", 503))
                 .when(statusListService)
@@ -237,9 +215,8 @@ class CredentialRevocationServiceTest {
 
         when(user.getId()).thenReturn("user-1");
         when(issuedCredential.getId()).thenReturn("issued-1");
-        when(issuedCredential.getVerifiableCredentialId()).thenReturn("credential-1");
         when(userProvider.getIssuedVerifiableCredentialsStreamByUser("user-1")).thenReturn(Stream.of(issuedCredential));
-        when(statusListRepository.findSuccessfulMappingByTokenId("realm-1", "user-1", "credential-1"))
+        when(statusListRepository.findSuccessfulMappingByTokenId("realm-1", "user-1", "issued-1"))
                 .thenReturn(Optional.of(mapping));
 
         CredentialRevocationResponse response = service.revokeIssuedCredential(request, authResult);
@@ -263,7 +240,7 @@ class CredentialRevocationServiceTest {
         mapping.setIdx(index);
         mapping.setUserId("user-1");
         mapping.setRealmId("realm-1");
-        mapping.setTokenId("credential-1");
+        mapping.setTokenId("issued-1");
         mapping.setStatus(StatusListMappingEntity.MappingStatus.SUCCESS);
         return mapping;
     }

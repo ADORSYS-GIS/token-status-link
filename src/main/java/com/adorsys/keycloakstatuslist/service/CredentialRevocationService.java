@@ -145,13 +145,13 @@ public class CredentialRevocationService {
             throw new StatusListException("Status list mapping repository is not available", 500);
         }
 
-        String verifiableCredentialId = issuedCredential.getVerifiableCredentialId();
-        if (StringUtil.isBlank(verifiableCredentialId)) {
-            throw new StatusListException("Issued credential is not linked to a verifiable credential id", 409);
+        String issuedCredentialId = issuedCredential.getId();
+        if (StringUtil.isBlank(issuedCredentialId)) {
+            throw new StatusListException("Issued credential is missing its Keycloak id", 409);
         }
 
         return statusListRepository
-                .findSuccessfulMappingByTokenId(realmId, userId, verifiableCredentialId)
+                .findSuccessfulMappingByTokenId(realmId, userId, issuedCredentialId)
                 .orElseThrow(() -> new StatusListException("Status list mapping not found for issued credential", 404));
     }
 }
