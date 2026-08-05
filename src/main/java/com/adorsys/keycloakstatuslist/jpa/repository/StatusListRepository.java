@@ -4,8 +4,6 @@ import com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import jakarta.persistence.TypedQuery;
-import java.util.Collection;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
@@ -101,11 +99,11 @@ public class StatusListRepository {
     }
 
     /**
-     * Finds the successful status-list mapping for one of the supplied issued credential identifiers.
+     * Finds the successful status-list mapping for the verifiable credential id stored during issuance.
      */
-    public Optional<StatusListMappingEntity> findSuccessfulMappingByTokenIds(
-            String realmId, String userId, Collection<String> tokenIds) {
-        if (tokenIds == null || tokenIds.isEmpty()) {
+    public Optional<StatusListMappingEntity> findSuccessfulMappingByTokenId(
+            String realmId, String userId, String tokenId) {
+        if (tokenId == null || tokenId.isBlank()) {
             return Optional.empty();
         }
 
@@ -116,7 +114,7 @@ public class StatusListRepository {
                         SELECT m FROM StatusListMappingEntity m
                         WHERE m.realmId = :realmId
                           AND m.userId = :userId
-                          AND m.tokenId IN :tokenIds
+                          AND m.tokenId = :tokenId
                           AND m.status = :status
                         ORDER BY m.createdTimestamp DESC
                     """;
@@ -124,74 +122,11 @@ public class StatusListRepository {
             TypedQuery<StatusListMappingEntity> query = em.createQuery(q, StatusListMappingEntity.class);
             query.setParameter("realmId", realmId);
             query.setParameter("userId", userId);
-            query.setParameter("tokenIds", tokenIds);
+            query.setParameter("tokenId", tokenId);
             query.setParameter("status", StatusListMappingEntity.MappingStatus.SUCCESS);
             query.setMaxResults(1);
 
             result.set(query.getResultStream().findFirst().orElse(null));
-        });
-
-        return Optional.ofNullable(result.get());
-    }
-
-    /**
-     * Finds a successful mapping created during issuance before Keycloak had assigned/persisted the
-     * issued credential id, then claims that mapping by storing the issued credential id as token_id.
-     *
-     * <p>The normal path is {@link #findSuccessfulMappingByTokenIds(String, String, Collection)}.
-     * This method is a reconciliation path for OID4VCI issuance flows where the status-list mapper
-     * runs before the {@code issued_ver_credential.id} is available.
-     */
-    public Optional<StatusListMappingEntity> claimUnlinkedSuccessfulMappingNearIssuedAt(
-            String realmId, String userId, long issuedAt, long toleranceMillis, String tokenId) {
-        if (tokenId == null || tokenId.isBlank()) {
-            return Optional.empty();
-        }
-
-        long start = Math.max(0, issuedAt - toleranceMillis);
-        long end = issuedAt + toleranceMillis;
-        AtomicReference<StatusListMappingEntity> result = new AtomicReference<>();
-
-        withEntityManagerInTransaction(em -> {
-            String q = """
-                        SELECT m FROM StatusListMappingEntity m
-                        WHERE m.realmId = :realmId
-                          AND m.userId = :userId
-                          AND (m.tokenId IS NULL OR m.tokenId = '')
-                          AND m.status = :status
-                          AND m.createdTimestamp BETWEEN :start AND :end
-                    """;
-
-            TypedQuery<StatusListMappingEntity> query = em.createQuery(q, StatusListMappingEntity.class);
-            query.setParameter("realmId", realmId);
-            query.setParameter("userId", userId);
-            query.setParameter("status", StatusListMappingEntity.MappingStatus.SUCCESS);
-            query.setParameter("start", start);
-            query.setParameter("end", end);
-            query.setLockMode(LockModeType.PESSIMISTIC_WRITE);
-
-            List<StatusListMappingEntity> candidates = query.getResultList();
-            if (candidates.isEmpty()) {
-                return;
-            }
-
-            StatusListMappingEntity nearest = candidates.stream()
-                    .min(Comparator.comparingLong(mapping -> Math.abs(mapping.getCreatedTimestamp() - issuedAt)))
-                    .orElse(null);
-            if (nearest == null) {
-                return;
-            }
-
-            if (candidates.size() > 1) {
-                logger.warnf(
-                        "Found %d unlinked status-list mappings for user %s near issued credential time %d. "
-                                + "Claiming nearest mapping %s.",
-                        candidates.size(), userId, issuedAt, nearest.getId());
-            }
-
-            nearest.setTokenId(tokenId);
-            result.set(em.merge(nearest));
-            em.flush();
         });
 
         return Optional.ofNullable(result.get());

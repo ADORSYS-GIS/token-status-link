@@ -13,7 +13,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.keycloak.OID4VCConstants.OPENID_CREDENTIAL;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.anyString;
 import static org.mockito.Mockito.doThrow;
@@ -32,11 +31,8 @@ import com.adorsys.keycloakstatuslist.model.StatusListClaim;
 import com.adorsys.keycloakstatuslist.model.TokenStatus;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
 import jakarta.persistence.PersistenceException;
-import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.UriBuilder;
 import java.net.URI;
-import java.nio.charset.StandardCharsets;
-import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
@@ -61,9 +57,6 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
     @Mock
     StatusListService statusListService;
 
-    @Mock
-    HttpHeaders headers;
-
     StatusListProtocolMapper mapper;
     HashMap<String, Object> claims;
     StatusListRepository statusListRepository;
@@ -81,7 +74,6 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         // Run mocks
         mockDefaultRealmConfig();
         mockStatusListRepository(0L);
-        lenient().when(context.getRequestHeaders()).thenReturn(headers);
     }
 
     @Test
@@ -158,32 +150,6 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         assertEquals(TEST_REALM_ID, capturedEntity.getRealmId());
         assertEquals("did:example:123456789", capturedEntity.getTokenId());
         assertEquals(MappingStatus.SUCCESS, capturedEntity.getStatus());
-    }
-
-    @Test
-    void shouldStoreIssuedCredentialIdFromAccessTokenAuthorizationDetails() {
-        mockGetNextIndex();
-        when(headers.getHeaderString(HttpHeaders.AUTHORIZATION))
-                .thenReturn("Bearer " + accessTokenWithIssuedCredentialId("issued-credential-1"));
-
-        mapper.setClaim(claims, userSession);
-
-        var entityCaptor = ArgumentCaptor.forClass(StatusListMappingEntity.class);
-        verify(entityManager).persist(entityCaptor.capture());
-        assertEquals("issued-credential-1", entityCaptor.getValue().getTokenId());
-    }
-
-    @Test
-    void shouldFallbackToCredentialClaimIdWhenAccessTokenHasNoIssuedCredentialId() {
-        mockGetNextIndex();
-        when(headers.getHeaderString(HttpHeaders.AUTHORIZATION))
-                .thenReturn("Bearer " + accessTokenWithIssuedCredentialId(null));
-
-        mapper.setClaim(claims, userSession);
-
-        var entityCaptor = ArgumentCaptor.forClass(StatusListMappingEntity.class);
-        verify(entityManager).persist(entityCaptor.capture());
-        assertEquals("did:example:123456789", entityCaptor.getValue().getTokenId());
     }
 
     @Test
@@ -389,27 +355,5 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         return UriBuilder.fromUri(TEST_SERVER_URL)
                 .path(String.format(Constants.HTTP_ENDPOINT_RETRIEVE_PATH, listId))
                 .build();
-    }
-
-    private String accessTokenWithIssuedCredentialId(String issuedCredentialId) {
-        String issuedCredentialClaim =
-                issuedCredentialId == null ? "" : ",\"issued_credential_id\":\"" + issuedCredentialId + "\"";
-        String payload = """
-                {
-                  "typ": "Bearer",
-                  "authorization_details": [
-                    {
-                      "type": "%s",
-                      "credential_configuration_id": "PidCredential"%s
-                    }
-                  ]
-                }
-                """.formatted(OPENID_CREDENTIAL, issuedCredentialClaim);
-
-        Base64.Encoder encoder = Base64.getUrlEncoder().withoutPadding();
-        return encoder.encodeToString("{\"alg\":\"none\"}".getBytes(StandardCharsets.UTF_8))
-                + "."
-                + encoder.encodeToString(payload.getBytes(StandardCharsets.UTF_8))
-                + ".";
     }
 }

@@ -6,7 +6,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
@@ -81,7 +80,7 @@ class CredentialRevocationServiceTest {
     }
 
     @Test
-    void revokeIssuedCredential_success_updatesStatusListAndRemovesIssuedCredential() throws Exception {
+    void revokeIssuedCredential_success_updatesStatusListAndKeepsIssuedCredential() throws Exception {
         CredentialRevocationRequest request = issuedRevocationRequest("issued-1", "User requested revocation");
         AuthResult authResult = new AuthResult(user, null, null, null);
         StatusListMappingEntity mapping = statusListMapping("list-1", 7L);
@@ -90,9 +89,8 @@ class CredentialRevocationServiceTest {
         when(issuedCredential.getId()).thenReturn("issued-1");
         when(issuedCredential.getVerifiableCredentialId()).thenReturn("credential-1");
         when(userProvider.getIssuedVerifiableCredentialsStreamByUser("user-1")).thenReturn(Stream.of(issuedCredential));
-        when(statusListRepository.findSuccessfulMappingByTokenIds(eq("realm-1"), eq("user-1"), any()))
+        when(statusListRepository.findSuccessfulMappingByTokenId("realm-1", "user-1", "credential-1"))
                 .thenReturn(Optional.of(mapping));
-        when(userProvider.removeIssuedVerifiableCredential("issued-1")).thenReturn(true);
         doNothing().when(statusListService).updateStatusList(any(), anyString());
 
         CredentialRevocationResponse response = service.revokeIssuedCredential(request, authResult);
@@ -109,46 +107,44 @@ class CredentialRevocationServiceTest {
         assertEquals(1, payload.status().size());
         assertEquals(7L, payload.status().get(0).index());
         assertEquals(TokenStatus.INVALID, payload.status().get(0).status());
-        verify(userProvider).removeIssuedVerifiableCredential("issued-1");
+        verify(userProvider, never()).removeIssuedVerifiableCredential(anyString());
     }
 
     @Test
-    void revokeIssuedCredential_missingCredentialId_throws400() throws Exception {
+    void revokeIssuedCredential_missingCredentialId_throwsIllegalArgumentException() throws Exception {
         CredentialRevocationRequest request = issuedRevocationRequest(" ", "reason");
         AuthResult authResult = new AuthResult(user, null, null, null);
 
-        StatusListException exception =
-                assertThrows(StatusListException.class, () -> service.revokeIssuedCredential(request, authResult));
+        IllegalArgumentException exception =
+                assertThrows(IllegalArgumentException.class, () -> service.revokeIssuedCredential(request, authResult));
 
-        assertEquals(400, exception.getHttpStatus());
         assertTrue(exception.getMessage().contains("Missing credential_id"));
         verify(statusListService, never()).updateStatusList(any(), anyString());
         verify(userProvider, never()).removeIssuedVerifiableCredential(anyString());
     }
 
     @Test
-    void revokeIssuedCredential_nullRequest_throwsNPE() {
+    void revokeIssuedCredential_nullRequest_throwsIllegalArgumentException() {
         AuthResult authResult = new AuthResult(user, null, null, null);
 
-        assertThrows(NullPointerException.class, () -> service.revokeIssuedCredential(null, authResult));
+        assertThrows(IllegalArgumentException.class, () -> service.revokeIssuedCredential(null, authResult));
     }
 
     @Test
-    void revokeIssuedCredential_nullAuthResult_throwsNPE() {
+    void revokeIssuedCredential_nullAuthResult_throwsIllegalArgumentException() {
         CredentialRevocationRequest request = issuedRevocationRequest("issued-1", "reason");
 
-        assertThrows(NullPointerException.class, () -> service.revokeIssuedCredential(request, null));
+        assertThrows(IllegalArgumentException.class, () -> service.revokeIssuedCredential(request, null));
     }
 
     @Test
-    void revokeIssuedCredential_missingUser_throws401() throws Exception {
+    void revokeIssuedCredential_missingUser_throwsIllegalArgumentException() throws Exception {
         CredentialRevocationRequest request = issuedRevocationRequest("issued-1", "reason");
         AuthResult authResult = new AuthResult(null, null, null, null);
 
-        StatusListException exception =
-                assertThrows(StatusListException.class, () -> service.revokeIssuedCredential(request, authResult));
+        IllegalArgumentException exception =
+                assertThrows(IllegalArgumentException.class, () -> service.revokeIssuedCredential(request, authResult));
 
-        assertEquals(401, exception.getHttpStatus());
         assertTrue(exception.getMessage().contains("Authenticated user is required"));
         verify(statusListService, never()).updateStatusList(any(), anyString());
     }
@@ -179,7 +175,7 @@ class CredentialRevocationServiceTest {
         when(issuedCredential.getId()).thenReturn("issued-1");
         when(issuedCredential.getVerifiableCredentialId()).thenReturn("credential-1");
         when(userProvider.getIssuedVerifiableCredentialsStreamByUser("user-1")).thenReturn(Stream.of(issuedCredential));
-        when(statusListRepository.findSuccessfulMappingByTokenIds(eq("realm-1"), eq("user-1"), any()))
+        when(statusListRepository.findSuccessfulMappingByTokenId("realm-1", "user-1", "credential-1"))
                 .thenReturn(Optional.empty());
 
         StatusListException exception =
@@ -192,36 +188,22 @@ class CredentialRevocationServiceTest {
     }
 
     @Test
-    void revokeIssuedCredential_unlinkedMapping_claimsMappingThenRevokes() throws Exception {
+    void revokeIssuedCredential_missingVerifiableCredentialId_throws409() throws Exception {
         CredentialRevocationRequest request = issuedRevocationRequest("issued-1", "reason");
         AuthResult authResult = new AuthResult(user, null, null, null);
-        StatusListMappingEntity mapping = statusListMapping("list-1", 7L);
 
         when(user.getId()).thenReturn("user-1");
         when(issuedCredential.getId()).thenReturn("issued-1");
-        when(issuedCredential.getVerifiableCredentialId()).thenReturn("credential-1");
-        when(issuedCredential.getIssuedAt()).thenReturn(1_785_227_763_540L);
+        when(issuedCredential.getVerifiableCredentialId()).thenReturn(" ");
         when(userProvider.getIssuedVerifiableCredentialsStreamByUser("user-1")).thenReturn(Stream.of(issuedCredential));
-        when(statusListRepository.findSuccessfulMappingByTokenIds(eq("realm-1"), eq("user-1"), any()))
-                .thenReturn(Optional.empty());
-        when(statusListRepository.claimUnlinkedSuccessfulMappingNearIssuedAt(
-                        eq("realm-1"), eq("user-1"), eq(1_785_227_763_540L), eq(60_000L), eq("issued-1")))
-                .thenReturn(Optional.of(mapping));
-        when(userProvider.removeIssuedVerifiableCredential("issued-1")).thenReturn(true);
 
-        CredentialRevocationResponse response = service.revokeIssuedCredential(request, authResult);
+        StatusListException exception =
+                assertThrows(StatusListException.class, () -> service.revokeIssuedCredential(request, authResult));
 
-        assertNotNull(response);
-        assertTrue(response.isSuccess());
-
-        ArgumentCaptor<StatusListService.StatusListPayload> payloadCaptor =
-                ArgumentCaptor.forClass(StatusListService.StatusListPayload.class);
-        verify(statusListService).updateStatusList(payloadCaptor.capture(), anyString());
-        StatusListService.StatusListPayload payload = payloadCaptor.getValue();
-        assertEquals("list-1", payload.listId());
-        assertEquals(7L, payload.status().get(0).index());
-        assertEquals(TokenStatus.INVALID, payload.status().get(0).status());
-        verify(userProvider).removeIssuedVerifiableCredential("issued-1");
+        assertEquals(409, exception.getHttpStatus());
+        assertTrue(exception.getMessage().contains("verifiable credential id"));
+        verify(statusListService, never()).updateStatusList(any(), anyString());
+        verify(userProvider, never()).removeIssuedVerifiableCredential(anyString());
     }
 
     @Test
@@ -234,7 +216,7 @@ class CredentialRevocationServiceTest {
         when(issuedCredential.getId()).thenReturn("issued-1");
         when(issuedCredential.getVerifiableCredentialId()).thenReturn("credential-1");
         when(userProvider.getIssuedVerifiableCredentialsStreamByUser("user-1")).thenReturn(Stream.of(issuedCredential));
-        when(statusListRepository.findSuccessfulMappingByTokenIds(eq("realm-1"), eq("user-1"), any()))
+        when(statusListRepository.findSuccessfulMappingByTokenId("realm-1", "user-1", "credential-1"))
                 .thenReturn(Optional.of(mapping));
         doThrow(new StatusListException("Status list server unavailable", 503))
                 .when(statusListService)
@@ -248,28 +230,6 @@ class CredentialRevocationServiceTest {
     }
 
     @Test
-    void revokeIssuedCredential_removeFails_throws500AfterStatusUpdate() throws Exception {
-        CredentialRevocationRequest request = issuedRevocationRequest("issued-1", "reason");
-        AuthResult authResult = new AuthResult(user, null, null, null);
-        StatusListMappingEntity mapping = statusListMapping("list-1", 7L);
-
-        when(user.getId()).thenReturn("user-1");
-        when(issuedCredential.getId()).thenReturn("issued-1");
-        when(issuedCredential.getVerifiableCredentialId()).thenReturn("credential-1");
-        when(userProvider.getIssuedVerifiableCredentialsStreamByUser("user-1")).thenReturn(Stream.of(issuedCredential));
-        when(statusListRepository.findSuccessfulMappingByTokenIds(eq("realm-1"), eq("user-1"), any()))
-                .thenReturn(Optional.of(mapping));
-        when(userProvider.removeIssuedVerifiableCredential("issued-1")).thenReturn(false);
-
-        StatusListException exception =
-                assertThrows(StatusListException.class, () -> service.revokeIssuedCredential(request, authResult));
-
-        assertEquals(500, exception.getHttpStatus());
-        assertTrue(exception.getMessage().contains("Issued credential could not be removed"));
-        verify(statusListService).updateStatusList(any(), anyString());
-    }
-
-    @Test
     void revokeIssuedCredential_allowsDifferentClientBecauseUserOwnsIssuedCredential() throws Exception {
         CredentialRevocationRequest request = issuedRevocationRequest("issued-1", "reason");
         AuthResult authResult = new AuthResult(user, null, null, null);
@@ -279,15 +239,14 @@ class CredentialRevocationServiceTest {
         when(issuedCredential.getId()).thenReturn("issued-1");
         when(issuedCredential.getVerifiableCredentialId()).thenReturn("credential-1");
         when(userProvider.getIssuedVerifiableCredentialsStreamByUser("user-1")).thenReturn(Stream.of(issuedCredential));
-        when(statusListRepository.findSuccessfulMappingByTokenIds(eq("realm-1"), eq("user-1"), any()))
+        when(statusListRepository.findSuccessfulMappingByTokenId("realm-1", "user-1", "credential-1"))
                 .thenReturn(Optional.of(mapping));
-        when(userProvider.removeIssuedVerifiableCredential("issued-1")).thenReturn(true);
 
         CredentialRevocationResponse response = service.revokeIssuedCredential(request, authResult);
 
         assertTrue(response.isSuccess());
         verify(statusListService).updateStatusList(any(), anyString());
-        verify(userProvider).removeIssuedVerifiableCredential("issued-1");
+        verify(userProvider, never()).removeIssuedVerifiableCredential(anyString());
     }
 
     private CredentialRevocationRequest issuedRevocationRequest(String credentialId, String reason) {
@@ -304,7 +263,7 @@ class CredentialRevocationServiceTest {
         mapping.setIdx(index);
         mapping.setUserId("user-1");
         mapping.setRealmId("realm-1");
-        mapping.setTokenId("issued-1");
+        mapping.setTokenId("credential-1");
         mapping.setStatus(StatusListMappingEntity.MappingStatus.SUCCESS);
         return mapping;
     }

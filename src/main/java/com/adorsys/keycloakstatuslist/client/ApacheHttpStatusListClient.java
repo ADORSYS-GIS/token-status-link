@@ -14,6 +14,7 @@ import org.apache.hc.client5.http.classic.methods.HttpGet;
 import org.apache.hc.client5.http.classic.methods.HttpPatch;
 import org.apache.hc.client5.http.classic.methods.HttpPost;
 import org.apache.hc.client5.http.classic.methods.HttpPut;
+import org.apache.hc.client5.http.classic.methods.HttpUriRequestBase;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.core5.http.ClassicHttpResponse;
 import org.apache.hc.core5.http.HttpRequest;
@@ -401,16 +402,10 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
      * @param requestId the request ID to set in the X-Request-ID header
      * @param jsonPayload the JSON payload to set as the request entity
      */
-    private void configureJsonRequest(HttpRequest request, String requestId, String jsonPayload) {
+    private void configureJsonRequest(HttpUriRequestBase request, String requestId, String jsonPayload) {
         request.setHeader("Content-Type", "application/json");
         configureCommonHeaders(request, requestId);
-        if (request instanceof HttpPost) {
-            ((HttpPost) request).setEntity(new StringEntity(jsonPayload));
-        } else if (request instanceof HttpPut) {
-            ((HttpPut) request).setEntity(new StringEntity(jsonPayload));
-        } else if (request instanceof HttpPatch) {
-            ((HttpPatch) request).setEntity(new StringEntity(jsonPayload));
-        }
+        request.setEntity(new StringEntity(jsonPayload));
     }
 
     /**

@@ -14,11 +14,7 @@ import com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationResponse;
 import com.adorsys.keycloakstatuslist.model.TokenStatus;
 import java.time.Instant;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 import org.jboss.logging.Logger;
 import org.keycloak.models.IssuedVerifiableCredentialModel;
@@ -34,7 +30,6 @@ import org.keycloak.utils.StringUtil;
 public class CredentialRevocationService {
 
     private static final Logger logger = Logger.getLogger(CredentialRevocationService.class);
-    private static final long ISSUANCE_MAPPING_RECONCILIATION_WINDOW_MS = 60_000L;
 
     private final KeycloakSession session;
     private final StatusListRepository statusListRepository;
@@ -83,16 +78,20 @@ public class CredentialRevocationService {
             CredentialRevocationRequest request, AuthResult authResult) throws StatusListException {
 
         String requestId = UUID.randomUUID().toString();
-        Objects.requireNonNull(request);
-        Objects.requireNonNull(authResult);
+        if (request == null) {
+            throw new IllegalArgumentException("Revocation request is required");
+        }
+        if (authResult == null) {
+            throw new IllegalArgumentException("Authentication result is required");
+        }
 
         if (StringUtil.isBlank(request.getCredentialId())) {
-            throw new StatusListException("Missing credential_id", 400);
+            throw new IllegalArgumentException("Missing credential_id");
         }
 
         UserModel user = authResult.user();
         if (user == null || StringUtil.isBlank(user.getId())) {
-            throw new StatusListException("Authenticated user is required", 401);
+            throw new IllegalArgumentException("Authenticated user is required");
         }
 
         RealmModel realm = session.getContext().getRealm();
@@ -115,11 +114,6 @@ public class CredentialRevocationService {
             StatusListPayload revocationPayload =
                     new StatusListPayload(mapping.getStatusListId(), List.of(statusEntry));
             getStatusListService().updateStatusList(revocationPayload, requestId);
-
-            boolean removed = session.users().removeIssuedVerifiableCredential(credentialId);
-            if (!removed) {
-                throw new StatusListException("Issued credential could not be removed", 500);
-            }
 
             Instant revokedAt = Instant.now();
             logger.infof(
@@ -151,39 +145,13 @@ public class CredentialRevocationService {
             throw new StatusListException("Status list mapping repository is not available", 500);
         }
 
-        Set<String> tokenIds = new LinkedHashSet<>();
-        addIfNotBlank(tokenIds, issuedCredential.getId());
-        addIfNotBlank(tokenIds, issuedCredential.getVerifiableCredentialId());
+        String verifiableCredentialId = issuedCredential.getVerifiableCredentialId();
+        if (StringUtil.isBlank(verifiableCredentialId)) {
+            throw new StatusListException("Issued credential is not linked to a verifiable credential id", 409);
+        }
 
         return statusListRepository
-                .findSuccessfulMappingByTokenIds(realmId, userId, tokenIds)
-                .or(() -> claimUnlinkedStatusListMapping(realmId, userId, issuedCredential))
+                .findSuccessfulMappingByTokenId(realmId, userId, verifiableCredentialId)
                 .orElseThrow(() -> new StatusListException("Status list mapping not found for issued credential", 404));
-    }
-
-    private void addIfNotBlank(Set<String> values, String value) {
-        if (StringUtil.isNotBlank(value)) {
-            values.add(value);
-        }
-    }
-
-    private Optional<StatusListMappingEntity> claimUnlinkedStatusListMapping(
-            String realmId, String userId, IssuedVerifiableCredentialModel issuedCredential) {
-        Long issuedAt = issuedCredential.getIssuedAt();
-        String tokenId = StringUtil.isNotBlank(issuedCredential.getId())
-                ? issuedCredential.getId()
-                : issuedCredential.getVerifiableCredentialId();
-
-        if (issuedAt == null || StringUtil.isBlank(tokenId)) {
-            return Optional.empty();
-        }
-
-        logger.warnf(
-                "Status list mapping was not linked to issued credential id %s. "
-                        + "Attempting reconciliation by issuance timestamp.",
-                tokenId);
-
-        return statusListRepository.claimUnlinkedSuccessfulMappingNearIssuedAt(
-                realmId, userId, issuedAt, ISSUANCE_MAPPING_RECONCILIATION_WINDOW_MS, tokenId);
     }
 }

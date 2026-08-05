@@ -114,8 +114,41 @@ mode=issued_credential_revocation&credential_id=<issued-credential-id>&reason=<o
 ```
 
 The plugin verifies that the bearer token belongs to the user who owns the issued credential, updates the credential's
-status-list entry to `INVALID`, then removes the issued credential record from Keycloak. Requests that do not use
-`mode=issued_credential_revocation` continue through Keycloak's default token revocation behavior.
+status-list entry to `INVALID`, and keeps the issued credential record in Keycloak so clients can continue to display
+it with a revoked status. Requests that do not use `mode=issued_credential_revocation` continue through Keycloak's
+default token revocation behavior.
+
+The status-list mapping is linked to the Keycloak issued credential through the verifiable credential id. During
+issuance, the protocol mapper stores the credential `id` claim in the status-list mapping table. During revocation, the
+service loads the authenticated user's `IssuedVerifiableCredentialModel` by Keycloak issued credential id, reads
+`getVerifiableCredentialId()`, and uses that value to locate the status-list mapping. This avoids matching by issuance
+time or request token details.
+
+### Client credential list and status
+
+The mock frontend loads the user's issued credentials from Keycloak's account endpoint for the authenticated user. The
+credential id sent to the revocation endpoint is the Keycloak issued credential id returned by that account API. The
+server-side revocation check always re-loads the credential from the authenticated user's own issued credential stream,
+so a user cannot revoke another user's issued credential by submitting its id.
+
+The authoritative credential validity remains the status list entry referenced by the credential's `status_list` claim
+(`uri` and `idx`). Wallets and verifiers check that entry by fetching the status-list JWT from the status list server.
+If a frontend needs cross-session source-of-truth status display, Keycloak needs to expose the issued credential status
+directly or provide a status lookup endpoint; otherwise the UI can only keep the revoked state returned by its own
+revocation call.
+
+### Status list server API v1 endpoints
+
+The plugin uses the status list server API v1 paths:
+
+| Operation | Endpoint |
+| --------- | -------- |
+| Register issuer credential/public key | `POST /api/v1/credentials` |
+| Retrieve status list JWT | `GET /api/v1/status-lists/{list_id}` with `Accept: application/statuslist+jwt` |
+| Publish/update status entries | `PUT /api/v1/status-lists/{list_id}/statuses` or `PATCH /api/v1/status-lists/{list_id}/statuses` |
+
+External clients, monitoring, trust stores, and deployment configuration must use these v1 paths instead of the older
+`/statuslists`, `/statuslists/publish`, or `/statuslists/update` endpoints.
 
 ## Development and Testing
 

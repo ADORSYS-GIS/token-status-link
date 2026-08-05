@@ -10,7 +10,6 @@ import com.adorsys.keycloakstatuslist.exception.StatusListException;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationResponse;
 import com.adorsys.keycloakstatuslist.service.CredentialRevocationService;
-import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.MultivaluedMap;
 import jakarta.ws.rs.core.Response;
@@ -26,11 +25,9 @@ import org.keycloak.utils.StringUtil;
 public class CredentialRevocationEndpoint extends TokenRevocationEndpoint {
 
     private static final Logger logger = Logger.getLogger(CredentialRevocationEndpoint.class);
-    private static final String BEARER_PREFIX = "bearer";
 
     private final KeycloakSession session;
     private final CredentialRevocationService revocationService;
-    private final HttpHeaders headers;
 
     /**
      * Constructor with dependency injection for better testability.
@@ -44,14 +41,12 @@ public class CredentialRevocationEndpoint extends TokenRevocationEndpoint {
         super(session, event);
         this.session = session;
         this.revocationService = revocationService;
-        this.headers = session.getContext().getRequestHeaders();
     }
 
     @Override
     public Response revoke() {
         MultivaluedMap<String, String> form =
                 session.getContext().getHttpRequest().getDecodedFormParameters();
-        String authorizationHeader = getHeaders().getHeaderString(HttpHeaders.AUTHORIZATION);
         String revocationMode = form.getFirst(REVOCATION_MODE_KEY);
 
         if (!ISSUED_CREDENTIAL_REVOCATION_MODE.equals(revocationMode)) {
@@ -73,19 +68,6 @@ public class CredentialRevocationEndpoint extends TokenRevocationEndpoint {
                     Response.Status.INTERNAL_SERVER_ERROR, "Credential revocation service is not configured");
         }
 
-        if (authorizationHeader == null || authorizationHeader.trim().isEmpty()) {
-            logger.debug("No authorization header provided, returning error for custom revocation");
-            return createErrorResponse(Response.Status.UNAUTHORIZED, "Missing Authorization header");
-        }
-
-        String[] authParts = authorizationHeader.trim().split("\\s+", 2);
-        if (authParts.length != 2 || !BEARER_PREFIX.equalsIgnoreCase(authParts[0])) {
-            logger.debugf("Invalid authorization header format: %s, returning error", authorizationHeader);
-            return createErrorResponse(Response.Status.BAD_REQUEST, "Invalid authorization header format");
-        }
-
-        String token = authParts[1].trim();
-
         logger.infof("Attempting credential revocation via Token Status List. Mode: %s", revocationMode);
 
         try {
@@ -94,7 +76,7 @@ public class CredentialRevocationEndpoint extends TokenRevocationEndpoint {
             request.setRevocationReason(form.getFirst(REVOCATION_REASON_KEY));
             request.setCredentialId(form.getFirst(CREDENTIAL_ID_KEY));
 
-            AuthResult authResult = authenticateBearerToken(token);
+            AuthResult authResult = authenticateBearerToken();
             if (authResult == null || authResult.user() == null) {
                 return createErrorResponse(Response.Status.UNAUTHORIZED, "Invalid bearer token");
             }
@@ -126,18 +108,6 @@ public class CredentialRevocationEndpoint extends TokenRevocationEndpoint {
     }
 
     /**
-     * Gets the HTTP headers, handling both injected and constructor-provided
-     * headers. Made protected for testability.
-     */
-    protected HttpHeaders getHeaders() {
-        if (headers == null) {
-            throw new IllegalStateException(
-                    "HttpHeaders not properly injected via @Context for standard revocation endpoint");
-        }
-        return headers;
-    }
-
-    /**
      * Gets the revocation service, handling both injected and constructor-provided
      * services. Made protected for testability.
      */
@@ -148,15 +118,8 @@ public class CredentialRevocationEndpoint extends TokenRevocationEndpoint {
     /**
      * Authenticates a standard Keycloak bearer access token. Made protected for testability.
      */
-    protected AuthResult authenticateBearerToken(String token) {
-        return new AppAuthManager.BearerTokenAuthenticator(session)
-                .setRealm(session.getContext().getRealm())
-                .setUriInfo(session.getContext().getUri())
-                .setConnection(session.getContext().getConnection())
-                .setHeaders(getHeaders())
-                .setRequest(session.getContext().getHttpRequest())
-                .setTokenString(token)
-                .authenticate();
+    protected AuthResult authenticateBearerToken() {
+        return new AppAuthManager.BearerTokenAuthenticator(session).authenticate();
     }
 
     /**

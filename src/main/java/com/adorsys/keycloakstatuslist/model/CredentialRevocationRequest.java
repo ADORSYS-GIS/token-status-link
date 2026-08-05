@@ -33,12 +33,6 @@ public class CredentialRevocationRequest {
         this.revocationReason = revocationReason;
     }
 
-    public CredentialRevocationRequest(String revocationMode, String revocationReason, String credentialId) {
-        this.revocationMode = revocationMode;
-        this.revocationReason = revocationReason;
-        this.credentialId = credentialId;
-    }
-
     public String getRevocationMode() {
         return revocationMode;
     }
