@@ -177,6 +177,19 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
     }
 
     @Test
+    void shouldUseIssuedCredentialIdFromDpopAccessTokenAsMappingKey() {
+        mockGetNextIndex();
+        when(headers.getHeaderString(HttpHeaders.AUTHORIZATION))
+                .thenReturn("DPoP " + accessTokenWithIssuedCredentialId("issued-credential-1"));
+
+        mapper.setClaim(claims, userSession);
+
+        var entityCaptor = ArgumentCaptor.forClass(StatusListMappingEntity.class);
+        verify(entityManager).persist(entityCaptor.capture());
+        assertEquals("issued-credential-1", entityCaptor.getValue().getTokenId());
+    }
+
+    @Test
     void shouldMapSuccessfully_WhenSwitchingToNewList() {
         // Force running status list to be at max capacity to trigger creation of new list ID
         mockStatusListRepository(StatusListConfig.DEFAULT_MAX_ENTRIES);

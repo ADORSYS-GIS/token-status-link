@@ -52,7 +52,8 @@ public class StatusListProtocolMapper extends OID4VCMapper {
 
     private static final Logger logger = Logger.getLogger(StatusListProtocolMapper.class);
     private static final List<ProviderConfigProperty> CONFIG_PROPERTIES = new ArrayList<>();
-    private static final String BEARER_PREFIX = "bearer";
+    private static final String BEARER_AUTH_SCHEME = "bearer";
+    private static final String DPOP_AUTH_SCHEME = "dpop";
 
     private final KeycloakSession session;
     private final StatusListService statusListService;
@@ -231,13 +232,13 @@ public class StatusListProtocolMapper extends OID4VCMapper {
          * correlation key; revocation authorization is still enforced against Keycloak's
          * issued credential store.
          */
-        return getBearerToken()
+        return getAccessTokenFromAuthorizationHeader()
                 .flatMap(this::readAccessToken)
                 .map(AccessToken::getAuthorizationDetails)
                 .flatMap(this::findIssuedCredentialId);
     }
 
-    private Optional<String> getBearerToken() {
+    private Optional<String> getAccessTokenFromAuthorizationHeader() {
         try {
             HttpHeaders headers = session.getContext().getRequestHeaders();
             if (headers == null) {
@@ -250,7 +251,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
             }
 
             String[] authParts = authorizationHeader.trim().split("\\s+", 2);
-            if (authParts.length != 2 || !BEARER_PREFIX.equalsIgnoreCase(authParts[0])) {
+            if (authParts.length != 2 || !isAccessTokenAuthScheme(authParts[0])) {
                 return Optional.empty();
             }
 
@@ -260,6 +261,10 @@ public class StatusListProtocolMapper extends OID4VCMapper {
             logger.debug("Could not read bearer token from current request", e);
             return Optional.empty();
         }
+    }
+
+    private boolean isAccessTokenAuthScheme(String scheme) {
+        return BEARER_AUTH_SCHEME.equalsIgnoreCase(scheme) || DPOP_AUTH_SCHEME.equalsIgnoreCase(scheme);
     }
 
     private Optional<AccessToken> readAccessToken(String token) {
