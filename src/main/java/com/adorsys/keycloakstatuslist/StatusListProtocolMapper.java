@@ -1,7 +1,6 @@
 package com.adorsys.keycloakstatuslist;
 
 import static com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity.MappingStatus;
-import static org.keycloak.OID4VCConstants.OPENID_CREDENTIAL;
 
 import com.adorsys.keycloakstatuslist.client.ApacheHttpStatusListClient;
 import com.adorsys.keycloakstatuslist.client.StatusListHttpClient;
@@ -15,8 +14,8 @@ import com.adorsys.keycloakstatuslist.model.TokenStatus;
 import com.adorsys.keycloakstatuslist.service.CircuitBreaker;
 import com.adorsys.keycloakstatuslist.service.CryptoIdentityService;
 import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
+import com.adorsys.keycloakstatuslist.service.IssuedCredentialIdResolver;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
-import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.UriBuilder;
 import java.io.IOException;
 import java.net.URI;
@@ -27,18 +26,13 @@ import java.util.Map;
 import java.util.Optional;
 import org.apache.commons.collections4.ListUtils;
 import org.jboss.logging.Logger;
-import org.keycloak.TokenVerifier;
-import org.keycloak.common.VerificationException;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserSessionModel;
 import org.keycloak.protocol.ProtocolMapper;
 import org.keycloak.protocol.oid4vc.issuance.mappers.OID4VCMapper;
-import org.keycloak.protocol.oid4vc.model.OID4VCAuthorizationDetail;
 import org.keycloak.protocol.oid4vc.model.VerifiableCredential;
 import org.keycloak.provider.ProviderConfigProperty;
-import org.keycloak.representations.AccessToken;
-import org.keycloak.representations.AuthorizationDetailsJSONRepresentation;
 import org.keycloak.utils.StringUtil;
 
 /**
@@ -52,24 +46,25 @@ public class StatusListProtocolMapper extends OID4VCMapper {
 
     private static final Logger logger = Logger.getLogger(StatusListProtocolMapper.class);
     private static final List<ProviderConfigProperty> CONFIG_PROPERTIES = new ArrayList<>();
-    private static final String BEARER_AUTH_SCHEME = "bearer";
-    private static final String DPOP_AUTH_SCHEME = "dpop";
 
     private final KeycloakSession session;
     private final StatusListService statusListService;
     private final StatusListRepository statusListRepository;
+    private final IssuedCredentialIdResolver issuedCredentialIdResolver;
 
     public StatusListProtocolMapper() {
         // An empty mapper constructor is required by Keycloak
         this.session = null;
         this.statusListService = null;
         this.statusListRepository = null;
+        this.issuedCredentialIdResolver = null;
     }
 
     public StatusListProtocolMapper(KeycloakSession session) {
         this.session = session;
         this.statusListRepository = new StatusListRepository(session);
         this.statusListService = createStatusListService(session);
+        this.issuedCredentialIdResolver = new IssuedCredentialIdResolver(session);
     }
 
     /**
@@ -213,7 +208,14 @@ public class StatusListProtocolMapper extends OID4VCMapper {
     }
 
     private String resolveTokenId(Map<String, Object> claims) {
-        Optional<String> issuedCredentialId = resolveIssuedCredentialIdFromAccessToken();
+        /*
+         * Keycloak records the IssuedVerifiableCredentialModel id in the
+         * authenticated OID4VCI access token authorization details before protocol
+         * mappers run. We store it only as the status-list correlation key; the
+         * revocation endpoint still enforces ownership from Keycloak's issued
+         * credential store.
+         */
+        Optional<String> issuedCredentialId = issuedCredentialIdResolver.resolve();
         if (issuedCredentialId.isPresent()) {
             return issuedCredentialId.get();
         }
@@ -223,71 +225,6 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         }
 
         return null;
-    }
-
-    private Optional<String> resolveIssuedCredentialIdFromAccessToken() {
-        /*
-         * The OID4VCI credential endpoint authenticates and validates this token before
-         * protocol mappers run. We read issued_credential_id only as the status-list
-         * correlation key; revocation authorization is still enforced against Keycloak's
-         * issued credential store.
-         */
-        return getAccessTokenFromAuthorizationHeader()
-                .flatMap(this::readAccessToken)
-                .map(AccessToken::getAuthorizationDetails)
-                .flatMap(this::findIssuedCredentialId);
-    }
-
-    private Optional<String> getAccessTokenFromAuthorizationHeader() {
-        try {
-            HttpHeaders headers = session.getContext().getRequestHeaders();
-            if (headers == null) {
-                return Optional.empty();
-            }
-
-            String authorizationHeader = headers.getHeaderString(HttpHeaders.AUTHORIZATION);
-            if (StringUtil.isBlank(authorizationHeader)) {
-                return Optional.empty();
-            }
-
-            String[] authParts = authorizationHeader.trim().split("\\s+", 2);
-            if (authParts.length != 2 || !isAccessTokenAuthScheme(authParts[0])) {
-                return Optional.empty();
-            }
-
-            String token = authParts[1].trim();
-            return StringUtil.isBlank(token) ? Optional.empty() : Optional.of(token);
-        } catch (RuntimeException e) {
-            logger.debug("Could not read bearer token from current request", e);
-            return Optional.empty();
-        }
-    }
-
-    private boolean isAccessTokenAuthScheme(String scheme) {
-        return BEARER_AUTH_SCHEME.equalsIgnoreCase(scheme) || DPOP_AUTH_SCHEME.equalsIgnoreCase(scheme);
-    }
-
-    private Optional<AccessToken> readAccessToken(String token) {
-        try {
-            return Optional.of(TokenVerifier.create(token, AccessToken.class).getToken());
-        } catch (VerificationException e) {
-            logger.debug("Could not parse current bearer token as Keycloak access token", e);
-            return Optional.empty();
-        }
-    }
-
-    private Optional<String> findIssuedCredentialId(List<AuthorizationDetailsJSONRepresentation> authorizationDetails) {
-        if (authorizationDetails == null || authorizationDetails.isEmpty()) {
-            return Optional.empty();
-        }
-
-        return authorizationDetails.stream()
-                .filter(detail -> OPENID_CREDENTIAL.equals(detail.getType()))
-                .map(detail -> detail.getCustomData().get(OID4VCAuthorizationDetail.ISSUED_CREDENTIAL_ID))
-                .filter(String.class::isInstance)
-                .map(String.class::cast)
-                .filter(StringUtil::isNotBlank)
-                .findFirst();
     }
 
     /**
@@ -337,8 +274,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
 
         try {
             logger.debugf("Persisting completion mapping status: %s", mapping.getStatus());
-            statusListRepository.updateMappingCompletion(
-                    realmId, mapping.getStatusListId(), mapping.getIdx(), mapping.getStatus(), tokenId);
+            statusListRepository.save(mapping);
         } catch (Exception e) {
             logger.error("Failed to persist completion mapping status", e);
             return null;

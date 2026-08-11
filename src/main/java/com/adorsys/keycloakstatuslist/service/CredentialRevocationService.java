@@ -147,7 +147,7 @@ public class CredentialRevocationService {
 
         String issuedCredentialId = issuedCredential.getId();
         if (StringUtil.isBlank(issuedCredentialId)) {
-            throw new StatusListException("Issued credential is missing its Keycloak id", 409);
+            throw new IllegalStateException("Issued credential is missing its Keycloak id");
         }
 
         return statusListRepository

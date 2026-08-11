@@ -158,9 +158,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         assertEquals(TEST_REALM_ID, capturedEntity.getRealmId());
         assertEquals("did:example:123456789", capturedEntity.getTokenId());
         assertEquals(MappingStatus.SUCCESS, capturedEntity.getStatus());
-        verify(statusListRepository)
-                .updateMappingCompletion(
-                        TEST_REALM_ID, TEST_LIST_ID, idx, MappingStatus.SUCCESS, "did:example:123456789");
+        verify(statusListRepository).save(capturedEntity);
     }
 
     @Test
@@ -264,9 +262,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
     @Test
     void shouldNotMap_IfDbCompletionFailsAfterPublishingStatus() {
         mockGetNextIndex();
-        doThrow(new PersistenceException("DB Error"))
-                .when(statusListRepository)
-                .updateMappingCompletion(anyString(), anyString(), any(), any(), any());
+        doThrow(new PersistenceException("DB Error")).when(statusListRepository).save(any());
 
         mapper.setClaim(claims, userSession);
 
@@ -380,9 +376,9 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
         lenient().doReturn(mapping).when(statusListRepository).getLatestMapping(anyString());
         lenient()
-                .doNothing()
+                .doAnswer(invocation -> invocation.getArgument(0))
                 .when(statusListRepository)
-                .updateMappingCompletion(anyString(), anyString(), any(), any(), any());
+                .save(any());
     }
 
     private long mockGetNextIndex() {

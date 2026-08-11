@@ -133,48 +133,18 @@ public class StatusListRepository {
     }
 
     /**
-     * Completes a booked status-list mapping after the status list server accepts the status entry.
+     * Persists changes to a status-list mapping entity.
      */
-    public void updateMappingCompletion(
-            String realmId,
-            String statusListId,
-            Long idx,
-            StatusListMappingEntity.MappingStatus status,
-            String tokenId) {
-        if (realmId == null || realmId.isBlank()) {
-            throw new IllegalArgumentException("realmId is required");
-        }
-        if (statusListId == null || statusListId.isBlank()) {
-            throw new IllegalArgumentException("statusListId is required");
-        }
-        if (idx == null) {
-            throw new IllegalArgumentException("idx is required");
-        }
-        if (status == null) {
-            throw new IllegalArgumentException("status is required");
+    public StatusListMappingEntity save(StatusListMappingEntity mapping) {
+        if (mapping == null) {
+            throw new IllegalArgumentException("mapping is required");
         }
 
+        AtomicReference<StatusListMappingEntity> result = new AtomicReference<>();
         withEntityManagerInTransaction(em -> {
-            String q = """
-                        SELECT m FROM StatusListMappingEntity m
-                        WHERE m.realmId = :realmId
-                          AND m.statusListId = :statusListId
-                          AND m.idx = :idx
-                    """;
-
-            TypedQuery<StatusListMappingEntity> query = em.createQuery(q, StatusListMappingEntity.class);
-            query.setParameter("realmId", realmId);
-            query.setParameter("statusListId", statusListId);
-            query.setParameter("idx", idx);
-            query.setMaxResults(1);
-            query.setLockMode(LockModeType.PESSIMISTIC_WRITE);
-
-            StatusListMappingEntity mapping = query.getResultStream()
-                    .findFirst()
-                    .orElseThrow(() -> new IllegalStateException("Status list mapping booking not found"));
-            mapping.setStatus(status);
-            mapping.setTokenId(tokenId);
-            em.flush();
+            result.set(em.merge(mapping));
         });
+
+        return result.get();
     }
 }
