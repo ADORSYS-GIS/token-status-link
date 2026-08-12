@@ -12,9 +12,12 @@ import com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
 import com.adorsys.keycloakstatuslist.jpa.repository.StatusListRepository;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationResponse;
+import com.adorsys.keycloakstatuslist.model.IssuedCredentialStatusResponse;
+import com.adorsys.keycloakstatuslist.model.IssuedCredentialStatusResponse.IssuedCredentialStatus;
 import com.adorsys.keycloakstatuslist.model.TokenStatus;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.jboss.logging.Logger;
 import org.keycloak.models.IssuedVerifiableCredentialModel;
@@ -81,19 +84,11 @@ public class CredentialRevocationService {
         if (request == null) {
             throw new IllegalArgumentException("Revocation request is required");
         }
-        if (authResult == null) {
-            throw new IllegalArgumentException("Authentication result is required");
-        }
-
         if (StringUtil.isBlank(request.getCredentialId())) {
             throw new IllegalArgumentException("Missing credential_id");
         }
 
-        UserModel user = authResult.user();
-        if (user == null || StringUtil.isBlank(user.getId())) {
-            throw new IllegalArgumentException("Authenticated user is required");
-        }
-
+        UserModel user = getAuthenticatedUser(authResult);
         RealmModel realm = session.getContext().getRealm();
         String userId = user.getId();
         String credentialId = request.getCredentialId().trim();
@@ -114,6 +109,8 @@ public class CredentialRevocationService {
             StatusListPayload revocationPayload =
                     new StatusListPayload(mapping.getStatusListId(), List.of(statusEntry));
             getStatusListService().updateStatusList(revocationPayload, requestId);
+            mapping.setTokenStatus(TokenStatus.INVALID);
+            statusListRepository.save(mapping);
 
             Instant revokedAt = Instant.now();
             logger.infof(
@@ -136,6 +133,65 @@ public class CredentialRevocationService {
                     requestId, e.getMessage(), e);
             throw new StatusListException("Failed to process issued credential revocation: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Lists the authenticated user's issued credentials with status from the plugin mapping table.
+     */
+    public IssuedCredentialStatusResponse getIssuedCredentialStatuses(AuthResult authResult) {
+        UserModel user = getAuthenticatedUser(authResult);
+        RealmModel realm = session.getContext().getRealm();
+        String userId = user.getId();
+
+        List<IssuedVerifiableCredentialModel> issuedCredentials = session.users()
+                .getIssuedVerifiableCredentialsStreamByUser(userId)
+                .toList();
+
+        List<String> credentialIds = issuedCredentials.stream()
+                .map(IssuedVerifiableCredentialModel::getId)
+                .filter(StringUtil::isNotBlank)
+                .toList();
+        Map<String, StatusListMappingEntity> mappings =
+                statusListRepository.findSuccessfulMappingsByTokenIds(realm.getId(), userId, credentialIds);
+
+        List<IssuedCredentialStatus> statuses = issuedCredentials.stream()
+                .map(credential -> toIssuedCredentialStatus(credential, mappings.get(credential.getId())))
+                .toList();
+
+        return new IssuedCredentialStatusResponse(statuses);
+    }
+
+    private UserModel getAuthenticatedUser(AuthResult authResult) {
+        if (authResult == null) {
+            throw new IllegalArgumentException("Authentication result is required");
+        }
+
+        UserModel user = authResult.user();
+        if (user == null || StringUtil.isBlank(user.getId())) {
+            throw new IllegalArgumentException("Authenticated user is required");
+        }
+
+        return user;
+    }
+
+    private IssuedCredentialStatus toIssuedCredentialStatus(
+            IssuedVerifiableCredentialModel credential, StatusListMappingEntity mapping) {
+        return new IssuedCredentialStatus(
+                credential.getId(),
+                credential.getVerifiableCredentialId(),
+                credential.getIssuedAt(),
+                credential.getExpiresAt(),
+                credential.getClientId(),
+                credential.getRevision(),
+                resolveTokenStatus(mapping));
+    }
+
+    private String resolveTokenStatus(StatusListMappingEntity mapping) {
+        if (mapping == null || mapping.getTokenStatus() == null) {
+            return "UNKNOWN";
+        }
+
+        return mapping.getTokenStatus().name();
     }
 
     private StatusListMappingEntity findStatusListMapping(

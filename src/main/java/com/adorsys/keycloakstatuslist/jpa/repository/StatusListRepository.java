@@ -4,10 +4,14 @@ import com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import jakarta.persistence.TypedQuery;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.jboss.logging.Logger;
 import org.keycloak.connections.jpa.JpaConnectionProvider;
 import org.keycloak.models.KeycloakSession;
@@ -130,6 +134,47 @@ public class StatusListRepository {
         });
 
         return Optional.ofNullable(result.get());
+    }
+
+    /**
+     * Finds successful mappings for Keycloak issued credential ids owned by the given user.
+     */
+    public Map<String, StatusListMappingEntity> findSuccessfulMappingsByTokenIds(
+            String realmId, String userId, Collection<String> tokenIds) {
+        List<String> normalizedTokenIds = tokenIds == null
+                ? List.of()
+                : tokenIds.stream()
+                        .filter(tokenId -> tokenId != null && !tokenId.isBlank())
+                        .distinct()
+                        .toList();
+        if (normalizedTokenIds.isEmpty()) {
+            return Map.of();
+        }
+
+        AtomicReference<List<StatusListMappingEntity>> result = new AtomicReference<>(List.of());
+
+        withEntityManagerInTransaction(em -> {
+            String q = """
+                        SELECT m FROM StatusListMappingEntity m
+                        WHERE m.realmId = :realmId
+                          AND m.userId = :userId
+                          AND m.tokenId IN :tokenIds
+                          AND m.status = :status
+                        ORDER BY m.createdTimestamp DESC
+                    """;
+
+            TypedQuery<StatusListMappingEntity> query = em.createQuery(q, StatusListMappingEntity.class);
+            query.setParameter("realmId", realmId);
+            query.setParameter("userId", userId);
+            query.setParameter("tokenIds", normalizedTokenIds);
+            query.setParameter("status", StatusListMappingEntity.MappingStatus.SUCCESS);
+
+            result.set(query.getResultList());
+        });
+
+        return result.get().stream()
+                .collect(Collectors.toMap(
+                        StatusListMappingEntity::getTokenId, Function.identity(), (first, ignored) -> first));
     }
 
     /**

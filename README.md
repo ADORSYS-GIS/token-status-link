@@ -13,7 +13,7 @@ The status list server should implement the OAuth 2.0 Status List pattern.
 ## Features
 
 - Publish token status to an external status list server
-- Support for different token statuses (VALID, REVOKED)
+- Support for OAuth Status List token statuses (VALID, INVALID, SUSPENDED)
 - Fixed connection parameters with safe defaults
 - Secure communication with TLS 1.2/1.3
 - Support for authentication with the status list server
@@ -117,6 +117,19 @@ The plugin verifies that the bearer token belongs to the user who owns the issue
 status-list entry to `INVALID`, and keeps the issued credential record in Keycloak so clients can continue to display
 it with a revoked status. Requests that do not use `mode=issued_credential_revocation` continue through Keycloak's
 default token revocation behavior.
+
+### Issued credential status lookup
+
+A frontend app can load the authenticated user's issued credentials with server-backed status information:
+
+```http
+GET /realms/{realm}/protocol/openid-connect/issued-credential-status
+Authorization: Bearer <user-access-token>
+Accept: application/json
+```
+
+The response contains only credentials owned by the authenticated user. The `status` value is sourced from the plugin's
+status-list mapping table and is returned as `VALID`, `INVALID`, `SUSPENDED`, or `UNKNOWN` when no mapping exists.
 
 ### Status list server API v1 endpoints
 
