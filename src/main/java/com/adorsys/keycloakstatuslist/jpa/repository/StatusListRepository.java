@@ -5,6 +5,7 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import jakarta.persistence.TypedQuery;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import org.jboss.logging.Logger;
@@ -92,6 +93,56 @@ public class StatusListRepository {
             query.setMaxResults(1);
 
             result.set(query.getResultStream().findFirst().orElse(null));
+        });
+
+        return result.get();
+    }
+
+    /**
+     * Finds the successful status-list mapping for the Keycloak issued credential id stored during issuance.
+     */
+    public Optional<StatusListMappingEntity> findSuccessfulMappingByTokenId(
+            String realmId, String userId, String tokenId) {
+        if (tokenId == null || tokenId.isBlank()) {
+            return Optional.empty();
+        }
+
+        AtomicReference<StatusListMappingEntity> result = new AtomicReference<>();
+
+        withEntityManagerInTransaction(em -> {
+            String q = """
+                        SELECT m FROM StatusListMappingEntity m
+                        WHERE m.realmId = :realmId
+                          AND m.userId = :userId
+                          AND m.tokenId = :tokenId
+                          AND m.status = :status
+                        ORDER BY m.createdTimestamp DESC
+                    """;
+
+            TypedQuery<StatusListMappingEntity> query = em.createQuery(q, StatusListMappingEntity.class);
+            query.setParameter("realmId", realmId);
+            query.setParameter("userId", userId);
+            query.setParameter("tokenId", tokenId);
+            query.setParameter("status", StatusListMappingEntity.MappingStatus.SUCCESS);
+            query.setMaxResults(1);
+
+            result.set(query.getResultStream().findFirst().orElse(null));
+        });
+
+        return Optional.ofNullable(result.get());
+    }
+
+    /**
+     * Persists changes to a status-list mapping entity.
+     */
+    public StatusListMappingEntity save(StatusListMappingEntity mapping) {
+        if (mapping == null) {
+            throw new IllegalArgumentException("mapping is required");
+        }
+
+        AtomicReference<StatusListMappingEntity> result = new AtomicReference<>();
+        withEntityManagerInTransaction(em -> {
+            result.set(em.merge(mapping));
         });
 
         return result.get();

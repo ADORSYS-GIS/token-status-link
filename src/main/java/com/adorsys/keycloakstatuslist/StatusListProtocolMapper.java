@@ -14,6 +14,7 @@ import com.adorsys.keycloakstatuslist.model.TokenStatus;
 import com.adorsys.keycloakstatuslist.service.CircuitBreaker;
 import com.adorsys.keycloakstatuslist.service.CryptoIdentityService;
 import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
+import com.adorsys.keycloakstatuslist.service.IssuedCredentialIdResolver;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
 import jakarta.ws.rs.core.UriBuilder;
 import java.io.IOException;
@@ -22,6 +23,7 @@ import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.apache.commons.collections4.ListUtils;
 import org.jboss.logging.Logger;
 import org.keycloak.models.KeycloakSession;
@@ -31,6 +33,7 @@ import org.keycloak.protocol.ProtocolMapper;
 import org.keycloak.protocol.oid4vc.issuance.mappers.OID4VCMapper;
 import org.keycloak.protocol.oid4vc.model.VerifiableCredential;
 import org.keycloak.provider.ProviderConfigProperty;
+import org.keycloak.utils.StringUtil;
 
 /**
  * Protocol mapper for adding `status_list` claims to issued Verifiable
@@ -47,18 +50,21 @@ public class StatusListProtocolMapper extends OID4VCMapper {
     private final KeycloakSession session;
     private final StatusListService statusListService;
     private final StatusListRepository statusListRepository;
+    private final IssuedCredentialIdResolver issuedCredentialIdResolver;
 
     public StatusListProtocolMapper() {
         // An empty mapper constructor is required by Keycloak
         this.session = null;
         this.statusListService = null;
         this.statusListRepository = null;
+        this.issuedCredentialIdResolver = null;
     }
 
     public StatusListProtocolMapper(KeycloakSession session) {
         this.session = session;
         this.statusListRepository = new StatusListRepository(session);
         this.statusListService = createStatusListService(session);
+        this.issuedCredentialIdResolver = new IssuedCredentialIdResolver(session);
     }
 
     /**
@@ -169,11 +175,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
                 .build();
         logger.debugf("Configuration: listId=%s, uri=%s", listId, uri);
 
-        // Get credential ID
-        String tokenId = null;
-        if (claims.get(Constants.ID_CLAIM_KEY) instanceof String id) {
-            tokenId = id;
-        }
+        String tokenId = resolveTokenId(claims);
 
         UserSessionModel userSession = session.getContext().getUserSession();
         String userId = userSession != null ? userSession.getUser().getId() : null;
@@ -205,15 +207,36 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         }
     }
 
+    private String resolveTokenId(Map<String, Object> claims) {
+        /*
+         * Keycloak records the IssuedVerifiableCredentialModel id in the
+         * authenticated OID4VCI access token authorization details before protocol
+         * mappers run. We store it only as the status-list correlation key; the
+         * revocation endpoint still enforces ownership from Keycloak's issued
+         * credential store.
+         */
+        Optional<String> issuedCredentialId = issuedCredentialIdResolver.resolve();
+        if (issuedCredentialId.isPresent()) {
+            return issuedCredentialId.get();
+        }
+
+        if (claims.get(Constants.ID_CLAIM_KEY) instanceof String id && StringUtil.isNotBlank(id)) {
+            return id;
+        }
+
+        return null;
+    }
+
     /**
      * Send status to server to create status list entry and store index mapping in database.
      */
     public Status sendStatusAndStoreIndexMapping(String statusListId, String uri, String userId, String tokenId) {
+        String realmId = session.getContext().getRealm().getId();
         StatusListMappingEntity mapping = new StatusListMappingEntity();
         mapping.setStatusListId(statusListId);
         mapping.setUserId(userId);
         mapping.setTokenId(tokenId);
-        mapping.setRealmId(session.getContext().getRealm().getId());
+        mapping.setRealmId(realmId);
 
         try {
             logger.debugf(
@@ -251,9 +274,10 @@ public class StatusListProtocolMapper extends OID4VCMapper {
 
         try {
             logger.debugf("Persisting completion mapping status: %s", mapping.getStatus());
-            statusListRepository.withEntityManagerInTransaction(em -> em.merge(mapping));
+            statusListRepository.save(mapping);
         } catch (Exception e) {
             logger.error("Failed to persist completion mapping status", e);
+            return null;
         }
 
         return status;
@@ -262,8 +286,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
     private void sendStatusToServer(long idx, String statusListId) throws IOException, StatusListException {
         // Prepare payload
         StatusListService.StatusListPayload payload = new StatusListService.StatusListPayload(
-                statusListId,
-                List.of(new StatusListService.StatusListPayload.StatusEntry(idx, TokenStatus.VALID.getValue())));
+                statusListId, List.of(new StatusListService.StatusListPayload.StatusEntry(idx, TokenStatus.VALID)));
 
         // Publish or update status list on server
         statusListService.publishOrUpdate(payload);
@@ -275,6 +298,6 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         String ID_CLAIM_KEY = "id";
         String STATUS_CLAIM_KEY = "status";
 
-        String HTTP_ENDPOINT_RETRIEVE_PATH = "/statuslists/%s";
+        String HTTP_ENDPOINT_RETRIEVE_PATH = "/api/v1/status-lists/%s";
     }
 }
