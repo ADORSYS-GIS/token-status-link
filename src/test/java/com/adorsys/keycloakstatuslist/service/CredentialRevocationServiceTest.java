@@ -18,7 +18,9 @@ import com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
 import com.adorsys.keycloakstatuslist.jpa.repository.StatusListRepository;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationResponse;
+import com.adorsys.keycloakstatuslist.model.IssuedCredentialStatusResponse;
 import com.adorsys.keycloakstatuslist.model.TokenStatus;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
@@ -106,6 +108,8 @@ class CredentialRevocationServiceTest {
         assertEquals(1, payload.status().size());
         assertEquals(7L, payload.status().get(0).index());
         assertEquals(TokenStatus.INVALID, payload.status().get(0).status());
+        assertEquals(TokenStatus.INVALID, mapping.getTokenStatus());
+        verify(statusListRepository).save(mapping);
         verify(userProvider, never()).removeIssuedVerifiableCredential(anyString());
     }
 
@@ -204,6 +208,8 @@ class CredentialRevocationServiceTest {
                 assertThrows(StatusListException.class, () -> service.revokeIssuedCredential(request, authResult));
 
         assertEquals(503, exception.getHttpStatus());
+        assertEquals(TokenStatus.VALID, mapping.getTokenStatus());
+        verify(statusListRepository, never()).save(any());
         verify(userProvider, never()).removeIssuedVerifiableCredential(anyString());
     }
 
@@ -226,6 +232,52 @@ class CredentialRevocationServiceTest {
         verify(userProvider, never()).removeIssuedVerifiableCredential(anyString());
     }
 
+    @Test
+    void getIssuedCredentialStatuses_returnsUserCredentialsWithServerBackedStatuses() {
+        AuthResult authResult = new AuthResult(user, null, null, null);
+        IssuedVerifiableCredentialModel activeCredential = issuedCredential("issued-1", "PidCredential");
+        IssuedVerifiableCredentialModel revokedCredential = issuedCredential("issued-2", "IdentityCredential");
+        StatusListMappingEntity activeMapping = statusListMapping("list-1", 7L);
+        activeMapping.setTokenId("issued-1");
+        activeMapping.setTokenStatus(TokenStatus.VALID);
+        StatusListMappingEntity revokedMapping = statusListMapping("list-1", 8L);
+        revokedMapping.setTokenId("issued-2");
+        revokedMapping.setTokenStatus(TokenStatus.INVALID);
+
+        when(user.getId()).thenReturn("user-1");
+        when(userProvider.getIssuedVerifiableCredentialsStreamByUser("user-1"))
+                .thenReturn(Stream.of(activeCredential, revokedCredential));
+        when(statusListRepository.findSuccessfulMappingsByTokenIds(
+                        "realm-1", "user-1", java.util.List.of("issued-1", "issued-2")))
+                .thenReturn(Map.of("issued-1", activeMapping, "issued-2", revokedMapping));
+
+        IssuedCredentialStatusResponse response = service.getIssuedCredentialStatuses(authResult);
+
+        assertEquals(2, response.credentials().size());
+        assertEquals("issued-1", response.credentials().get(0).credentialId());
+        assertEquals("PidCredential", response.credentials().get(0).verifiableCredentialId());
+        assertEquals("VALID", response.credentials().get(0).status());
+        assertEquals("issued-2", response.credentials().get(1).credentialId());
+        assertEquals("INVALID", response.credentials().get(1).status());
+    }
+
+    @Test
+    void getIssuedCredentialStatuses_returnsUnknownWhenMappingIsMissing() {
+        AuthResult authResult = new AuthResult(user, null, null, null);
+        IssuedVerifiableCredentialModel credential = issuedCredential("issued-1", "PidCredential");
+
+        when(user.getId()).thenReturn("user-1");
+        when(userProvider.getIssuedVerifiableCredentialsStreamByUser("user-1")).thenReturn(Stream.of(credential));
+        when(statusListRepository.findSuccessfulMappingsByTokenIds("realm-1", "user-1", java.util.List.of("issued-1")))
+                .thenReturn(Map.of());
+
+        IssuedCredentialStatusResponse response = service.getIssuedCredentialStatuses(authResult);
+
+        assertEquals(1, response.credentials().size());
+        assertEquals("issued-1", response.credentials().get(0).credentialId());
+        assertEquals("UNKNOWN", response.credentials().get(0).status());
+    }
+
     private CredentialRevocationRequest issuedRevocationRequest(String credentialId, String reason) {
         CredentialRevocationRequest request = new CredentialRevocationRequest();
         request.setRevocationMode(CredentialRevocationRequest.ISSUED_CREDENTIAL_REVOCATION_MODE);
@@ -242,6 +294,19 @@ class CredentialRevocationServiceTest {
         mapping.setRealmId("realm-1");
         mapping.setTokenId("issued-1");
         mapping.setStatus(StatusListMappingEntity.MappingStatus.SUCCESS);
+        mapping.setTokenStatus(TokenStatus.VALID);
         return mapping;
+    }
+
+    private IssuedVerifiableCredentialModel issuedCredential(String id, String verifiableCredentialId) {
+        IssuedVerifiableCredentialModel credential = new IssuedVerifiableCredentialModel();
+        credential.setId(id);
+        credential.setUserId("user-1");
+        credential.setVerifiableCredentialId(verifiableCredentialId);
+        credential.setIssuedAt(123L);
+        credential.setExpiresAt(456L);
+        credential.setClientId("wallet-client");
+        credential.setRevision("revision-1");
+        return credential;
     }
 }

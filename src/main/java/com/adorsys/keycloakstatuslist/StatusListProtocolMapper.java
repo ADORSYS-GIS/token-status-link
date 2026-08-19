@@ -237,6 +237,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         mapping.setUserId(userId);
         mapping.setTokenId(tokenId);
         mapping.setRealmId(realmId);
+        mapping.setTokenStatus(TokenStatus.VALID);
 
         try {
             logger.debugf(

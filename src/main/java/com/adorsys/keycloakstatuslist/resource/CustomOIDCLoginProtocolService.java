@@ -1,6 +1,7 @@
 package com.adorsys.keycloakstatuslist.resource;
 
 import com.adorsys.keycloakstatuslist.service.CredentialRevocationService;
+import jakarta.ws.rs.Path;
 import org.keycloak.events.EventBuilder;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.protocol.oidc.OIDCLoginProtocolService;
@@ -27,5 +28,10 @@ public class CustomOIDCLoginProtocolService extends OIDCLoginProtocolService {
     @Override
     public Object revoke() {
         return new CredentialRevocationEndpoint(this.session, this.event, this.revocationService);
+    }
+
+    @Path("issued-credential-status")
+    public Object issuedCredentialStatus() {
+        return new IssuedCredentialStatusEndpoint(this.session, this.revocationService);
     }
 }
