@@ -47,16 +47,17 @@ public class StatusListService {
                 updateStatusList(payload, requestId);
                 return;
             }
-            logger.errorf(
-                    "Request ID: %s, Failed to publish or update status list %s: %s",
-                    requestId, listId, e.getMessage(), e);
+            logPublishOrUpdateFailure(requestId, listId, e);
             throw e;
         } catch (StatusListException e) {
-            logger.errorf(
-                    "Request ID: %s, Failed to publish or update status list %s: %s",
-                    requestId, listId, e.getMessage(), e);
+            logPublishOrUpdateFailure(requestId, listId, e);
             throw e;
         }
+    }
+
+    private void logPublishOrUpdateFailure(String requestId, String listId, Exception e) {
+        logger.errorf(
+                "Request ID: %s, Failed to publish or update status list %s: %s", requestId, listId, e.getMessage(), e);
     }
 
     private void publishStatusList(StatusListPayload payload, String requestId) throws StatusListException {
