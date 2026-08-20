@@ -84,19 +84,6 @@ public class StatusListService {
         return httpClient.checkServerHealth();
     }
 
-    private static final String STATUS_LISTS_PATH = "api/v1/status-lists";
-
-    /**
-     * Gets the URI for a status list without making any HTTP calls.
-     *
-     * @param listId the status list identifier
-     * @return the URI string for the status list
-     */
-    public String getStatusListUri(String listId) {
-        String serverUrl = httpClient.getServerUrl();
-        return serverUrl + STATUS_LISTS_PATH + "/" + listId;
-    }
-
     public record StatusListPayload(String listId, List<StatusEntry> status) {
         public record StatusEntry(long index, TokenStatus status) {}
     }

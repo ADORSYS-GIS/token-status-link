@@ -1,6 +1,5 @@
 package io.github.adorsysgis.keycloakstatuslist.service;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -27,13 +26,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
  * Unit tests for StatusListService. Tests core logic: publish-vs-update branching,
- * URI building, delegation, and error propagation.
+ * delegation, and error propagation.
  * Mocking: only StatusListHttpClient (external boundary). Real payloads and exceptions.
  */
 @ExtendWith(MockitoExtension.class)
 class StatusListServiceTest {
-
-    private static final String SERVER_URL = "https://status-list-server.example.com/";
 
     @Mock
     private StatusListHttpClient httpClient;
@@ -61,16 +58,6 @@ class StatusListServiceTest {
 
         assertTrue(statusListService.checkServerHealth());
         verify(httpClient).checkServerHealth();
-    }
-
-    @Test
-    void getStatusListUri_buildsFromServerUrl() {
-        when(httpClient.getServerUrl()).thenReturn(SERVER_URL);
-
-        String uri = statusListService.getStatusListUri("list-123");
-
-        assertEquals(SERVER_URL + "api/v1/status-lists/list-123", uri);
-        verify(httpClient).getServerUrl();
     }
 
     @Test
