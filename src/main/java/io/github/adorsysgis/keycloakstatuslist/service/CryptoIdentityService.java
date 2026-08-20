@@ -1,0 +1,163 @@
+package io.github.adorsysgis.keycloakstatuslist.service;
+
+import io.github.adorsysgis.keycloakstatuslist.config.StatusListConfig;
+import io.github.adorsysgis.keycloakstatuslist.exception.StatusListException;
+import java.security.PublicKey;
+import java.security.interfaces.ECPublicKey;
+import java.security.interfaces.RSAPublicKey;
+import java.util.HashMap;
+import java.util.Map;
+import org.jboss.logging.Logger;
+import org.keycloak.common.util.Time;
+import org.keycloak.crypto.Algorithm;
+import org.keycloak.crypto.KeyUse;
+import org.keycloak.crypto.KeyWrapper;
+import org.keycloak.crypto.SignatureProvider;
+import org.keycloak.jose.jwk.JWK;
+import org.keycloak.jose.jwk.JWKBuilder;
+import org.keycloak.jose.jws.JWSBuilder;
+import org.keycloak.models.KeyManager;
+import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.RealmModel;
+
+/**
+ * Service for retrieving active keys and generating JWT tokens.
+ */
+public class CryptoIdentityService {
+
+    private static final Logger logger = Logger.getLogger(CryptoIdentityService.class);
+
+    private static final int DEFAULT_AUTH_TOKEN_LIFETIME = 600; // 10 minutes in seconds
+
+    private final KeycloakSession session;
+
+    public CryptoIdentityService(KeycloakSession session) {
+        this.session = session;
+    }
+
+    /**
+     * Resolves the active signing key for the given realm using a consistent fallback chain:
+     * default algorithm → ES256 → RS256.
+     *
+     * <p>This is the single source of truth for key resolution and is used by both
+     * {@link #getActiveKey} and {@link #getRealmKeyData} to ensure the JWT bearer token
+     * is always signed with the same key that was registered as the issuer key.
+     */
+    static KeyWrapper resolveActiveSigningKey(RealmModel realm, KeyManager keyManager) {
+        String defaultAlg = realm.getDefaultSignatureAlgorithm();
+        String algorithm = (defaultAlg == null || defaultAlg.isBlank()) ? Algorithm.ES256 : defaultAlg;
+
+        KeyWrapper activeKey = keyManager.getActiveKey(realm, KeyUse.SIG, algorithm);
+
+        if (activeKey == null || activeKey.getPublicKey() == null) {
+            if (!Algorithm.ES256.equals(algorithm)) {
+                activeKey = keyManager.getActiveKey(realm, KeyUse.SIG, Algorithm.ES256);
+            }
+        }
+
+        if (activeKey == null || activeKey.getPublicKey() == null) {
+            activeKey = keyManager.getActiveKey(realm, KeyUse.SIG, Algorithm.RS256);
+        }
+        return activeKey;
+    }
+
+    /**
+     * Retrieve the active signing key for the given realm.
+     *
+     * @throws IllegalStateException if no active signing key is found
+     */
+    public KeyWrapper getActiveKey(RealmModel realm) {
+        KeyWrapper activeKey = resolveActiveSigningKey(realm, session.keys());
+        if (activeKey == null) {
+            throw new IllegalStateException("No active signing key found for realm: " + realm.getName());
+        }
+        return activeKey;
+    }
+
+    /**
+     * Generate a JWT bearer token for authenticating with the status list server.
+     */
+    public String getJwtToken(StatusListConfig realmConfig) {
+        KeyWrapper keyWrapper = getActiveKey(realmConfig.getRealm());
+        String algorithm = keyWrapper.getAlgorithm() != null ? keyWrapper.getAlgorithm() : Algorithm.ES256;
+
+        SignatureProvider signatureProvider = session.getProvider(SignatureProvider.class, algorithm);
+        if (signatureProvider == null) {
+            throw new IllegalStateException("No SignatureProvider found for algorithm: " + algorithm);
+        }
+
+        // Payload
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("iss", realmConfig.getTokenIssuerId());
+        payload.put("iat", Time.currentTime());
+        payload.put("exp", Time.currentTime() + DEFAULT_AUTH_TOKEN_LIFETIME);
+
+        // Build and sign JWT
+        return new JWSBuilder().jsonContent(payload).sign(signatureProvider.signer(keyWrapper));
+    }
+
+    /**
+     * Gets the realm's active signing key and converts it to JWK. Supports RSA and EC.
+     * Accessible by CredentialRevocationResourceProviderFactory.
+     *
+     * <p>Uses {@link #resolveActiveSigningKey} to guarantee that the registered JWK
+     * always matches the key used to sign the JWT bearer token.
+     */
+    public static KeyData getRealmKeyData(KeycloakSession session, RealmModel realm) throws StatusListException {
+        KeyWrapper activeKey = resolveRealmSigningKey(session, realm);
+        PublicKey pubKey = getPublicKey(activeKey, realm);
+        String finalAlg = activeKey.getAlgorithm();
+        JWK jwk = toJwk(activeKey, pubKey, realm);
+
+        logger.debugf("Retrieved JWK and algorithm for realm %s: %s", realm.getName(), finalAlg);
+        return new KeyData(jwk, finalAlg);
+    }
+
+    private static KeyWrapper resolveRealmSigningKey(KeycloakSession session, RealmModel realm)
+            throws StatusListException {
+        try {
+            KeyWrapper activeKey = resolveActiveSigningKey(realm, session.keys());
+            if (activeKey != null) {
+                return activeKey;
+            }
+        } catch (RuntimeException e) {
+            logger.error("Error retrieving realm public key and algorithm", e);
+            throw new StatusListException("Failed to retrieve realm public key: " + e.getMessage(), e);
+        }
+
+        throw new StatusListException("No active signing key found for realm: " + realm.getName());
+    }
+
+    private static PublicKey getPublicKey(KeyWrapper activeKey, RealmModel realm) throws StatusListException {
+        Object publicKey = activeKey.getPublicKey();
+        if (publicKey == null) {
+            throw new StatusListException("Active key has no public key for realm: " + realm.getName());
+        }
+
+        if (publicKey instanceof PublicKey key) {
+            return key;
+        }
+
+        throw new StatusListException("Unsupported key type for realm "
+                + realm.getName()
+                + ": "
+                + publicKey.getClass().getName());
+    }
+
+    private static JWK toJwk(KeyWrapper activeKey, PublicKey pubKey, RealmModel realm) throws StatusListException {
+        JWKBuilder builder = JWKBuilder.create().kid(activeKey.getKid()).algorithm(activeKey.getAlgorithm());
+
+        if (pubKey instanceof RSAPublicKey) {
+            return builder.rsa(pubKey);
+        }
+
+        if (pubKey instanceof ECPublicKey) {
+            return builder.ec(pubKey);
+        }
+
+        throw new StatusListException("Unsupported key type for realm " + realm.getName() + ": "
+                + pubKey.getClass().getName());
+    }
+
+    public record KeyData(JWK jwk, String algorithm) {}
+}
