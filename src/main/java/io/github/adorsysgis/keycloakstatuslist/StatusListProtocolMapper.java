@@ -17,7 +17,6 @@ import io.github.adorsysgis.keycloakstatuslist.service.CryptoIdentityService;
 import io.github.adorsysgis.keycloakstatuslist.service.CustomHttpClient;
 import io.github.adorsysgis.keycloakstatuslist.service.IssuedCredentialIdResolver;
 import io.github.adorsysgis.keycloakstatuslist.service.StatusListService;
-import jakarta.ws.rs.core.UriBuilder;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -172,9 +171,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         // Build URI for status list
         String listId = statusListRepository.getNextStatusListId(realmId, config.getStatusListMaxEntries());
         StatusListEndpointUriResolver resolver = new StatusListEndpointUriResolver(serverUrl);
-        URI uri = UriBuilder.fromUri(serverUrl)
-                .path(resolver.statusListRetrievePath(listId))
-                .build();
+        URI uri = URI.create(resolver.statusListUrl(listId));
         logger.debugf("Configuration: listId=%s, uri=%s", listId, uri);
 
         String tokenId = resolveTokenId(claims);

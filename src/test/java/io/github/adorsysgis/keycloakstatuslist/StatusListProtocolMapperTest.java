@@ -34,7 +34,6 @@ import io.github.adorsysgis.keycloakstatuslist.model.TokenStatus;
 import io.github.adorsysgis.keycloakstatuslist.service.StatusListService;
 import jakarta.persistence.PersistenceException;
 import jakarta.ws.rs.core.HttpHeaders;
-import jakarta.ws.rs.core.UriBuilder;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
@@ -393,9 +392,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
     @SuppressWarnings("SameParameterValue")
     private URI listUri(String listId) {
         StatusListEndpointUriResolver resolver = new StatusListEndpointUriResolver(TEST_SERVER_URL);
-        return UriBuilder.fromUri(TEST_SERVER_URL)
-                .path(resolver.statusListRetrievePath(listId))
-                .build();
+        return URI.create(resolver.statusListUrl(listId));
     }
 
     private String accessTokenWithIssuedCredentialId(String issuedCredentialId) {
