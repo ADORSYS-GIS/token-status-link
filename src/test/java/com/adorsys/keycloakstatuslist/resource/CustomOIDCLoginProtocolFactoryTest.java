@@ -200,6 +200,17 @@ class CustomOIDCLoginProtocolFactoryTest {
     }
 
     @Test
+    void testLazyRegistration_RollsBackWhenRealmLookupFails() {
+        when(transactionManager.isActive()).thenReturn(true);
+        when(realmProvider.getRealmByName("test-realm")).thenThrow(new RuntimeException("realm lookup failed"));
+
+        assertDoesNotThrow(() -> factory.createProtocolEndpoint(session, mock(EventBuilder.class)));
+
+        verify(transactionManager).rollback();
+        verify(transactionManager, never()).commit();
+    }
+
+    @Test
     void testInitializeRealms_SkippedWhenDisabled() {
         when(realm.getAttribute("status-list-enabled")).thenReturn("false");
 
