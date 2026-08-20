@@ -263,14 +263,11 @@ class ApacheHttpStatusListClientTest {
                 });
     }
 
-    private CircuitBreaker createBreaker(String name, int failureThreshold, int windowSeconds, int cooldownSeconds) {
-        try {
-            Method method = CircuitBreaker.class.getDeclaredMethod(
-                    "getInstance", String.class, int.class, int.class, int.class);
-            method.setAccessible(true);
-            return (CircuitBreaker) method.invoke(null, name, failureThreshold, windowSeconds, cooldownSeconds);
-        } catch (Exception e) {
-            throw new IllegalStateException("Failed to create circuit breaker", e);
-        }
+    private CircuitBreaker createBreaker(String name, int failureThreshold, int windowSeconds, int cooldownSeconds)
+            throws ReflectiveOperationException {
+        Method method =
+                CircuitBreaker.class.getDeclaredMethod("getInstance", String.class, int.class, int.class, int.class);
+        method.setAccessible(true);
+        return (CircuitBreaker) method.invoke(null, name, failureThreshold, windowSeconds, cooldownSeconds);
     }
 }

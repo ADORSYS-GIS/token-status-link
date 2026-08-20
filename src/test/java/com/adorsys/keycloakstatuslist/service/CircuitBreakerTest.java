@@ -83,7 +83,7 @@ class CircuitBreakerTest {
     }
 
     @Test
-    void shouldTreatTimeoutAsFailure() {
+    void shouldTreatTimeoutAsFailure() throws ReflectiveOperationException {
         CircuitBreaker breaker = createBreaker("timeout", 3, 60, 30);
 
         breaker.recordTimeout();
@@ -105,14 +105,11 @@ class CircuitBreakerTest {
         assertEquals(0, breaker.getFailureCount());
     }
 
-    private CircuitBreaker createBreaker(String name, int failureThreshold, int windowSeconds, int cooldownSeconds) {
-        try {
-            Method getInstance = CircuitBreaker.class.getDeclaredMethod(
-                    "getInstance", String.class, int.class, int.class, int.class);
-            getInstance.setAccessible(true);
-            return (CircuitBreaker) getInstance.invoke(null, name, failureThreshold, windowSeconds, cooldownSeconds);
-        } catch (Exception e) {
-            throw new IllegalStateException("Failed to create test circuit breaker", e);
-        }
+    private CircuitBreaker createBreaker(String name, int failureThreshold, int windowSeconds, int cooldownSeconds)
+            throws ReflectiveOperationException {
+        Method getInstance =
+                CircuitBreaker.class.getDeclaredMethod("getInstance", String.class, int.class, int.class, int.class);
+        getInstance.setAccessible(true);
+        return (CircuitBreaker) getInstance.invoke(null, name, failureThreshold, windowSeconds, cooldownSeconds);
     }
 }

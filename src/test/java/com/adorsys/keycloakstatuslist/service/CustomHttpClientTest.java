@@ -43,7 +43,7 @@ class CustomHttpClientTest {
     }
 
     @Test
-    void retryStrategyShouldNotRetryIOExceptionWhenRetriesDisabled() {
+    void retryStrategyShouldNotRetryIOExceptionWhenRetriesDisabled() throws ReflectiveOperationException {
         HttpRequestRetryStrategy strategy = getRetryStrategy(0);
 
         boolean shouldRetry = strategy.retryRequest(
@@ -53,7 +53,7 @@ class CustomHttpClientTest {
     }
 
     @Test
-    void retryStrategyShouldNotRetryServerErrorsWhenRetriesDisabled() {
+    void retryStrategyShouldNotRetryServerErrorsWhenRetriesDisabled() throws ReflectiveOperationException {
         HttpRequestRetryStrategy strategy = getRetryStrategy(0);
         HttpResponse response = mock(HttpResponse.class);
         when(response.getCode()).thenReturn(503);
@@ -65,7 +65,7 @@ class CustomHttpClientTest {
     }
 
     @Test
-    void retryStrategyShouldNotRetryClientErrors() {
+    void retryStrategyShouldNotRetryClientErrors() throws ReflectiveOperationException {
         HttpRequestRetryStrategy strategy = getRetryStrategy(3);
         HttpResponse response = mock(HttpResponse.class);
         when(response.getCode()).thenReturn(400);
@@ -76,7 +76,7 @@ class CustomHttpClientTest {
     }
 
     @Test
-    void retryIntervalShouldUseExponentialBackoff() {
+    void retryIntervalShouldUseExponentialBackoff() throws ReflectiveOperationException {
         HttpRequestRetryStrategy strategy = getRetryStrategy(3);
         HttpContext context = mock(HttpContext.class);
         HttpResponse response = mock(HttpResponse.class);
@@ -88,13 +88,9 @@ class CustomHttpClientTest {
         assertEquals(TimeValue.ofSeconds(4), third);
     }
 
-    private HttpRequestRetryStrategy getRetryStrategy(int maxRetries) {
-        try {
-            Method method = CustomHttpClient.class.getDeclaredMethod("getHttpRequestRetryStrategy", int.class);
-            method.setAccessible(true);
-            return (HttpRequestRetryStrategy) method.invoke(null, maxRetries);
-        } catch (Exception e) {
-            throw new IllegalStateException("Failed to access retry strategy", e);
-        }
+    private HttpRequestRetryStrategy getRetryStrategy(int maxRetries) throws ReflectiveOperationException {
+        Method method = CustomHttpClient.class.getDeclaredMethod("getHttpRequestRetryStrategy", int.class);
+        method.setAccessible(true);
+        return (HttpRequestRetryStrategy) method.invoke(null, maxRetries);
     }
 }
