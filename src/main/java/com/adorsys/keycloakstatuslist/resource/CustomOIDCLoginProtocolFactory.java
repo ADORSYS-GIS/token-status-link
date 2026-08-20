@@ -11,6 +11,7 @@ import com.adorsys.keycloakstatuslist.service.CryptoIdentityService;
 import com.adorsys.keycloakstatuslist.service.CustomHttpClient;
 import com.adorsys.keycloakstatuslist.service.StatusListService;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -19,6 +20,7 @@ import org.jboss.logging.Logger;
 import org.keycloak.events.EventBuilder;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
+import org.keycloak.models.KeycloakTransactionManager;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.utils.KeycloakModelUtils;
 import org.keycloak.models.utils.PostMigrationEvent;
@@ -79,29 +81,42 @@ public class CustomOIDCLoginProtocolFactory extends OIDCLoginProtocolFactory {
 
         // Atomic check to prevent redundant task scheduling in the executor
         if (inFlight.add(realmName)) {
-            runAsync(() -> {
-                // Background tasks MUST create their own session because the original request session
-                // from the OIDC endpoint will be closed or detached by the time this thread executes.
-                try (KeycloakSession bgSession = factory.create()) {
-                    bgSession.getTransactionManager().begin();
-                    try {
-                        RealmModel realm = bgSession.realms().getRealmByName(realmName);
-                        if (realm != null) {
-                            bgSession.getContext().setRealm(realm);
-                            ensureRealmRegistered(bgSession, realm);
-                        }
-                        bgSession.getTransactionManager().commit();
-                    } catch (Exception e) {
-                        if (bgSession.getTransactionManager().isActive()) {
-                            bgSession.getTransactionManager().rollback();
-                        }
-                        logger.errorf(
-                                "Error during background registration for realm %s: %s", realmName, e.getMessage(), e);
-                    } finally {
-                        inFlight.remove(realmName);
-                    }
-                }
-            });
+            runAsync(() -> registerRealmInBackgroundSession(factory, realmName));
+        }
+    }
+
+    private void registerRealmInBackgroundSession(KeycloakSessionFactory factory, String realmName) {
+        // Background tasks MUST create their own session because the original request session
+        // from the OIDC endpoint will be closed or detached by the time this thread executes.
+        try (KeycloakSession bgSession = factory.create()) {
+            KeycloakTransactionManager transactionManager = bgSession.getTransactionManager();
+            transactionManager.begin();
+            runRegistrationTransaction(bgSession, realmName, transactionManager);
+        } catch (Exception e) {
+            logger.errorf("Error during background registration for realm %s: %s", realmName, e.getMessage(), e);
+        } finally {
+            inFlight.remove(realmName);
+        }
+    }
+
+    private void runRegistrationTransaction(
+            KeycloakSession bgSession, String realmName, KeycloakTransactionManager transactionManager) {
+        try {
+            RealmModel realm = bgSession.realms().getRealmByName(realmName);
+            if (realm != null) {
+                bgSession.getContext().setRealm(realm);
+                ensureRealmRegistered(bgSession, realm);
+            }
+            transactionManager.commit();
+        } catch (Exception e) {
+            rollbackIfActive(transactionManager);
+            throw e;
+        }
+    }
+
+    private void rollbackIfActive(KeycloakTransactionManager transactionManager) {
+        if (transactionManager.isActive()) {
+            transactionManager.rollback();
         }
     }
 
@@ -128,22 +143,25 @@ public class CustomOIDCLoginProtocolFactory extends OIDCLoginProtocolFactory {
 
         runAsync(() -> {
             logger.info("Checking existing realms for status list registration");
-            try (KeycloakSession session = factory.create()) {
-                // Only read realm names from DB to minimize session footprint
-                List<String> realmNames = KeycloakModelUtils.runJobInTransactionWithResult(factory, s -> s.realms()
-                        .getRealmsStream()
-                        .map(RealmModel::getName)
-                        .toList());
-
-                for (String realmName : realmNames) {
-                    triggerBackgroundRegistration(factory, realmName);
-                }
+            try {
+                scheduleExistingRealmRegistrations(factory);
                 initialized = true;
                 logger.info("Successfully scheduled registration checks for all existing realms.");
             } catch (Exception e) {
                 logger.error("Error during background realm initialization", e);
             }
         });
+    }
+
+    private void scheduleExistingRealmRegistrations(KeycloakSessionFactory factory) {
+        // Only read realm names from DB to minimize session footprint
+        List<String> realmNames = KeycloakModelUtils.runJobInTransactionWithResult(
+                factory,
+                s -> s.realms().getRealmsStream().map(RealmModel::getName).toList());
+
+        for (String realmName : realmNames) {
+            triggerBackgroundRegistration(factory, realmName);
+        }
     }
 
     /**
@@ -212,11 +230,8 @@ public class CustomOIDCLoginProtocolFactory extends OIDCLoginProtocolFactory {
         try {
             StatusListConfig config = new StatusListConfig(realm);
 
-            CryptoIdentityService.KeyData keyData;
-            try {
-                keyData = CryptoIdentityService.getRealmKeyData(session, realm);
-            } catch (StatusListException e) {
-                logger.warn("Key extraction failed for realm: " + realmName + ". Registration will be retried later.");
+            Optional<CryptoIdentityService.KeyData> keyData = getRealmKeyData(session, realm);
+            if (keyData.isEmpty()) {
                 return false;
             }
 
@@ -238,7 +253,8 @@ public class CustomOIDCLoginProtocolFactory extends OIDCLoginProtocolFactory {
                 return false;
             }
             // Register the realm as an issuer using the retrieved public key
-            statusListService.registerIssuer(config.getTokenIssuerId(), keyData.jwk());
+            statusListService.registerIssuer(
+                    config.getTokenIssuerId(), keyData.get().jwk());
 
             registeredRealms.add(realmName);
             logger.info("Successfully registered realm as issuer: " + realmName);
@@ -250,6 +266,16 @@ public class CustomOIDCLoginProtocolFactory extends OIDCLoginProtocolFactory {
         } catch (StatusListServerException | StatusListException e) {
             logger.error("Registration failed for realm: " + realmName + ". Error: " + e.getMessage(), e);
             return false;
+        }
+    }
+
+    private Optional<CryptoIdentityService.KeyData> getRealmKeyData(KeycloakSession session, RealmModel realm) {
+        try {
+            return Optional.of(CryptoIdentityService.getRealmKeyData(session, realm));
+        } catch (StatusListException e) {
+            logger.warn(
+                    "Key extraction failed for realm: " + realm.getName() + ". Registration will be retried later.");
+            return Optional.empty();
         }
     }
 
