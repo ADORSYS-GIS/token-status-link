@@ -71,39 +71,22 @@ public class CredentialRevocationEndpoint extends TokenRevocationEndpoint {
         logger.infof("Attempting credential revocation via Token Status List. Mode: %s", revocationMode);
 
         try {
-            CredentialRevocationRequest request = new CredentialRevocationRequest();
-            request.setRevocationMode(revocationMode);
-            request.setRevocationReason(form.getFirst(REVOCATION_REASON_KEY));
-            request.setCredentialId(form.getFirst(CREDENTIAL_ID_KEY));
-
             AuthResult authResult = authenticateBearerToken();
             if (authResult == null || authResult.user() == null) {
                 return createErrorResponse(Response.Status.UNAUTHORIZED, "Invalid bearer token");
             }
-            CredentialRevocationResponse revocationResponse =
-                    getRevocationService().revokeIssuedCredential(request, authResult);
+
+            CredentialRevocationResponse revocationResponse = getRevocationService()
+                    .revokeIssuedCredential(toRevocationRequest(form, revocationMode), authResult);
             logger.infof("Successfully revoked credential via status list.");
 
-            return Response.ok(revocationResponse)
-                    .type(MediaType.APPLICATION_JSON)
-                    .build();
+            return createSuccessResponse(revocationResponse);
         } catch (StatusListException e) {
-            logger.errorf(e, "Credential revocation failed due to status list error. Mode: %s", revocationMode);
-            int statusCode = e.getHttpStatus();
-            return Response.status(statusCode)
-                    .entity(CredentialRevocationResponse.error(e.getMessage()))
-                    .type(MediaType.APPLICATION_JSON)
-                    .build();
+            return handleStatusListException(e, revocationMode);
         } catch (IllegalArgumentException e) {
-            logger.errorf(e, "Credential revocation failed due to invalid input. Mode: %s", revocationMode);
-            return createErrorResponse(Response.Status.BAD_REQUEST, e.getMessage());
+            return handleInvalidRequest(e, revocationMode);
         } catch (Exception e) {
-            logger.errorf(e, "Credential revocation failed due to unexpected error. Mode: %s", revocationMode);
-            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
-                    .entity(
-                            "{\"error\":\"server_error\",\"error_description\":\"Internal error during credential revocation\"}")
-                    .type(MediaType.APPLICATION_JSON_TYPE)
-                    .build();
+            return handleUnexpectedException(e, revocationMode);
         }
     }
 
@@ -120,6 +103,15 @@ public class CredentialRevocationEndpoint extends TokenRevocationEndpoint {
      */
     protected AuthResult authenticateBearerToken() {
         return new AppAuthManager.BearerTokenAuthenticator(session).authenticate();
+    }
+
+    private CredentialRevocationRequest toRevocationRequest(
+            MultivaluedMap<String, String> form, String revocationMode) {
+        CredentialRevocationRequest request = new CredentialRevocationRequest();
+        request.setRevocationMode(revocationMode);
+        request.setRevocationReason(form.getFirst(REVOCATION_REASON_KEY));
+        request.setCredentialId(form.getFirst(CREDENTIAL_ID_KEY));
+        return request;
     }
 
     /**
@@ -159,6 +151,32 @@ public class CredentialRevocationEndpoint extends TokenRevocationEndpoint {
         return Response.status(status)
                 .entity(CredentialRevocationResponse.error(message))
                 .type(MediaType.APPLICATION_JSON)
+                .build();
+    }
+
+    private Response createSuccessResponse(CredentialRevocationResponse revocationResponse) {
+        return Response.ok(revocationResponse).type(MediaType.APPLICATION_JSON).build();
+    }
+
+    private Response handleStatusListException(StatusListException e, String revocationMode) {
+        logger.errorf(e, "Credential revocation failed due to status list error. Mode: %s", revocationMode);
+        return Response.status(e.getHttpStatus())
+                .entity(CredentialRevocationResponse.error(e.getMessage()))
+                .type(MediaType.APPLICATION_JSON)
+                .build();
+    }
+
+    private Response handleInvalidRequest(IllegalArgumentException e, String revocationMode) {
+        logger.errorf(e, "Credential revocation failed due to invalid input. Mode: %s", revocationMode);
+        return createErrorResponse(Response.Status.BAD_REQUEST, e.getMessage());
+    }
+
+    private Response handleUnexpectedException(Exception e, String revocationMode) {
+        logger.errorf(e, "Credential revocation failed due to unexpected error. Mode: %s", revocationMode);
+        return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                .entity(
+                        "{\"error\":\"server_error\",\"error_description\":\"Internal error during credential revocation\"}")
+                .type(MediaType.APPLICATION_JSON_TYPE)
                 .build();
     }
 }
