@@ -7,7 +7,6 @@ import com.adorsys.keycloakstatuslist.client.ApacheHttpStatusListClient;
 import com.adorsys.keycloakstatuslist.client.StatusListHttpClient;
 import com.adorsys.keycloakstatuslist.config.StatusListConfig;
 import com.adorsys.keycloakstatuslist.exception.StatusListException;
-import com.adorsys.keycloakstatuslist.exception.StatusListServerException;
 import com.adorsys.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
 import com.adorsys.keycloakstatuslist.jpa.repository.StatusListRepository;
 import com.adorsys.keycloakstatuslist.model.CredentialRevocationRequest;
@@ -81,14 +80,9 @@ public class CredentialRevocationService {
             CredentialRevocationRequest request, AuthResult authResult) throws StatusListException {
 
         String requestId = UUID.randomUUID().toString();
-        if (request == null) {
-            throw new IllegalArgumentException("Revocation request is required");
-        }
-        if (StringUtil.isBlank(request.getCredentialId())) {
-            throw new IllegalArgumentException("Missing credential_id");
-        }
-
+        validateRevocationRequest(request);
         UserModel user = getAuthenticatedUser(authResult);
+
         RealmModel realm = session.getContext().getRealm();
         String userId = user.getId();
         String credentialId = request.getCredentialId().trim();
@@ -97,42 +91,53 @@ public class CredentialRevocationService {
                 "Processing issued credential revocation request. RequestId: %s, UserId: %s, CredentialId: %s",
                 requestId, userId, credentialId);
 
-        try {
-            IssuedVerifiableCredentialModel issuedCredential = session.users()
-                    .getIssuedVerifiableCredentialsStreamByUser(userId)
-                    .filter(issued -> credentialId.equals(issued.getId()))
-                    .findFirst()
-                    .orElseThrow(() -> new StatusListException("Issued credential not found", 404));
+        IssuedVerifiableCredentialModel issuedCredential = findIssuedCredential(userId, credentialId);
+        StatusListMappingEntity mapping = findStatusListMapping(realm.getId(), userId, issuedCredential);
+        revokeStatusListEntry(mapping, requestId);
 
-            StatusListMappingEntity mapping = findStatusListMapping(realm.getId(), userId, issuedCredential);
-            StatusEntry statusEntry = new StatusEntry(mapping.getIdx(), TokenStatus.INVALID);
-            StatusListPayload revocationPayload =
-                    new StatusListPayload(mapping.getStatusListId(), List.of(statusEntry));
-            getStatusListService().updateStatusList(revocationPayload, requestId);
-            mapping.setTokenStatus(TokenStatus.INVALID);
-            statusListRepository.save(mapping);
+        Instant revokedAt = Instant.now();
+        logger.infof(
+                "Successfully revoked issued credential. RequestId: %s, CredentialId: %s, RevokedAt: %s",
+                requestId, credentialId, revokedAt);
 
-            Instant revokedAt = Instant.now();
-            logger.infof(
-                    "Successfully revoked issued credential. RequestId: %s, CredentialId: %s, RevokedAt: %s",
-                    requestId, credentialId, revokedAt);
+        return CredentialRevocationResponse.success(revokedAt, request.getRevocationReason());
+    }
 
-            return CredentialRevocationResponse.success(revokedAt, request.getRevocationReason());
-
-        } catch (StatusListServerException e) {
-            logger.errorf(
-                    "Status list server error. RequestId: %s, StatusCode: %d, Error: %s",
-                    requestId, e.getStatusCode(), e.getMessage());
-            throw e;
-        } catch (StatusListException e) {
-            logger.errorf("Issued credential revocation failed. RequestId: %s, Error: %s", requestId, e.getMessage());
-            throw e;
-        } catch (Exception e) {
-            logger.errorf(
-                    "Unexpected error during issued credential revocation. RequestId: %s, Error: %s",
-                    requestId, e.getMessage(), e);
-            throw new StatusListException("Failed to process issued credential revocation: " + e.getMessage(), e);
+    private void validateRevocationRequest(CredentialRevocationRequest request) {
+        if (request == null) {
+            throw new IllegalArgumentException("Revocation request is required");
         }
+        if (StringUtil.isBlank(request.getCredentialId())) {
+            throw new IllegalArgumentException("Missing credential_id");
+        }
+    }
+
+    private UserModel getAuthenticatedUser(AuthResult authResult) {
+        if (authResult == null) {
+            throw new IllegalArgumentException("Authentication result is required");
+        }
+        UserModel user = authResult.user();
+        if (user == null || StringUtil.isBlank(user.getId())) {
+            throw new IllegalArgumentException("Authenticated user is required");
+        }
+        return user;
+    }
+
+    private IssuedVerifiableCredentialModel findIssuedCredential(String userId, String credentialId)
+            throws StatusListException {
+        return session.users()
+                .getIssuedVerifiableCredentialsStreamByUser(userId)
+                .filter(issued -> credentialId.equals(issued.getId()))
+                .findFirst()
+                .orElseThrow(() -> new StatusListException("Issued credential not found", 404));
+    }
+
+    private void revokeStatusListEntry(StatusListMappingEntity mapping, String requestId) throws StatusListException {
+        StatusEntry statusEntry = new StatusEntry(mapping.getIdx(), TokenStatus.INVALID);
+        StatusListPayload revocationPayload = new StatusListPayload(mapping.getStatusListId(), List.of(statusEntry));
+        getStatusListService().updateStatusList(revocationPayload, requestId);
+        mapping.setTokenStatus(TokenStatus.INVALID);
+        statusListRepository.save(mapping);
     }
 
     /**
@@ -159,19 +164,6 @@ public class CredentialRevocationService {
                 .toList();
 
         return new IssuedCredentialStatusResponse(statuses);
-    }
-
-    private UserModel getAuthenticatedUser(AuthResult authResult) {
-        if (authResult == null) {
-            throw new IllegalArgumentException("Authentication result is required");
-        }
-
-        UserModel user = authResult.user();
-        if (user == null || StringUtil.isBlank(user.getId())) {
-            throw new IllegalArgumentException("Authenticated user is required");
-        }
-
-        return user;
     }
 
     private IssuedCredentialStatus toIssuedCredentialStatus(
