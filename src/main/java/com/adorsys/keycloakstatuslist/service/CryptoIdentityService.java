@@ -104,43 +104,59 @@ public class CryptoIdentityService {
      * always matches the key used to sign the JWT bearer token.
      */
     public static KeyData getRealmKeyData(KeycloakSession session, RealmModel realm) throws StatusListException {
+        KeyWrapper activeKey = resolveRealmSigningKey(session, realm);
+        PublicKey pubKey = getPublicKey(activeKey, realm);
+        String finalAlg = activeKey.getAlgorithm();
+        JWK jwk = toJwk(activeKey, pubKey, realm);
+
+        logger.debugf("Retrieved JWK and algorithm for realm %s: %s", realm.getName(), finalAlg);
+        return new KeyData(jwk, finalAlg);
+    }
+
+    private static KeyWrapper resolveRealmSigningKey(KeycloakSession session, RealmModel realm)
+            throws StatusListException {
         try {
             KeyWrapper activeKey = resolveActiveSigningKey(realm, session.keys());
-
-            if (activeKey == null) {
-                throw new StatusListException("No active signing key found for realm: " + realm.getName());
+            if (activeKey != null) {
+                return activeKey;
             }
-
-            if (activeKey.getPublicKey() == null) {
-                throw new StatusListException("Active key has no public key for realm: " + realm.getName());
-            }
-
-            PublicKey pubKey = (PublicKey) activeKey.getPublicKey();
-            String finalAlg = activeKey.getAlgorithm();
-
-            JWKBuilder builder = JWKBuilder.create().kid(activeKey.getKid()).algorithm(finalAlg);
-
-            JWK jwk;
-            if (pubKey instanceof RSAPublicKey) {
-                jwk = builder.rsa(pubKey);
-            } else if (pubKey instanceof ECPublicKey) {
-                jwk = builder.ec(pubKey);
-            } else {
-                throw new StatusListException("Unsupported key type for realm "
-                        + realm.getName()
-                        + ": "
-                        + pubKey.getClass().getName());
-            }
-
-            logger.debugf("Retrieved JWK and algorithm for realm %s: %s", realm.getName(), finalAlg);
-            return new KeyData(jwk, finalAlg);
-
-        } catch (StatusListException e) {
-            throw e;
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             logger.error("Error retrieving realm public key and algorithm", e);
             throw new StatusListException("Failed to retrieve realm public key: " + e.getMessage(), e);
         }
+
+        throw new StatusListException("No active signing key found for realm: " + realm.getName());
+    }
+
+    private static PublicKey getPublicKey(KeyWrapper activeKey, RealmModel realm) throws StatusListException {
+        Object publicKey = activeKey.getPublicKey();
+        if (publicKey == null) {
+            throw new StatusListException("Active key has no public key for realm: " + realm.getName());
+        }
+
+        if (publicKey instanceof PublicKey key) {
+            return key;
+        }
+
+        throw new StatusListException("Unsupported key type for realm "
+                + realm.getName()
+                + ": "
+                + publicKey.getClass().getName());
+    }
+
+    private static JWK toJwk(KeyWrapper activeKey, PublicKey pubKey, RealmModel realm) throws StatusListException {
+        JWKBuilder builder = JWKBuilder.create().kid(activeKey.getKid()).algorithm(activeKey.getAlgorithm());
+
+        if (pubKey instanceof RSAPublicKey) {
+            return builder.rsa(pubKey);
+        }
+
+        if (pubKey instanceof ECPublicKey) {
+            return builder.ec(pubKey);
+        }
+
+        throw new StatusListException("Unsupported key type for realm " + realm.getName() + ": "
+                + pubKey.getClass().getName());
     }
 
     public record KeyData(JWK jwk, String algorithm) {}
