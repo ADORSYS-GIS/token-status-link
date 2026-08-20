@@ -33,12 +33,11 @@ class JwksKeyExtractorTest {
         keyNode.put("n", "AQAB");
         keyNode.put("e", "AQAB");
 
-        // This test data is intentionally invalid for RSA (too short), so we expect an exception
         StatusListException exception = assertThrows(StatusListException.class, () -> {
             service.extractPublicKeyFromJwksKey(keyNode);
         });
 
-        assertTrue(exception.getMessage().contains("Failed to extract public key from JWKS key node"));
+        assertTrue(exception.getMessage().contains("Invalid RSA JWKS key parameters"));
     }
 
     @Test
@@ -49,12 +48,11 @@ class JwksKeyExtractorTest {
         keyNode.put("x", "invalid-base64!");
         keyNode.put("y", "AQAB");
 
-        // This test data is intentionally invalid (invalid Base64), so we expect an exception
         StatusListException exception = assertThrows(StatusListException.class, () -> {
             service.extractPublicKeyFromJwksKey(keyNode);
         });
 
-        assertTrue(exception.getMessage().contains("Failed to extract public key from JWKS key node"));
+        assertTrue(exception.getMessage().contains("Invalid Base64URL value for JWKS parameter x"));
     }
 
     @Test
@@ -74,13 +72,38 @@ class JwksKeyExtractorTest {
         ObjectNode keyNode = objectMapper.createObjectNode();
         keyNode.put("n", "AQAB");
         keyNode.put("e", "AQAB");
-        // Missing 'kty' field
+        StatusListException exception = assertThrows(StatusListException.class, () -> {
+            service.extractPublicKeyFromJwksKey(keyNode);
+        });
+
+        assertTrue(exception.getMessage().contains("Missing required JWKS key type (kty)"));
+    }
+
+    @Test
+    void testExtractPublicKeyFromJwksKey_RSA_MissingParameter() {
+        ObjectNode keyNode = objectMapper.createObjectNode();
+        keyNode.put("kty", "RSA");
+        keyNode.put("e", "AQAB");
 
         StatusListException exception = assertThrows(StatusListException.class, () -> {
             service.extractPublicKeyFromJwksKey(keyNode);
         });
 
-        assertTrue(exception.getMessage().contains("Failed to extract public key from JWKS key node"));
+        assertTrue(exception.getMessage().contains("Missing required RSA JWKS key parameter n"));
+    }
+
+    @Test
+    void testExtractPublicKeyFromJwksKey_EC_MissingParameter() {
+        ObjectNode keyNode = objectMapper.createObjectNode();
+        keyNode.put("kty", "EC");
+        keyNode.put("crv", "P-256");
+        keyNode.put("x", "AQAB");
+
+        StatusListException exception = assertThrows(StatusListException.class, () -> {
+            service.extractPublicKeyFromJwksKey(keyNode);
+        });
+
+        assertTrue(exception.getMessage().contains("Missing required EC JWKS key parameter y"));
     }
 
     @Test
