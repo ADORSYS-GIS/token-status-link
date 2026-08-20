@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -31,7 +32,7 @@ class JwksParserTest {
     }
 
     @Test
-    void testFindKeyByKid_Success() {
+    void testFindKeyByKid_Success() throws JsonProcessingException {
         JsonNode jwksJson = createValidJwksJson();
         String kid = "rsa-key-1";
 
@@ -43,7 +44,7 @@ class JwksParserTest {
     }
 
     @Test
-    void testFindKeyByKid_NotFound() {
+    void testFindKeyByKid_NotFound() throws JsonProcessingException {
         JsonNode jwksJson = createValidJwksJson();
         String kid = "non-existent-key";
 
@@ -269,30 +270,26 @@ class JwksParserTest {
         assertEquals("unknown", result);
     }
 
-    private JsonNode createValidJwksJson() {
-        try {
-            String jwksResponse = """
-                    {
-                        "keys": [
-                            {
-                                "kty": "RSA",
-                                "kid": "rsa-key-1",
-                                "n": "AQAB",
-                                "e": "AQAB"
-                            },
-                            {
-                                "kty": "EC",
-                                "kid": "ec-key-1",
-                                "crv": "P-256",
-                                "x": "AQAB",
-                                "y": "AQAB"
-                            }
-                        ]
-                    }
-                    """;
-            return objectMapper.readTree(jwksResponse);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to create test JWKS JSON", e);
-        }
+    private JsonNode createValidJwksJson() throws JsonProcessingException {
+        String jwksResponse = """
+                {
+                    "keys": [
+                        {
+                            "kty": "RSA",
+                            "kid": "rsa-key-1",
+                            "n": "AQAB",
+                            "e": "AQAB"
+                        },
+                        {
+                            "kty": "EC",
+                            "kid": "ec-key-1",
+                            "crv": "P-256",
+                            "x": "AQAB",
+                            "y": "AQAB"
+                        }
+                    ]
+                }
+                """;
+        return objectMapper.readTree(jwksResponse);
     }
 }
