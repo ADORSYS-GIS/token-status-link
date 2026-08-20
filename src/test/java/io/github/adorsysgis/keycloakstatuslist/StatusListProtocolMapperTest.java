@@ -288,6 +288,10 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         assertThat(
                 logCaptor.getWarnLogs(),
                 hasItem(containsString("Status list publication failed; proceeding without status claim")));
+
+        var entityCaptor = ArgumentCaptor.forClass(StatusListMappingEntity.class);
+        verify(statusListRepository).save(entityCaptor.capture());
+        assertEquals(MappingStatus.FAILURE, entityCaptor.getValue().getStatus());
     }
 
     @Test
