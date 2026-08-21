@@ -184,10 +184,6 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
         }
     }
 
-    public String getServerUrl() {
-        return uriResolver.getServerUrl();
-    }
-
     private String statusEntriesJson(StatusListPayload payload) throws IOException {
         List<StatusEntryPayload> statusEntries = new ArrayList<>();
         for (StatusListPayload.StatusEntry statusEntry : payload.status()) {
