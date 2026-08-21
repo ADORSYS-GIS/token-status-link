@@ -178,6 +178,24 @@ class ApacheHttpStatusListClientTest {
         Thread.interrupted();
     }
 
+    @Test
+    void shouldEncodeSlashInStatusListId() throws Exception {
+        CloseableHttpClient httpClient = mock(CloseableHttpClient.class);
+        mockPutResponse(httpClient, 201, "{}");
+        ApacheHttpStatusListClient client =
+                new ApacheHttpStatusListClient("https://status.example.com", "token", httpClient, null);
+        StatusListService.StatusListPayload payload = new StatusListService.StatusListPayload(
+                "list/child", List.of(new StatusListService.StatusListPayload.StatusEntry(0, TokenStatus.VALID)));
+
+        client.publishStatusList(payload, "req-1");
+
+        ArgumentCaptor<HttpPut> captor = ArgumentCaptor.forClass(HttpPut.class);
+        verify(httpClient).execute(captor.capture(), any(HttpClientResponseHandler.class));
+        assertEquals(
+                "https://status.example.com/api/v1/status-lists/list%2Fchild/statuses",
+                captor.getValue().getUri().toString());
+    }
+
     private void mockGetResponse(CloseableHttpClient httpClient, int statusCode, String body) throws Exception {
         when(httpClient.execute(any(HttpGet.class), any(HttpClientResponseHandler.class)))
                 .thenAnswer(invocation -> {
