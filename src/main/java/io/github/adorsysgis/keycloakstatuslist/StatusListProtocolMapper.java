@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import org.apache.commons.collections4.ListUtils;
+import org.apache.hc.core5.http.URIScheme;
 import org.jboss.logging.Logger;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
@@ -199,7 +200,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         try {
             URI uri = new URI(url);
             String scheme = uri.getScheme();
-            return scheme != null && (scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"));
+            return URIScheme.HTTP.same(scheme) || URIScheme.HTTPS.same(scheme);
         } catch (URISyntaxException e) {
             logger.debugf("Invalid URL format: %s", url);
             return false;

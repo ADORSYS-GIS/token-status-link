@@ -1,16 +1,18 @@
 package io.github.adorsysgis.keycloakstatuslist.exception;
 
+import org.apache.hc.core5.http.HttpStatus;
+
 public class StatusListException extends Exception {
     private int httpStatus;
 
     public StatusListException(String message) {
         super(message);
-        this.httpStatus = 500; // Default to Internal Server Error
+        this.httpStatus = HttpStatus.SC_INTERNAL_SERVER_ERROR;
     }
 
     public StatusListException(String message, Throwable cause) {
         super(message, cause);
-        this.httpStatus = 500; // Default to Internal Server Error
+        this.httpStatus = HttpStatus.SC_INTERNAL_SERVER_ERROR;
     }
 
     public StatusListException(String message, int httpStatus) {
