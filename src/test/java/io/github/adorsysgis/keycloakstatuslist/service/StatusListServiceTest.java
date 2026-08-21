@@ -69,7 +69,6 @@ class StatusListServiceTest {
 
         statusListService.publishOrUpdate(payload);
 
-        verify(httpClient, never()).checkStatusListExists("list-id");
         verify(httpClient).publishStatusList(eq(payload), anyString());
         verify(httpClient, never()).updateStatusList(any(), anyString());
     }
@@ -86,7 +85,6 @@ class StatusListServiceTest {
 
         statusListService.publishOrUpdate(payload);
 
-        verify(httpClient, never()).checkStatusListExists("list-id");
         verify(httpClient).publishStatusList(eq(payload), anyString());
         verify(httpClient).updateStatusList(eq(payload), anyString());
     }

@@ -19,15 +19,6 @@ public interface StatusListHttpClient {
     void registerIssuer(String issuerId, JWK publicKey) throws StatusListException;
 
     /**
-     * Checks if a status list exists on the server.
-     *
-     * @param statusListId the status list identifier
-     * @return true if the status list exists, false otherwise
-     * @throws StatusListException if the operation fails
-     */
-    boolean checkStatusListExists(String statusListId) throws StatusListException;
-
-    /**
      * Publishes a new status list to the server.
      *
      * @param payload the status list payload
@@ -51,11 +42,4 @@ public interface StatusListHttpClient {
      * @return true if the server is healthy, false otherwise
      */
     boolean checkServerHealth();
-
-    /**
-     * Gets the base server URL configured for this client.
-     *
-     * @return the server URL string
-     */
-    String getServerUrl();
 }

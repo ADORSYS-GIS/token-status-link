@@ -30,10 +30,6 @@ public class StatusListService {
         httpClient.registerIssuer(issuerId, publicKey);
     }
 
-    public boolean checkStatusListExists(String statusListId) throws StatusListException {
-        return httpClient.checkStatusListExists(statusListId);
-    }
-
     public void publishOrUpdate(StatusListPayload payload) throws StatusListException {
         String requestId = UUID.randomUUID().toString();
         String listId = payload.listId();

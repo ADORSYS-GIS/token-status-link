@@ -34,8 +34,6 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
 
     private static final Logger logger = Logger.getLogger(ApacheHttpStatusListClient.class);
 
-    private static final String STATUS_LIST_JWT_MEDIA_TYPE = "application/statuslist+jwt";
-
     private final StatusListEndpointUriResolver uriResolver;
     private final String authToken;
     private final CloseableHttpClient httpClient;
@@ -105,25 +103,6 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
                 },
                 "Timeout registering issuer: " + issuerId + ", Server URL: " + uriResolver.getServerUrl(),
                 "Failed to register issuer: " + issuerId + ", Server URL: " + uriResolver.getServerUrl());
-    }
-
-    @Override
-    public boolean checkStatusListExists(String statusListId) throws StatusListException {
-        checkCircuitBreaker();
-
-        String requestId = UUID.randomUUID().toString();
-        logger.debugf("Request ID: %s, Checking if status list exists: %s", requestId, statusListId);
-
-        HttpGet httpGet = new HttpGet(uriResolver.statusListUrl(statusListId));
-        configureCommonHeaders(httpGet, requestId);
-        httpGet.setHeader("Accept", STATUS_LIST_JWT_MEDIA_TYPE);
-
-        return executeStatusListRequest(
-                requestId,
-                () -> httpClient.execute(
-                        httpGet, response -> handleStatusListExistsResponse(response, requestId, statusListId)),
-                "Timeout checking status list " + statusListId,
-                "Error checking status list " + statusListId);
     }
 
     @Override
@@ -205,11 +184,6 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
         }
     }
 
-    @Override
-    public String getServerUrl() {
-        return uriResolver.getServerUrl();
-    }
-
     private String statusEntriesJson(StatusListPayload payload) throws IOException {
         List<StatusEntryPayload> statusEntries = new ArrayList<>();
         for (StatusListPayload.StatusEntry statusEntry : payload.status()) {
@@ -268,38 +242,6 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
             throw new StatusListServerException(errorMessagePrefix + ". Status code: " + statusCode, statusCode);
         }
         return null;
-    }
-
-    /**
-     * Handles HTTP response for status list existence check (special logic: 200=true, 404=false, else error).
-     *
-     * @param response the HTTP response
-     * @param requestId the request ID for logging
-     * @param statusListId the status list ID for logging
-     * @return true if status list exists (200), false if not found (404)
-     * @throws StatusListServerException on other errors
-     */
-    private boolean handleStatusListExistsResponse(
-            ClassicHttpResponse response, String requestId, String statusListId) {
-        int statusCode = response.getCode();
-
-        if (statusCode == HttpStatus.SC_OK) {
-            logger.infof("Request ID: %s, Status list %s exists.", requestId, statusListId);
-            recordSuccess();
-            return true;
-        } else if (statusCode == HttpStatus.SC_NOT_FOUND) {
-            logger.infof("Request ID: %s, Status list %s does not exist.", requestId, statusListId);
-            recordSuccess();
-            return false;
-        } else {
-            String responseBody = responseBody(response);
-            logger.errorf(
-                    "Request ID: %s, Failed to check status list %s. Status code: %d, Response: %s",
-                    requestId, statusListId, statusCode, responseBody);
-            recordFailure();
-            throw new StatusListServerException(
-                    "Failed to check status list " + statusListId + ". Status code: " + statusCode, statusCode);
-        }
     }
 
     private <T> T executeStatusListRequest(
