@@ -1,5 +1,7 @@
 package io.github.adorsysgis.keycloakstatuslist.config;
 
+import jakarta.ws.rs.core.UriBuilder;
+
 /**
  * Centralised resolver for all status-list server endpoint URIs.
  * <p>
@@ -14,43 +16,45 @@ public final class StatusListEndpointUriResolver {
     private static final String STATUSES_SUB_PATH = "statuses";
     private static final String HEALTH_PATH = "health";
 
-    private final String serverUrl;
+    private final UriBuilder baseUriBuilder;
 
     /**
      * Creates a resolver for the given status-list server base URL.
      *
-     * @param serverUrl the status-list server URL (trailing slash is normalised automatically)
+     * @param serverUrl the status-list server URL
      */
     public StatusListEndpointUriResolver(String serverUrl) {
-        this.serverUrl = serverUrl.endsWith("/") ? serverUrl : serverUrl + "/";
+        this.baseUriBuilder = UriBuilder.fromUri(serverUrl);
     }
 
     /**
-     * Returns the normalised base server URL.
+     * Returns the base server URL.
      */
     public String getServerUrl() {
-        return serverUrl;
+        return baseUriBuilder.clone().build().toString();
     }
 
     /**
      * Full URL for credential issuer registration.
-     * <p>Example: {@code https://example.com/api/v1/credentials}</p>
      */
     public String credentialsUrl() {
-        return serverUrl + CREDENTIALS_PATH;
+        return baseUriBuilder.clone().path(CREDENTIALS_PATH).build().toString();
     }
 
     /**
      * Full URL to retrieve or check a specific status list.
-     * <p>Example: {@code https://example.com/api/v1/status-lists/{listId}}</p>
      */
     public String statusListUrl(String listId) {
-        return serverUrl + STATUS_LISTS_PATH + "/" + listId;
+        return baseUriBuilder
+                .clone()
+                .path(STATUS_LISTS_PATH)
+                .path("{listId}")
+                .build(listId)
+                .toString();
     }
 
     /**
      * Full URL to publish or update status entries of a specific status list.
-     * <p>Example: {@code https://example.com/api/v1/status-lists/{listId}/statuses}</p>
      */
     public String statusListStatusesUrl(String listId) {
         return statusListUrl(listId) + "/" + STATUSES_SUB_PATH;
@@ -58,22 +62,8 @@ public final class StatusListEndpointUriResolver {
 
     /**
      * Full URL for the server health-check endpoint.
-     * <p>Example: {@code https://example.com/health}</p>
      */
     public String healthUrl() {
-        return serverUrl + HEALTH_PATH;
-    }
-
-    /**
-     * URI path segment for retrieving a specific status list.
-     * The path starts with a leading slash so it can be used directly
-     * with {@link UriBuilder#path(String)}.
-     * <p>Example: {@code /api/v1/status-lists/{listId}}</p>
-     *
-     * @param listId the status list identifier
-     * @return the path segment (leading slash included)
-     */
-    public String statusListRetrievePath(String listId) {
-        return "/" + STATUS_LISTS_PATH + "/" + listId;
+        return baseUriBuilder.clone().path(HEALTH_PATH).build().toString();
     }
 }
