@@ -8,6 +8,7 @@ import java.security.interfaces.RSAPublicKey;
 import java.util.HashMap;
 import java.util.Map;
 import org.jboss.logging.Logger;
+import org.keycloak.OID4VCConstants;
 import org.keycloak.common.util.Time;
 import org.keycloak.crypto.Algorithm;
 import org.keycloak.crypto.KeyUse;
@@ -88,9 +89,9 @@ public class CryptoIdentityService {
 
         // Payload
         Map<String, Object> payload = new HashMap<>();
-        payload.put("iss", realmConfig.getTokenIssuerId());
-        payload.put("iat", Time.currentTime());
-        payload.put("exp", Time.currentTime() + DEFAULT_AUTH_TOKEN_LIFETIME);
+        payload.put(OID4VCConstants.CLAIM_NAME_ISSUER, realmConfig.getTokenIssuerId());
+        payload.put(OID4VCConstants.CLAIM_NAME_IAT, Time.currentTime());
+        payload.put(OID4VCConstants.CLAIM_NAME_EXP, Time.currentTime() + DEFAULT_AUTH_TOKEN_LIFETIME);
 
         // Build and sign JWT
         return new JWSBuilder().jsonContent(payload).sign(signatureProvider.signer(keyWrapper));
