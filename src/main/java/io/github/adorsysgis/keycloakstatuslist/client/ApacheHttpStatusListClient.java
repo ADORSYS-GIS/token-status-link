@@ -1,5 +1,6 @@
 package io.github.adorsysgis.keycloakstatuslist.client;
 
+import io.github.adorsysgis.keycloakstatuslist.config.StatusListEndpointUriResolver;
 import io.github.adorsysgis.keycloakstatuslist.exception.StatusListException;
 import io.github.adorsysgis.keycloakstatuslist.exception.StatusListServerException;
 import io.github.adorsysgis.keycloakstatuslist.model.IssuerRegistrationPayload;
@@ -33,14 +34,9 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
 
     private static final Logger logger = Logger.getLogger(ApacheHttpStatusListClient.class);
 
-    private static final String API_V1_PATH = "api/v1";
-    private static final String CREDENTIALS_PATH = API_V1_PATH + "/credentials";
-    private static final String STATUS_LISTS_PATH = API_V1_PATH + "/status-lists";
-    private static final String STATUS_LIST_STATUSES_PATH = "statuses";
-    private static final String HEALTH_PATH = "health";
     private static final String STATUS_LIST_JWT_MEDIA_TYPE = "application/statuslist+jwt";
 
-    private final String serverUrl;
+    private final StatusListEndpointUriResolver uriResolver;
     private final String authToken;
     private final CloseableHttpClient httpClient;
     private final CircuitBreaker circuitBreaker;
@@ -55,14 +51,14 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
      */
     public ApacheHttpStatusListClient(
             String serverUrl, String authToken, CloseableHttpClient httpClient, CircuitBreaker circuitBreaker) {
-        this.serverUrl = serverUrl.endsWith("/") ? serverUrl : serverUrl + "/";
+        this.uriResolver = new StatusListEndpointUriResolver(serverUrl);
         this.authToken = authToken;
         this.httpClient = httpClient;
         this.circuitBreaker = circuitBreaker;
 
         logger.infof(
                 "Initialized ApacheHttpStatusListClient with serverUrl: %s, circuitBreaker: %s",
-                this.serverUrl, circuitBreaker != null ? "enabled" : "disabled");
+                uriResolver.getServerUrl(), circuitBreaker != null ? "enabled" : "disabled");
     }
 
     @Override
@@ -70,7 +66,9 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
         checkCircuitBreaker();
 
         String requestId = UUID.randomUUID().toString();
-        logger.infof("Request ID: %s, Registering issuer: %s with server: %s", requestId, issuerId, serverUrl);
+        logger.infof(
+                "Request ID: %s, Registering issuer: %s with server: %s",
+                requestId, issuerId, uriResolver.getServerUrl());
 
         IssuerRegistrationPayload issuerRecord = new IssuerRegistrationPayload();
         issuerRecord.setIssuer(issuerId);
@@ -83,7 +81,7 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
                     logger.debugf(
                             "Request ID: %s, Registering issuer: %s, Payload: %s", requestId, issuerId, jsonPayload);
 
-                    HttpPost httpPost = new HttpPost(credentialsUrl());
+                    HttpPost httpPost = new HttpPost(uriResolver.credentialsUrl());
                     configureJsonRequest(httpPost, requestId, jsonPayload);
 
                     httpClient.execute(httpPost, response -> {
@@ -105,8 +103,8 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
                     });
                     return null;
                 },
-                "Timeout registering issuer: " + issuerId + ", Server URL: " + serverUrl,
-                "Failed to register issuer: " + issuerId + ", Server URL: " + serverUrl);
+                "Timeout registering issuer: " + issuerId + ", Server URL: " + uriResolver.getServerUrl(),
+                "Failed to register issuer: " + issuerId + ", Server URL: " + uriResolver.getServerUrl());
     }
 
     @Override
@@ -116,7 +114,7 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
         String requestId = UUID.randomUUID().toString();
         logger.debugf("Request ID: %s, Checking if status list exists: %s", requestId, statusListId);
 
-        HttpGet httpGet = new HttpGet(statusListUrl(statusListId));
+        HttpGet httpGet = new HttpGet(uriResolver.statusListUrl(statusListId));
         configureCommonHeaders(httpGet, requestId);
         httpGet.setHeader("Accept", STATUS_LIST_JWT_MEDIA_TYPE);
 
@@ -139,7 +137,7 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
                 requestId,
                 () -> {
                     String jsonPayload = statusEntriesJson(payload);
-                    HttpPut httpPut = new HttpPut(statusListStatusesUrl(listId));
+                    HttpPut httpPut = new HttpPut(uriResolver.statusListStatusesUrl(listId));
                     configureJsonRequest(httpPut, requestId, jsonPayload);
 
                     return httpClient.execute(
@@ -166,7 +164,7 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
                 requestId,
                 () -> {
                     String jsonPayload = statusEntriesJson(payload);
-                    HttpPatch httpPatch = new HttpPatch(statusListStatusesUrl(listId));
+                    HttpPatch httpPatch = new HttpPatch(uriResolver.statusListStatusesUrl(listId));
                     configureJsonRequest(httpPatch, requestId, jsonPayload);
 
                     return httpClient.execute(
@@ -185,9 +183,9 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
     @Override
     public boolean checkServerHealth() {
         String requestId = UUID.randomUUID().toString();
-        logger.debugf("Request ID: %s, Checking server health at: %s", requestId, serverUrl);
+        logger.debugf("Request ID: %s, Checking server health at: %s", requestId, uriResolver.getServerUrl());
 
-        HttpGet httpGet = new HttpGet(this.serverUrl + HEALTH_PATH);
+        HttpGet httpGet = new HttpGet(uriResolver.healthUrl());
         configureCommonHeaders(httpGet, requestId);
 
         try {
@@ -209,19 +207,7 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
 
     @Override
     public String getServerUrl() {
-        return serverUrl;
-    }
-
-    private String credentialsUrl() {
-        return serverUrl + CREDENTIALS_PATH;
-    }
-
-    private String statusListUrl(String statusListId) {
-        return serverUrl + STATUS_LISTS_PATH + "/" + statusListId;
-    }
-
-    private String statusListStatusesUrl(String statusListId) {
-        return statusListUrl(statusListId) + "/" + STATUS_LIST_STATUSES_PATH;
+        return uriResolver.getServerUrl();
     }
 
     private String statusEntriesJson(StatusListPayload payload) throws IOException {
