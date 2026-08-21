@@ -28,7 +28,7 @@ public final class StatusListEndpointUriResolver {
     }
 
     /**
-     * Returns the normalised base server URL.
+     * Returns the base server URL.
      */
     public String getServerUrl() {
         return baseUriBuilder.clone().build().toString();
