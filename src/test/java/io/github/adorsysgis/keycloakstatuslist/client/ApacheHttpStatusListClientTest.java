@@ -69,39 +69,6 @@ class ApacheHttpStatusListClientTest {
     }
 
     @Test
-    void checkStatusListExistsShouldHandle200And404() throws Exception {
-        CloseableHttpClient okClient = mock(CloseableHttpClient.class);
-        mockGetResponse(okClient, 200, "");
-        ApacheHttpStatusListClient ok =
-                new ApacheHttpStatusListClient("https://status.example.com/", "token", okClient, null);
-        assertTrue(ok.checkStatusListExists("list-1"));
-        ArgumentCaptor<HttpGet> okRequestCaptor = ArgumentCaptor.forClass(HttpGet.class);
-        verify(okClient).execute(okRequestCaptor.capture(), any(HttpClientResponseHandler.class));
-        assertEquals(
-                "https://status.example.com/api/v1/status-lists/list-1",
-                okRequestCaptor.getValue().getUri().toString());
-        assertEquals(
-                "application/statuslist+jwt",
-                okRequestCaptor.getValue().getFirstHeader("Accept").getValue());
-
-        CloseableHttpClient notFoundClient = mock(CloseableHttpClient.class);
-        mockGetResponse(notFoundClient, 404, "");
-        ApacheHttpStatusListClient notFound =
-                new ApacheHttpStatusListClient("https://status.example.com/", "token", notFoundClient, null);
-        assertFalse(notFound.checkStatusListExists("list-2"));
-    }
-
-    @Test
-    void checkStatusListExistsShouldThrowOnServerError() throws Exception {
-        CloseableHttpClient httpClient = mock(CloseableHttpClient.class);
-        mockGetResponse(httpClient, 500, "{\"error\":\"boom\"}");
-        ApacheHttpStatusListClient client =
-                new ApacheHttpStatusListClient("https://status.example.com", "token", httpClient, null);
-
-        assertThrows(StatusListServerException.class, () -> client.checkStatusListExists("list-1"));
-    }
-
-    @Test
     void publishAndUpdateShouldUseExpectedEndpoints() throws Exception {
         CloseableHttpClient httpClient = mock(CloseableHttpClient.class);
         mockPutResponse(httpClient, 201, "{\"ok\":true}");
@@ -183,36 +150,32 @@ class ApacheHttpStatusListClientTest {
     @Test
     void shouldFailFastWhenCircuitBreakerOpen() throws Exception {
         CloseableHttpClient httpClient = mock(CloseableHttpClient.class);
-        CircuitBreaker breaker = createBreaker("client-cb-open", 1, 60, 30);
+        CircuitBreaker breaker = createBreaker("client-cb-open-publish", 1, 60, 30);
         breaker.recordFailure();
         ApacheHttpStatusListClient client =
                 new ApacheHttpStatusListClient("https://status.example.com", "token", httpClient, breaker);
+        StatusListService.StatusListPayload payload = new StatusListService.StatusListPayload(
+                "list-1", List.of(new StatusListService.StatusListPayload.StatusEntry(1, TokenStatus.VALID)));
 
-        assertThrows(StatusListException.class, () -> client.checkStatusListExists("list-1"));
-        verify(httpClient, never()).execute(any(HttpGet.class), any(HttpClientResponseHandler.class));
+        assertThrows(StatusListException.class, () -> client.publishStatusList(payload, "req-1"));
+        verify(httpClient, never()).execute(any(HttpPut.class), any(HttpClientResponseHandler.class));
     }
 
     @Test
     void shouldWrapInterruptedIOExceptionAsStatusListExceptionAndReInterrupt() throws Exception {
         CloseableHttpClient httpClient = mock(CloseableHttpClient.class);
-        when(httpClient.execute(any(HttpGet.class), any(HttpClientResponseHandler.class)))
+        when(httpClient.execute(any(HttpPut.class), any(HttpClientResponseHandler.class)))
                 .thenThrow(new InterruptedIOException("timeout"));
-        CircuitBreaker breaker = createBreaker("client-cb-timeout", 5, 60, 30);
+        CircuitBreaker breaker = createBreaker("client-cb-timeout-publish", 5, 60, 30);
         ApacheHttpStatusListClient client =
                 new ApacheHttpStatusListClient("https://status.example.com", "token", httpClient, breaker);
+        StatusListService.StatusListPayload payload = new StatusListService.StatusListPayload(
+                "list-1", List.of(new StatusListService.StatusListPayload.StatusEntry(1, TokenStatus.VALID)));
 
-        assertThrows(StatusListException.class, () -> client.checkStatusListExists("list-1"));
+        assertThrows(StatusListException.class, () -> client.publishStatusList(payload, "req-1"));
         assertTrue(Thread.currentThread().isInterrupted());
         assertEquals(1, breaker.getFailureCount());
         Thread.interrupted();
-    }
-
-    @Test
-    void shouldNormalizeServerUrlWithTrailingSlash() {
-        ApacheHttpStatusListClient client = new ApacheHttpStatusListClient(
-                "https://status.example.com", null, mock(CloseableHttpClient.class), null);
-
-        assertEquals("https://status.example.com/", client.getServerUrl());
     }
 
     private void mockGetResponse(CloseableHttpClient httpClient, int statusCode, String body) throws Exception {
