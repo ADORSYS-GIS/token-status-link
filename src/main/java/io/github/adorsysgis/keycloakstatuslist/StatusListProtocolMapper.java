@@ -5,6 +5,7 @@ import static io.github.adorsysgis.keycloakstatuslist.jpa.entity.StatusListMappi
 import io.github.adorsysgis.keycloakstatuslist.client.ApacheHttpStatusListClient;
 import io.github.adorsysgis.keycloakstatuslist.client.StatusListHttpClient;
 import io.github.adorsysgis.keycloakstatuslist.config.StatusListConfig;
+import io.github.adorsysgis.keycloakstatuslist.config.StatusListEndpointUriResolver;
 import io.github.adorsysgis.keycloakstatuslist.exception.StatusListException;
 import io.github.adorsysgis.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
 import io.github.adorsysgis.keycloakstatuslist.jpa.repository.StatusListRepository;
@@ -170,8 +171,9 @@ public class StatusListProtocolMapper extends OID4VCMapper {
 
         // Build URI for status list
         String listId = statusListRepository.getNextStatusListId(realmId, config.getStatusListMaxEntries());
+        StatusListEndpointUriResolver resolver = new StatusListEndpointUriResolver(serverUrl);
         URI uri = UriBuilder.fromUri(serverUrl)
-                .path(String.format(Constants.HTTP_ENDPOINT_RETRIEVE_PATH, listId))
+                .path(resolver.statusListRetrievePath(listId))
                 .build();
         logger.debugf("Configuration: listId=%s, uri=%s", listId, uri);
 
@@ -298,7 +300,5 @@ public class StatusListProtocolMapper extends OID4VCMapper {
 
         String ID_CLAIM_KEY = "id";
         String STATUS_CLAIM_KEY = "status";
-
-        String HTTP_ENDPOINT_RETRIEVE_PATH = "/api/v1/status-lists/%s";
     }
 }

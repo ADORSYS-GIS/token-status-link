@@ -23,6 +23,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.github.adorsysgis.keycloakstatuslist.config.StatusListConfig;
+import io.github.adorsysgis.keycloakstatuslist.config.StatusListEndpointUriResolver;
 import io.github.adorsysgis.keycloakstatuslist.exception.StatusListException;
 import io.github.adorsysgis.keycloakstatuslist.helpers.MockKeycloakTest;
 import io.github.adorsysgis.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
@@ -391,8 +392,9 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
     @SuppressWarnings("SameParameterValue")
     private URI listUri(String listId) {
+        StatusListEndpointUriResolver resolver = new StatusListEndpointUriResolver(TEST_SERVER_URL);
         return UriBuilder.fromUri(TEST_SERVER_URL)
-                .path(String.format(Constants.HTTP_ENDPOINT_RETRIEVE_PATH, listId))
+                .path(resolver.statusListRetrievePath(listId))
                 .build();
     }
 
