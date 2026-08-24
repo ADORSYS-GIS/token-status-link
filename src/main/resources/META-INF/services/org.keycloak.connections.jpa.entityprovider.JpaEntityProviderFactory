@@ -1,1 +1,1 @@
-com.adorsys.keycloakstatuslist.jpa.StatusListJpaEntityProviderFactory
+io.github.adorsysgis.keycloakstatuslist.jpa.StatusListJpaEntityProviderFactory

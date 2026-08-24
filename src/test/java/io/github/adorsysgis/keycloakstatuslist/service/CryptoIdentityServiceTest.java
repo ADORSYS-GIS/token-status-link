@@ -1,0 +1,211 @@
+package io.github.adorsysgis.keycloakstatuslist.service;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.when;
+
+import io.github.adorsysgis.keycloakstatuslist.config.StatusListConfig;
+import io.github.adorsysgis.keycloakstatuslist.exception.StatusListException;
+import io.github.adorsysgis.keycloakstatuslist.helpers.MockKeycloakTest;
+import io.github.adorsysgis.keycloakstatuslist.helpers.RSATestUtils;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.security.PublicKey;
+import java.security.interfaces.ECPublicKey;
+import java.util.Map;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.keycloak.crypto.Algorithm;
+import org.keycloak.crypto.KeyUse;
+import org.keycloak.crypto.KeyWrapper;
+import org.keycloak.jose.jws.JWSInput;
+import org.keycloak.util.JsonSerialization;
+import org.mockito.Mockito;
+
+class CryptoIdentityServiceTest extends MockKeycloakTest {
+
+    private CryptoIdentityService service;
+
+    @BeforeEach
+    void setUpService() {
+        service = new CryptoIdentityService(session);
+    }
+
+    @Test
+    void getActiveKeyShouldReturnCurrentSigningKey() {
+        KeyWrapper key = service.getActiveKey(realm);
+
+        assertNotNull(key);
+        assertNotNull(key.getPublicKey());
+    }
+
+    @Test
+    void getActiveKeyShouldPreferEs256OverRs256() throws Exception {
+        KeyPairGenerator ecGen = KeyPairGenerator.getInstance("EC");
+        ecGen.initialize(256);
+        KeyPair ecPair = ecGen.generateKeyPair();
+
+        KeyWrapper esKey = new KeyWrapper();
+        esKey.setKid("es-kid");
+        esKey.setAlgorithm(Algorithm.ES256);
+        esKey.setPublicKey(ecPair.getPublic()); // must be non-null for the shared resolver
+
+        KeyWrapper rsaKey = new KeyWrapper();
+        rsaKey.setKid("rsa-kid");
+        rsaKey.setAlgorithm(Algorithm.RS256);
+
+        Mockito.when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq(Algorithm.ES256)))
+                .thenReturn(esKey);
+        Mockito.lenient()
+                .when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq(Algorithm.RS256)))
+                .thenReturn(rsaKey);
+
+        KeyWrapper result = service.getActiveKey(realm);
+        assertEquals("es-kid", result.getKid());
+        assertEquals(Algorithm.ES256, result.getAlgorithm());
+    }
+
+    @Test
+    void getActiveKeyShouldFallbackToRs256WhenEs256Missing() {
+        KeyWrapper rsaKey = new KeyWrapper();
+        rsaKey.setKid("rsa-kid-fallback");
+        rsaKey.setAlgorithm(Algorithm.RS256);
+
+        Mockito.when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq(Algorithm.ES256)))
+                .thenReturn(null);
+        Mockito.when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq(Algorithm.RS256)))
+                .thenReturn(rsaKey);
+
+        KeyWrapper result = service.getActiveKey(realm);
+        assertEquals("rsa-kid-fallback", result.getKid());
+        assertEquals(Algorithm.RS256, result.getAlgorithm());
+    }
+
+    @Test
+    void getActiveKeyShouldThrowWhenNoActiveSigningKey() {
+        Mockito.when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq(Algorithm.ES256)))
+                .thenReturn(null);
+        when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq(Algorithm.RS256)))
+                .thenReturn(null);
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class, () -> service.getActiveKey(realm));
+        assertTrue(ex.getMessage().contains("No active signing key found"));
+    }
+
+    @Test
+    void getJwtTokenShouldContainExpectedIssuerClaim() throws Exception {
+        Mockito.when(realm.getAttribute(StatusListConfig.STATUS_LIST_TOKEN_ISSUER_PREFIX))
+                .thenReturn("issuer-prefix");
+        StatusListConfig config = new StatusListConfig(realm);
+
+        String token = service.getJwtToken(config);
+
+        assertNotNull(token);
+        JWSInput jwsInput = new JWSInput(token);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> payload = JsonSerialization.readValue(jwsInput.getContent(), Map.class);
+
+        assertEquals("issuer-prefix::" + TEST_REALM_NAME, payload.get("iss"));
+        assertTrue(payload.containsKey("iat"));
+        assertTrue(payload.containsKey("exp"));
+    }
+
+    @Test
+    void getRealmKeyDataShouldFallbackToRs256WhenDefaultAlgMissing() throws Exception {
+        when(realm.getDefaultSignatureAlgorithm()).thenReturn(null);
+        // ES256 check fails
+        when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq(Algorithm.ES256)))
+                .thenReturn(null);
+        // Fallback to RS256
+        when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq(Algorithm.RS256)))
+                .thenReturn(RSATestUtils.getRsaKeyWrapper(testJwkResource("/keycloak-active-key-rsa.json")));
+
+        CryptoIdentityService.KeyData keyData = CryptoIdentityService.getRealmKeyData(session, realm);
+
+        assertNotNull(keyData);
+        assertNotNull(keyData.jwk());
+        assertEquals("RS256", keyData.algorithm());
+    }
+
+    @Test
+    void getRealmKeyDataShouldSupportEcPublicKey() throws Exception {
+        KeyPairGenerator ecGen = KeyPairGenerator.getInstance("EC");
+        ecGen.initialize(256);
+        KeyPair ecPair = ecGen.generateKeyPair();
+
+        KeyWrapper ecKey = new KeyWrapper();
+        ecKey.setKid("ec-kid");
+        ecKey.setAlgorithm(Algorithm.ES256);
+        ecKey.setPublicKey(ecPair.getPublic());
+
+        Mockito.when(realm.getDefaultSignatureAlgorithm()).thenReturn(Algorithm.ES256);
+        Mockito.when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq(Algorithm.ES256)))
+                .thenReturn(ecKey);
+
+        CryptoIdentityService.KeyData keyData = CryptoIdentityService.getRealmKeyData(session, realm);
+
+        assertNotNull(keyData);
+        assertNotNull(keyData.jwk());
+        assertEquals(Algorithm.ES256, keyData.algorithm());
+        assertTrue(ecKey.getPublicKey() instanceof ECPublicKey);
+    }
+
+    @Test
+    void getRealmKeyDataShouldThrowWhenNoActiveKeyFound() {
+        Mockito.when(realm.getDefaultSignatureAlgorithm()).thenReturn(Algorithm.RS256);
+        Mockito.when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq(Algorithm.RS256)))
+                .thenReturn(null);
+
+        StatusListException ex =
+                assertThrows(StatusListException.class, () -> CryptoIdentityService.getRealmKeyData(session, realm));
+        assertTrue(ex.getMessage().contains("No active signing key found"));
+    }
+
+    @Test
+    void getRealmKeyDataShouldThrowWhenPublicKeyMissing() {
+        KeyWrapper keyWithoutPublicKey = new KeyWrapper();
+        keyWithoutPublicKey.setKid("missing-public");
+        keyWithoutPublicKey.setAlgorithm(Algorithm.RS256);
+        keyWithoutPublicKey.setPublicKey(null);
+
+        Mockito.when(realm.getDefaultSignatureAlgorithm()).thenReturn(Algorithm.RS256);
+        Mockito.when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq(Algorithm.RS256)))
+                .thenReturn(keyWithoutPublicKey);
+
+        StatusListException ex =
+                assertThrows(StatusListException.class, () -> CryptoIdentityService.getRealmKeyData(session, realm));
+        assertTrue(ex.getMessage().contains("Active key has no public key"));
+    }
+
+    @Test
+    void getRealmKeyDataShouldThrowForUnsupportedPublicKeyType() {
+        PublicKey unsupportedKey = Mockito.mock(PublicKey.class);
+
+        KeyWrapper unsupported = new KeyWrapper();
+        unsupported.setKid("unsupported-kid");
+        unsupported.setAlgorithm(Algorithm.RS256);
+        unsupported.setPublicKey(unsupportedKey);
+
+        Mockito.when(realm.getDefaultSignatureAlgorithm()).thenReturn(Algorithm.RS256);
+        Mockito.when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq(Algorithm.RS256)))
+                .thenReturn(unsupported);
+
+        StatusListException ex =
+                assertThrows(StatusListException.class, () -> CryptoIdentityService.getRealmKeyData(session, realm));
+        assertTrue(ex.getMessage().contains("Unsupported key type"));
+    }
+
+    @Test
+    void getRealmKeyDataShouldWrapUnexpectedExceptions() {
+        when(realm.getDefaultSignatureAlgorithm()).thenReturn(Algorithm.RS256);
+        when(keyManager.getActiveKey(eq(realm), eq(KeyUse.SIG), eq(Algorithm.RS256)))
+                .thenThrow(new RuntimeException("key manager failure"));
+
+        StatusListException ex =
+                assertThrows(StatusListException.class, () -> CryptoIdentityService.getRealmKeyData(session, realm));
+        assertTrue(ex.getMessage().contains("Failed to retrieve realm public key"));
+    }
+}

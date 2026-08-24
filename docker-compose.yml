@@ -13,7 +13,7 @@ services:
   keycloak-token-status-plugin:
     image: quay.io/keycloak/keycloak:26.7.0
     command: >
-      start-dev --features=oid4vc-vci --log-level=INFO,com.adorsys.keycloakstatuslist:DEBUG
+      start-dev --features=oid4vc-vci --log-level=INFO,io.github.adorsysgis.keycloakstatuslist:DEBUG
       --db=postgres --db-username=admin --db-password=admin
       --db-url=jdbc:postgresql://postgres:5432/keycloak_token_status_plugin
     environment:
