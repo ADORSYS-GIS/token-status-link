@@ -8,6 +8,7 @@ import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.apache.hc.core5.http.HttpRequest;
 import org.apache.hc.core5.http.HttpResponse;
+import org.apache.hc.core5.http.HttpStatus;
 import org.apache.hc.core5.http.protocol.HttpContext;
 import org.apache.hc.core5.util.TimeValue;
 import org.apache.hc.core5.util.Timeout;
@@ -75,7 +76,7 @@ public class CustomHttpClient {
             @Override
             public boolean retryRequest(HttpResponse response, int execCount, HttpContext context) {
                 int status = response.getCode();
-                Boolean isRetriable = status >= 500;
+                Boolean isRetriable = status >= HttpStatus.SC_INTERNAL_SERVER_ERROR;
                 if (isRetriable) {
                     logger.warnf(
                             "[Attempt %d/%d] Failed to send status. Response: %d %s",

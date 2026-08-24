@@ -100,9 +100,8 @@ public class CredentialRevocationEndpoint extends TokenRevocationEndpoint {
         } catch (Exception e) {
             logger.errorf(e, "Credential revocation failed due to unexpected error. Mode: %s", revocationMode);
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
-                    .entity(
-                            "{\"error\":\"server_error\",\"error_description\":\"Internal error during credential revocation\"}")
-                    .type(MediaType.APPLICATION_JSON_TYPE)
+                    .entity(CredentialRevocationResponse.error("Internal error during credential revocation"))
+                    .type(MediaType.APPLICATION_JSON)
                     .build();
         }
     }

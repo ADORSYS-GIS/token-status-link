@@ -5,6 +5,7 @@ import static org.keycloak.OID4VCConstants.OPENID_CREDENTIAL;
 import jakarta.ws.rs.core.HttpHeaders;
 import java.util.List;
 import java.util.Optional;
+import org.apache.hc.client5.http.auth.StandardAuthScheme;
 import org.jboss.logging.Logger;
 import org.keycloak.TokenVerifier;
 import org.keycloak.common.VerificationException;
@@ -17,7 +18,6 @@ import org.keycloak.utils.StringUtil;
 public class IssuedCredentialIdResolver {
 
     private static final Logger logger = Logger.getLogger(IssuedCredentialIdResolver.class);
-    private static final String BEARER_AUTH_SCHEME = "bearer";
     private static final String DPOP_AUTH_SCHEME = "dpop";
 
     private final KeycloakSession session;
@@ -59,7 +59,7 @@ public class IssuedCredentialIdResolver {
     }
 
     private boolean isAccessTokenAuthScheme(String scheme) {
-        return BEARER_AUTH_SCHEME.equalsIgnoreCase(scheme) || DPOP_AUTH_SCHEME.equalsIgnoreCase(scheme);
+        return StandardAuthScheme.BEARER.equalsIgnoreCase(scheme) || DPOP_AUTH_SCHEME.equalsIgnoreCase(scheme);
     }
 
     private Optional<AccessToken> readAccessToken(String token) {

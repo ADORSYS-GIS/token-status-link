@@ -11,6 +11,7 @@ import java.io.InterruptedIOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import org.apache.hc.client5.http.auth.StandardAuthScheme;
 import org.apache.hc.client5.http.classic.methods.HttpGet;
 import org.apache.hc.client5.http.classic.methods.HttpPatch;
 import org.apache.hc.client5.http.classic.methods.HttpPost;
@@ -18,6 +19,8 @@ import org.apache.hc.client5.http.classic.methods.HttpPut;
 import org.apache.hc.client5.http.classic.methods.HttpUriRequestBase;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.core5.http.ClassicHttpResponse;
+import org.apache.hc.core5.http.ContentType;
+import org.apache.hc.core5.http.HttpHeaders;
 import org.apache.hc.core5.http.HttpRequest;
 import org.apache.hc.core5.http.HttpStatus;
 import org.apache.hc.core5.http.ParseException;
@@ -285,7 +288,7 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
     private void configureCommonHeaders(HttpRequest request, String requestId) {
         request.setHeader("X-Request-ID", requestId);
         if (authToken != null && !authToken.isEmpty()) {
-            request.setHeader("Authorization", "Bearer " + authToken);
+            request.setHeader(HttpHeaders.AUTHORIZATION, StandardAuthScheme.BEARER + " " + authToken);
         }
     }
 
@@ -297,7 +300,7 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
      * @param jsonPayload the JSON payload to set as the request entity
      */
     private void configureJsonRequest(HttpUriRequestBase request, String requestId, String jsonPayload) {
-        request.setHeader("Content-Type", "application/json");
+        request.setHeader(HttpHeaders.CONTENT_TYPE, ContentType.APPLICATION_JSON.getMimeType());
         configureCommonHeaders(request, requestId);
         request.setEntity(new StringEntity(jsonPayload));
     }
