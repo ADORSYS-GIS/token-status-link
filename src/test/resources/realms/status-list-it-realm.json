@@ -32,6 +32,23 @@
           "value": "password"
         }
       ]
+    },
+    {
+      "username": "bob",
+      "enabled": true,
+      "email": "bob@example.test",
+      "firstName": "Bob",
+      "lastName": "Reviewer",
+      "attributes": {
+        "birthdate": ["1991-02-02"]
+      },
+      "realmRoles": ["credential-offer-create"],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "password"
+        }
+      ]
     }
   ],
   "clients": [
