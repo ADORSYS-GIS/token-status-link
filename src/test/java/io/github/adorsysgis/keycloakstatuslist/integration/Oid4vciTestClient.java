@@ -1,4 +1,4 @@
-package com.adorsys.keycloakstatuslist.integration;
+package io.github.adorsysgis.keycloakstatuslist.integration;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;

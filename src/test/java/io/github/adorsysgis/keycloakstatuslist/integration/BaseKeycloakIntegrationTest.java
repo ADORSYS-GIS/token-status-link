@@ -1,10 +1,10 @@
-package com.adorsys.keycloakstatuslist.integration;
+package io.github.adorsysgis.keycloakstatuslist.integration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.adorsys.keycloakstatuslist.config.StatusListConfig;
+import io.github.adorsysgis.keycloakstatuslist.config.StatusListConfig;
 import dasniko.testcontainers.keycloak.KeycloakContainer;
 import java.io.File;
 import java.io.IOException;
@@ -45,7 +45,7 @@ abstract class BaseKeycloakIntegrationTest {
                 .withProviderLibsFrom(List.of(pluginJar()))
                 .withRealmImportFiles("/realms/status-list-it-realm.json")
                 .withFeaturesEnabled("oid4vc-vci", "oid4vc-vci-rest-credential-offer", "oid4vc-vci-preauth-code")
-                .withEnv("KC_LOG_LEVEL", "INFO,com.adorsys.keycloakstatuslist:DEBUG")
+                .withEnv("KC_LOG_LEVEL", "INFO,io.github.adorsysgis.keycloakstatuslist:DEBUG")
                 .withEnv("JAVA_OPTS_APPEND", "-Xms512m -Xmx1536m");
         keycloak.start();
 

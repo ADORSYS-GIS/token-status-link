@@ -1,10 +1,10 @@
-package com.adorsys.keycloakstatuslist.integration;
+package io.github.adorsysgis.keycloakstatuslist.integration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.adorsys.keycloakstatuslist.model.TokenStatus;
+import io.github.adorsysgis.keycloakstatuslist.model.TokenStatus;
 import org.junit.jupiter.api.Test;
 
 class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {

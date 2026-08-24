@@ -1,4 +1,4 @@
-package com.adorsys.keycloakstatuslist.integration;
+package io.github.adorsysgis.keycloakstatuslist.integration;
 
 import com.fasterxml.jackson.databind.JsonNode;
 
