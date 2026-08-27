@@ -51,8 +51,8 @@ see [Keycloak Outgoing Proxy Config](https://www.keycloak.org/server/outgoinghtt
 This plugin has been tested and verified to work with:
 
 | Component | Version |
-|-----------|---------|
-| Keycloak  | 26.6.3  |
+| --------- | ------- |
+| Keycloak  | 26.7.2  |
 
 ## Installation
 
@@ -60,8 +60,7 @@ This plugin has been tested and verified to work with:
    ```bash
    ./mvnw clean package
    ```
-2. Copy the resulting JAR file `target/keycloak-token-status-plugin-1.0.0-SNAPSHOT.jar` to Keycloak's `providers`
-   directory.
+2. Copy the resulting JAR file from `target/keycloak-token-status-plugin-*.jar` to Keycloak's `providers` directory.
 
 3. Restart Keycloak to load the plugin.
 
@@ -145,12 +144,12 @@ status-list mapping table and is returned as `VALID`, `INVALID`, `SUSPENDED`, or
 
 The plugin uses the status list server API v1 paths:
 
-| Operation | Endpoint |
-| --------- | -------- |
-| Register issuer credential/public key | `POST /api/v1/credentials` |
-| Retrieve status list JWT | `GET /api/v1/status-lists/{list_id}` with `Accept: application/statuslist+jwt` |
-| Publish status entries | `PUT /api/v1/status-lists/{list_id}/statuses` |
-| Update status entries | `PATCH /api/v1/status-lists/{list_id}/statuses` |
+| Operation                             | Endpoint                                                                       |
+| ------------------------------------- | ------------------------------------------------------------------------------ |
+| Register issuer credential/public key | `POST /api/v1/credentials`                                                     |
+| Retrieve status list JWT              | `GET /api/v1/status-lists/{list_id}` with `Accept: application/statuslist+jwt` |
+| Publish status entries                | `PUT /api/v1/status-lists/{list_id}/statuses`                                  |
+| Update status entries                 | `PATCH /api/v1/status-lists/{list_id}/statuses`                                |
 
 ## Development and Testing
 
