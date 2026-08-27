@@ -25,12 +25,15 @@ public class StatusListConfig {
             "status-list-circuit-breaker-failure-threshold";
     public static final String STATUS_LIST_MANDATORY = "status-list-mandatory";
     public static final String STATUS_LIST_MAX_ENTRIES = "status-list-max-entries";
+    public static final String STATUS_LIST_TLS_TRUST_ALL = "status-list-tls-trust-all";
+    public static final String STATUS_LIST_TLS_CA_CERT_PATH = "status-list-tls-ca-cert-path";
 
     // Default values
     public static final boolean DEFAULT_ENABLED = true;
     public static final String DEFAULT_SERVER_URL = "https://statuslist.eudi-adorsys.com/";
     public static final boolean DEFAULT_MANDATORY = false;
     public static final int DEFAULT_MAX_ENTRIES = 10000;
+    public static final boolean DEFAULT_TLS_TRUST_ALL = false;
 
     // Default values for issuance path (runtime)
     private static final int DEFAULT_ISSUANCE_TIMEOUT = 10000;
@@ -202,5 +205,26 @@ public class StatusListConfig {
                     value, realm.getName(), DEFAULT_MAX_ENTRIES);
             return DEFAULT_MAX_ENTRIES;
         }
+    }
+
+    /**
+     * Checks if TLS certificate verification should be skipped for the status list server.
+     * Intended for testing against self-signed setups only.
+     *
+     * @return true if all certificates should be trusted, false otherwise
+     */
+    public boolean isTlsTrustAll() {
+        String value = realm.getAttribute(STATUS_LIST_TLS_TRUST_ALL);
+        return value != null ? Boolean.parseBoolean(value) : DEFAULT_TLS_TRUST_ALL;
+    }
+
+    /**
+     * Gets the path to a PEM-encoded CA certificate file to be trusted in addition to the JVM
+     * defaults when verifying the status list server's TLS certificate.
+     *
+     * @return the CA certificate file path, or null if not configured
+     */
+    public String getTlsCaCertPath() {
+        return realm.getAttribute(STATUS_LIST_TLS_CA_CERT_PATH);
     }
 }

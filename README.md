@@ -35,6 +35,16 @@ The plugin can be configured at the realm level with the following properties:
 | `status-list-circuit-breaker-failure-threshold` | Number of failures/timeouts before opening the circuit breaker                                                            | `5`                                   |
 | `status-list-mandatory`                         | If true, publication failures block issuance; if false, failures are logged and issuance continues without a status claim | `false`                               |
 | `status-list-max-entries`                       | Maximum number of entries to publish under the same status list                                                           | `10000`                               |
+| `status-list-tls-trust-all`                     | Instructs the status-list http-client to trust all TLS certificates. **DO NOT USE IN PRODUCTION**                         | `false`                               |
+| `status-list-tls-ca-cert-path`                  | Path to a PEM-encoded CA certificate to be trusted by the status-list http-client, in addition to the JVM defaults        | `null`                                |
+
+### Proxy support
+
+Usage of HTTP/S proxies for the status-list http-client is supported through the standard Keycloak proxy environment variables,
+see [Keycloak Outgoing Proxy Config](https://www.keycloak.org/server/outgoinghttp#_proxy_mappings_for_outgoing_http_requests).
+
+- `HTTPS_PROXY` / `HTTP_PROXY` (also lowercase) define the proxy to be used, `HTTPS_PROXY` takes precedence.
+- `NO_PROXY` (also lowercase) defines a comma-separated list of hosts to be reached without the proxy.
 
 ## Compatibility
 
