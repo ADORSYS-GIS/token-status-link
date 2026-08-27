@@ -11,7 +11,7 @@ services:
       - db_data:/var/lib/postgresql/data
 
   keycloak-token-status-plugin:
-    image: quay.io/keycloak/keycloak:26.7.0
+    image: quay.io/keycloak/keycloak:26.7.2
     command: >
       start-dev --features=oid4vc-vci --log-level=INFO,io.github.adorsysgis.keycloakstatuslist:DEBUG
       --db=postgres --db-username=admin --db-password=admin

@@ -10,6 +10,32 @@ their expiration (for example, if a credential is compromised or must be revoked
 
 The status list server should implement the OAuth 2.0 Status List pattern.
 
+## Breaking Changes in v0.3.0
+
+> **⚠️ This release includes a breaking change.**
+
+The Java package namespace has been renamed to align with the Maven Central `groupId`.
+
+| Before (v0.2.0 and earlier)        | After (v0.3.0)                              |
+| ---------------------------------- | ------------------------------------------- |
+| `com.adorsys.keycloakstatuslist.*` | `io.github.adorsysgis.keycloakstatuslist.*` |
+
+### Migration guide
+
+If your application imports classes from this plugin, update the package imports:
+
+```java
+// Before
+import com.adorsys.keycloakstatuslist.service.CredentialRevocationService;
+import com.adorsys.keycloakstatuslist.resource.IssuedCredentialStatusEndpoint;
+
+// After
+import io.github.adorsysgis.keycloakstatuslist.service.CredentialRevocationService;
+import io.github.adorsysgis.keycloakstatuslist.resource.IssuedCredentialStatusEndpoint;
+```
+
+The class names and functionality remain unchanged. No configuration or runtime changes are required; only source-level imports need to be updated.
+
 ## Features
 
 - Publish token status to an external status list server
@@ -41,8 +67,8 @@ The plugin can be configured at the realm level with the following properties:
 This plugin has been tested and verified to work with:
 
 | Component | Version |
-|-----------|---------|
-| Keycloak  | 26.6.3  |
+| --------- | ------- |
+| Keycloak  | 26.7.2  |
 
 ## Installation
 
@@ -50,8 +76,7 @@ This plugin has been tested and verified to work with:
    ```bash
    ./mvnw clean package
    ```
-2. Copy the resulting JAR file `target/keycloak-token-status-plugin-1.0.0-SNAPSHOT.jar` to Keycloak's `providers`
-   directory.
+2. Copy the resulting JAR file from `target/keycloak-token-status-plugin-*.jar` to Keycloak's `providers` directory.
 
 3. Restart Keycloak to load the plugin.
 
@@ -62,6 +87,11 @@ This plugin has been tested and verified to work with:
 
 The plugin is officially published
 to [Maven Central](https://central.sonatype.com/artifact/io.github.adorsys-gis/keycloak-token-status-plugin).
+
+> **📦 Package migration note for source consumers:** If you are upgrading from v0.2.0 or earlier, replace all  
+> `com.adorsys.keycloakstatuslist.*` package imports with `io.github.adorsysgis.keycloakstatuslist.*`.
+>
+> See [Breaking Changes in v0.3.0](#breaking-changes-in-v030) for details.
 
 Releases are fully automated via GitHub Actions. A new deployment is triggered whenever a version tag (`vX.Y.Z`)
 is created on the repository. The workflow requires the following secrets to be configured:
@@ -135,12 +165,12 @@ status-list mapping table and is returned as `VALID`, `INVALID`, `SUSPENDED`, or
 
 The plugin uses the status list server API v1 paths:
 
-| Operation | Endpoint |
-| --------- | -------- |
-| Register issuer credential/public key | `POST /api/v1/credentials` |
-| Retrieve status list JWT | `GET /api/v1/status-lists/{list_id}` with `Accept: application/statuslist+jwt` |
-| Publish status entries | `PUT /api/v1/status-lists/{list_id}/statuses` |
-| Update status entries | `PATCH /api/v1/status-lists/{list_id}/statuses` |
+| Operation                             | Endpoint                                                                       |
+| ------------------------------------- | ------------------------------------------------------------------------------ |
+| Register issuer credential/public key | `POST /api/v1/credentials`                                                     |
+| Retrieve status list JWT              | `GET /api/v1/status-lists/{list_id}` with `Accept: application/statuslist+jwt` |
+| Publish status entries                | `PUT /api/v1/status-lists/{list_id}/statuses`                                  |
+| Update status entries                 | `PATCH /api/v1/status-lists/{list_id}/statuses`                                |
 
 ## Development and Testing
 
