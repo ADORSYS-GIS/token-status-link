@@ -30,7 +30,7 @@ public class StatusListConfig {
 
     // Default values
     public static final boolean DEFAULT_ENABLED = true;
-    public static final String DEFAULT_SERVER_URL = "https://statuslist.eudi-adorsys.com/";
+    public static final String DEFAULT_SERVER_URL = "https://statuslist.eudi-adorsys.com";
     public static final boolean DEFAULT_MANDATORY = false;
     public static final int DEFAULT_MAX_ENTRIES = 10000;
     public static final boolean DEFAULT_TLS_TRUST_ALL = false;

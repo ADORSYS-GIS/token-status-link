@@ -40,11 +40,10 @@ The plugin can be configured at the realm level with the following properties:
 
 ### Proxy support
 
-Usage of HTTP/S proxies for the status-list http-client is supported through the standard Keycloak proxy environment variables,
-see [Keycloak Outgoing Proxy Config](https://www.keycloak.org/server/outgoinghttp#_proxy_mappings_for_outgoing_http_requests).
+Usage of HTTP/S proxies for the status-list http-client is supported via the standard environment variables:
 
-- `HTTPS_PROXY` / `HTTP_PROXY` (also lowercase) define the proxy to be used, `HTTPS_PROXY` takes precedence.
-- `NO_PROXY` (also lowercase) defines a comma-separated list of hosts to be reached without the proxy.
+- `HTTPS_PROXY` / `HTTP_PROXY` (also lowercase) define the proxy to be used. `HTTPS_PROXY` takes precedence.
+- `NO_PROXY` (also lowercase) defines a comma-separated list of hosts to be reached without the proxy. Matching is case-insensitive; a bare `*` matches all hosts.
 
 ## Compatibility
 
@@ -55,6 +54,10 @@ This plugin has been tested and verified to work with:
 | Keycloak  | 26.7.2  |
 
 ## Installation
+
+### Prerequisites
+
+- Java 17 or later
 
 1. Build the plugin using Maven:
    ```bash
@@ -99,7 +102,7 @@ corresponding to a specific credential's configuration. Below is a sample such c
 ## Performance Considerations
 
 - **Non-Blocking Registration**: Realm registration is performed **asynchronously** in background threads (`status-list-init`). This ensures that Keycloak startup and OIDC request processing are never blocked by status list server latency.
-- **Retry & Cooldown**: The plugin includes a built-in **retry mechanism** with exponential backoff for registration attempts. To prevent resource exhaustion during server failures, a **1-minute cooldown** is enforced per-realm between registration attempts.
+- **Retry & Cooldown**: The plugin includes a built-in **retry mechanism** with exponential backoff (1s, 2s, 4s) for registration attempts. To prevent resource exhaustion during server failures, a **1-minute cooldown** is enforced per-realm between registration attempts.
 - **On-Demand (Lazy) Trigger**: Registration is triggered on-demand when a realm's OIDC endpoints are first accessed, but the trigger itself is non-blocking to the caller's thread.
 - **Configurable Timeouts**: Timeouts are configurable via `status-list-issuance-timeout` (default: 10s for runtime) and `status-list-registration-timeout` (default: 30s for background).
 
@@ -137,8 +140,17 @@ Authorization: Bearer <user-access-token>
 Accept: application/json
 ```
 
-The response contains only credentials owned by the authenticated user. The `status` value is sourced from the plugin's
-status-list mapping table and is returned as `VALID`, `INVALID`, `SUSPENDED`, or `UNKNOWN` when no mapping exists.
+The response contains only credentials owned by the authenticated user. Each entry includes:
+
+| Field                    | Description                                                          |
+| ------------------------ | -------------------------------------------------------------------- |
+| `credentialId`           | Keycloak-issued credential ID                                        |
+| `verifiableCredentialId` | Verifiable credential identifier                                     |
+| `issuedAt`               | Issuance timestamp (epoch millis)                                    |
+| `expiresAt`              | Expiration timestamp (epoch millis), if set                          |
+| `clientId`               | Client that requested the credential                                 |
+| `revision`               | Credential revision                                                  |
+| `status`                 | `VALID`, `INVALID`, `SUSPENDED`, or `UNKNOWN` when no mapping exists |
 
 ### Status list server API v1 endpoints
 
@@ -150,6 +162,7 @@ The plugin uses the status list server API v1 paths:
 | Retrieve status list JWT              | `GET /api/v1/status-lists/{list_id}` with `Accept: application/statuslist+jwt` |
 | Publish status entries                | `PUT /api/v1/status-lists/{list_id}/statuses`                                  |
 | Update status entries                 | `PATCH /api/v1/status-lists/{list_id}/statuses`                                |
+| Health check                          | `GET /health`                                                                  |
 
 ## Development and Testing
 
