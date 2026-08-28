@@ -7,7 +7,7 @@
     </appender>
 
     <logger name="com.github.dockerjava" level="WARN"/>
-    <logger name="com.adorsys.keycloakstatuslist" level="DEBUG"/>
+    <logger name="io.github.adorsysgis.keycloakstatuslist" level="DEBUG"/>
     <logger name="org.testcontainers" level="WARN"/>
 
     <root level="INFO">

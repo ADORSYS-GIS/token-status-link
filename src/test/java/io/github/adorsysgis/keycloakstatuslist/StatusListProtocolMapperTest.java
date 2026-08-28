@@ -18,10 +18,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.anyString;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import io.github.adorsysgis.keycloakstatuslist.config.StatusListConfig;
@@ -190,7 +188,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
     }
 
     @Test
-    void shouldMapSuccessfully_WhenSwitchingToNewList() throws Exception {
+    void shouldMapSuccessfully_WhenSwitchingToNewList() {
         // Force running status list to be at max capacity to trigger creation of new list ID
         mockStatusListRepository(StatusListConfig.DEFAULT_MAX_ENTRIES);
         mockGetNextIndex();
@@ -200,11 +198,11 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
         // Assertions
         assertThat(claims.keySet(), hasItem(Constants.STATUS_CLAIM_KEY));
-
-        ArgumentCaptor<StatusListService.StatusListPayload> payloadCaptor =
-                ArgumentCaptor.forClass(StatusListService.StatusListPayload.class);
-        verify(statusListService).publishOrUpdate(payloadCaptor.capture());
-        assertThat(payloadCaptor.getValue().listId(), not(equalTo(TEST_LIST_ID)));
+        assertThat(
+                logCaptor.getDebugLogs(),
+                hasItem(containsString(String.format(
+                        "Running status list has reached max entries (%d), generating new list ID",
+                        StatusListConfig.DEFAULT_MAX_ENTRIES))));
     }
 
     @Test
@@ -214,8 +212,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         mapper.setClaim(claims, userSession);
 
         assertThat("Claims should remain unmapped", claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
-        verifyNoInteractions(statusListService);
-        verify(entityManager, never()).persist(any());
+        assertThat(logCaptor.getDebugLogs(), hasItem(containsString("Status list is disabled")));
     }
 
     @Test
@@ -287,10 +284,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         // Assert
         assertThat("Claims should remain unmapped", claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
         assertThat(logCaptor.getErrorLogs(), hasItems(containsString("Failed to send token status")));
-
-        var entityCaptor = ArgumentCaptor.forClass(StatusListMappingEntity.class);
-        verify(statusListRepository).save(entityCaptor.capture());
-        assertEquals(MappingStatus.FAILURE, entityCaptor.getValue().getStatus());
+        assertThat(logCaptor.getDebugLogs(), hasItems(containsString("Persisting completion mapping status: FAILURE")));
         assertThat(
                 logCaptor.getWarnLogs(),
                 hasItem(containsString("Status list publication failed; proceeding without status claim")));

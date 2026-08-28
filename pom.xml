@@ -47,7 +47,7 @@
             <groupId>org.keycloak</groupId>
             <artifactId>keycloak-crypto-default</artifactId>
             <version>${keycloak.version}</version>
-            <scope>provided</scope>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.keycloak</groupId>
@@ -213,6 +213,24 @@
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>3.8.1</version>
+                <executions>
+                    <execution>
+                        <id>copy-provider-runtime-dependencies</id>
+                        <phase>process-test-classes</phase>
+                        <goals>
+                            <goal>copy-dependencies</goal>
+                        </goals>
+                        <configuration>
+                            <includeScope>runtime</includeScope>
+                            <outputDirectory>${project.build.directory}/provider-libs</outputDirectory>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.5.5</version>
                 <configuration>
@@ -220,35 +238,18 @@
                     <reuseForks>true</reuseForks>
                     <includes>
                         <include>**/*Test.java</include>
+                        <include>**/*IT.java</include>
                     </includes>
+                    <systemPropertyVariables>
+                        <keycloak.version>${keycloak.version}</keycloak.version>
+                        <provider.libs.dir>${project.build.directory}/provider-libs</provider.libs.dir>
+                    </systemPropertyVariables>
                     <argLine>
                         @{argLine}
                         -javaagent:${settings.localRepository}/org/mockito/mockito-core/${mockito.version}/mockito-core-${mockito.version}.jar
                         -Xshare:off
                     </argLine>
                 </configuration>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-failsafe-plugin</artifactId>
-                <version>3.5.5</version>
-                <configuration>
-                    <includes>
-                        <include>**/*IT.java</include>
-                    </includes>
-                    <systemPropertyVariables>
-                        <keycloak.version>${keycloak.version}</keycloak.version>
-                        <plugin.jar>${project.build.directory}/${project.build.finalName}.jar</plugin.jar>
-                    </systemPropertyVariables>
-                </configuration>
-                <executions>
-                    <execution>
-                        <goals>
-                            <goal>integration-test</goal>
-                            <goal>verify</goal>
-                        </goals>
-                    </execution>
-                </executions>
             </plugin>
             <plugin>
                 <groupId>com.diffplug.spotless</groupId>
