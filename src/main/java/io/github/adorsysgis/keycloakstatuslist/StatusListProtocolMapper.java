@@ -17,6 +17,7 @@ import io.github.adorsysgis.keycloakstatuslist.service.CryptoIdentityService;
 import io.github.adorsysgis.keycloakstatuslist.service.CustomHttpClient;
 import io.github.adorsysgis.keycloakstatuslist.service.IssuedCredentialIdResolver;
 import io.github.adorsysgis.keycloakstatuslist.service.StatusListService;
+import jakarta.persistence.EntityManager;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -25,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import org.apache.commons.collections4.ListUtils;
+import org.apache.hc.core5.http.URIScheme;
 import org.jboss.logging.Logger;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
@@ -199,7 +201,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         try {
             URI uri = new URI(url);
             String scheme = uri.getScheme();
-            return scheme != null && (scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"));
+            return URIScheme.HTTP.same(scheme) || URIScheme.HTTPS.same(scheme);
         } catch (URISyntaxException e) {
             logger.debugf("Invalid URL format: %s", url);
             return false;
@@ -230,57 +232,76 @@ public class StatusListProtocolMapper extends OID4VCMapper {
      * Send status to server to create status list entry and store index mapping in database.
      */
     public Status sendStatusAndStoreIndexMapping(String statusListId, String uri, String userId, String tokenId) {
-        String realmId = session.getContext().getRealm().getId();
-        StatusListMappingEntity mapping = new StatusListMappingEntity();
-        mapping.setStatusListId(statusListId);
-        mapping.setUserId(userId);
-        mapping.setTokenId(tokenId);
-        mapping.setRealmId(realmId);
-        mapping.setTokenStatus(TokenStatus.VALID);
-
-        try {
-            logger.debugf(
-                    "Booking next index for status list mapping: status_list_id=%s, userId=%s, tokenId=%s",
-                    statusListId, userId, tokenId);
-
-            statusListRepository.withEntityManagerInTransaction(em -> {
-                Long idx = statusListRepository.getNextIndex(em, statusListId);
-                logger.debugf("Next available index is: %d", idx);
-
-                mapping.setIdx(idx);
-                mapping.setStatus(MappingStatus.INIT);
-
-                em.persist(mapping);
-                em.flush();
-            });
-        } catch (Exception e) {
-            logger.error("Failed to initiate index mapping", e);
+        StatusListMappingEntity mapping = createInitialMapping(statusListId, userId, tokenId);
+        if (!reserveIndex(mapping)) {
             return null;
         }
 
-        Status status = null;
-
-        try {
-            logger.debugf("Sending token status for generated index: %d", mapping.getIdx());
-
-            sendStatusToServer(mapping.getIdx(), statusListId);
-            mapping.setStatus(MappingStatus.SUCCESS);
-
-            status = new Status(new StatusListClaim(mapping.getIdx(), uri));
-        } catch (StatusListException | IOException e) {
-            logger.error("Failed to send token status", e);
-            mapping.setStatus(MappingStatus.FAILURE);
-        }
-
-        try {
-            logger.debugf("Persisting completion mapping status: %s", mapping.getStatus());
-            statusListRepository.save(mapping);
-        } catch (Exception e) {
-            logger.error("Failed to persist completion mapping status", e);
+        Status status = publishInitialStatus(mapping, uri);
+        if (!persistCompletionStatus(mapping)) {
             return null;
         }
 
         return status;
+    }
+
+    private StatusListMappingEntity createInitialMapping(String statusListId, String userId, String tokenId) {
+        StatusListMappingEntity mapping = new StatusListMappingEntity();
+        mapping.setStatusListId(statusListId);
+        mapping.setUserId(userId);
+        mapping.setTokenId(tokenId);
+        mapping.setRealmId(session.getContext().getRealm().getId());
+        mapping.setTokenStatus(TokenStatus.VALID);
+        return mapping;
+    }
+
+    private boolean reserveIndex(StatusListMappingEntity mapping) {
+        logger.debugf(
+                "Booking next index for status list mapping: status_list_id=%s, userId=%s, tokenId=%s",
+                mapping.getStatusListId(), mapping.getUserId(), mapping.getTokenId());
+
+        try {
+            statusListRepository.withEntityManagerInTransaction(em -> persistInitialMapping(em, mapping));
+            return true;
+        } catch (RuntimeException e) {
+            logger.error("Failed to initiate index mapping", e);
+            return false;
+        }
+    }
+
+    private void persistInitialMapping(EntityManager entityManager, StatusListMappingEntity mapping) {
+        Long idx = statusListRepository.getNextIndex(entityManager, mapping.getStatusListId());
+        logger.debugf("Next available index is: %d", idx);
+
+        mapping.setIdx(idx);
+        mapping.setStatus(MappingStatus.INIT);
+
+        entityManager.persist(mapping);
+        entityManager.flush();
+    }
+
+    private Status publishInitialStatus(StatusListMappingEntity mapping, String uri) {
+        try {
+            logger.debugf("Sending token status for generated index: %d", mapping.getIdx());
+            sendStatusToServer(mapping.getIdx(), mapping.getStatusListId());
+            mapping.setStatus(MappingStatus.SUCCESS);
+            return new Status(new StatusListClaim(mapping.getIdx(), uri));
+        } catch (StatusListException | IOException e) {
+            logger.error("Failed to send token status", e);
+            mapping.setStatus(MappingStatus.FAILURE);
+            return null;
+        }
+    }
+
+    private boolean persistCompletionStatus(StatusListMappingEntity mapping) {
+        try {
+            logger.debugf("Persisting completion mapping status: %s", mapping.getStatus());
+            statusListRepository.save(mapping);
+            return true;
+        } catch (RuntimeException e) {
+            logger.error("Failed to persist completion mapping status", e);
+            return false;
+        }
     }
 
     private void sendStatusToServer(long idx, String statusListId) throws IOException, StatusListException {

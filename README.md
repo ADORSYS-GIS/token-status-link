@@ -35,14 +35,24 @@ The plugin can be configured at the realm level with the following properties:
 | `status-list-circuit-breaker-failure-threshold` | Number of failures/timeouts before opening the circuit breaker                                                            | `5`                                   |
 | `status-list-mandatory`                         | If true, publication failures block issuance; if false, failures are logged and issuance continues without a status claim | `false`                               |
 | `status-list-max-entries`                       | Maximum number of entries to publish under the same status list                                                           | `10000`                               |
+| `status-list-tls-trust-all`                     | Instructs the status-list http-client to trust all TLS certificates. **DO NOT USE IN PRODUCTION**                         | `false`                               |
+| `status-list-tls-ca-cert-path`                  | Path to a PEM-encoded CA certificate to be trusted by the status-list http-client, in addition to the JVM defaults        | `null`                                |
+
+### Proxy support
+
+Usage of HTTP/S proxies for the status-list http-client is supported through the standard Keycloak proxy environment variables,
+see [Keycloak Outgoing Proxy Config](https://www.keycloak.org/server/outgoinghttp#_proxy_mappings_for_outgoing_http_requests).
+
+- `HTTPS_PROXY` / `HTTP_PROXY` (also lowercase) define the proxy to be used, `HTTPS_PROXY` takes precedence.
+- `NO_PROXY` (also lowercase) defines a comma-separated list of hosts to be reached without the proxy.
 
 ## Compatibility
 
 This plugin has been tested and verified to work with:
 
 | Component | Version |
-|-----------|---------|
-| Keycloak  | 26.6.3  |
+| --------- | ------- |
+| Keycloak  | 26.7.2  |
 
 ## Installation
 
@@ -50,8 +60,7 @@ This plugin has been tested and verified to work with:
    ```bash
    ./mvnw clean package
    ```
-2. Copy the resulting JAR file `target/keycloak-token-status-plugin-1.0.0-SNAPSHOT.jar` to Keycloak's `providers`
-   directory.
+2. Copy the resulting JAR file from `target/keycloak-token-status-plugin-*.jar` to Keycloak's `providers` directory.
 
 3. Restart Keycloak to load the plugin.
 
@@ -135,12 +144,12 @@ status-list mapping table and is returned as `VALID`, `INVALID`, `SUSPENDED`, or
 
 The plugin uses the status list server API v1 paths:
 
-| Operation | Endpoint |
-| --------- | -------- |
-| Register issuer credential/public key | `POST /api/v1/credentials` |
-| Retrieve status list JWT | `GET /api/v1/status-lists/{list_id}` with `Accept: application/statuslist+jwt` |
-| Publish status entries | `PUT /api/v1/status-lists/{list_id}/statuses` |
-| Update status entries | `PATCH /api/v1/status-lists/{list_id}/statuses` |
+| Operation                             | Endpoint                                                                       |
+| ------------------------------------- | ------------------------------------------------------------------------------ |
+| Register issuer credential/public key | `POST /api/v1/credentials`                                                     |
+| Retrieve status list JWT              | `GET /api/v1/status-lists/{list_id}` with `Accept: application/statuslist+jwt` |
+| Publish status entries                | `PUT /api/v1/status-lists/{list_id}/statuses`                                  |
+| Update status entries                 | `PATCH /api/v1/status-lists/{list_id}/statuses`                                |
 
 ## Development and Testing
 

@@ -4,6 +4,7 @@ import io.github.adorsysgis.keycloakstatuslist.model.CredentialRevocationRespons
 import io.github.adorsysgis.keycloakstatuslist.model.IssuedCredentialStatusResponse;
 import io.github.adorsysgis.keycloakstatuslist.service.CredentialRevocationService;
 import jakarta.ws.rs.GET;
+import jakarta.ws.rs.HttpMethod;
 import jakarta.ws.rs.OPTIONS;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
@@ -60,7 +61,7 @@ public class IssuedCredentialStatusEndpoint {
     }
 
     protected Response createPreflightResponse() {
-        return Cors.builder().allowedMethods("GET").preflight().auth().add(Response.ok());
+        return Cors.builder().allowedMethods(HttpMethod.GET).preflight().auth().add(Response.ok());
     }
 
     protected Response addCors(AuthResult authResult, Response.ResponseBuilder responseBuilder) {

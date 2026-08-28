@@ -19,6 +19,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.apache.hc.core5.http.HttpStatus;
 import org.jboss.logging.Logger;
 import org.keycloak.models.IssuedVerifiableCredentialModel;
 import org.keycloak.models.KeycloakSession;
@@ -102,7 +103,7 @@ public class CredentialRevocationService {
                     .getIssuedVerifiableCredentialsStreamByUser(userId)
                     .filter(issued -> credentialId.equals(issued.getId()))
                     .findFirst()
-                    .orElseThrow(() -> new StatusListException("Issued credential not found", 404));
+                    .orElseThrow(() -> new StatusListException("Issued credential not found", HttpStatus.SC_NOT_FOUND));
 
             StatusListMappingEntity mapping = findStatusListMapping(realm.getId(), userId, issuedCredential);
             StatusEntry statusEntry = new StatusEntry(mapping.getIdx(), TokenStatus.INVALID);
@@ -198,7 +199,8 @@ public class CredentialRevocationService {
             String realmId, String userId, IssuedVerifiableCredentialModel issuedCredential)
             throws StatusListException {
         if (statusListRepository == null) {
-            throw new StatusListException("Status list mapping repository is not available", 500);
+            throw new StatusListException(
+                    "Status list mapping repository is not available", HttpStatus.SC_INTERNAL_SERVER_ERROR);
         }
 
         String issuedCredentialId = issuedCredential.getId();
@@ -208,6 +210,7 @@ public class CredentialRevocationService {
 
         return statusListRepository
                 .findSuccessfulMappingByTokenId(realmId, userId, issuedCredentialId)
-                .orElseThrow(() -> new StatusListException("Status list mapping not found for issued credential", 404));
+                .orElseThrow(() -> new StatusListException(
+                        "Status list mapping not found for issued credential", HttpStatus.SC_NOT_FOUND));
     }
 }
