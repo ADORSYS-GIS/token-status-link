@@ -2,8 +2,6 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <!-- TODO: Update package hierarchy in the codebase to match this groupId.
-          Delayed to avoid giant conflicts given ongoing PRs. -->
     <groupId>io.github.adorsys-gis</groupId>
     <artifactId>keycloak-token-status-plugin</artifactId>
     <version>${revision}</version>
@@ -15,7 +13,7 @@
 
     <properties>
         <revision>1.0.0-SNAPSHOT</revision>
-        <keycloak.version>26.7.0</keycloak.version>
+        <keycloak.version>26.7.2</keycloak.version>
         <jackson.version>2.19.2</jackson.version>
         <mockito.version>5.20.0</mockito.version>
         <maven.compiler.release>17</maven.compiler.release>
@@ -86,6 +84,12 @@
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter-api</artifactId>
+            <version>5.12.2</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-params</artifactId>
             <version>5.12.2</version>
             <scope>test</scope>
         </dependency>
