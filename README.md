@@ -10,13 +10,29 @@ their expiration (for example, if a credential is compromised or must be revoked
 
 The status list server should implement the OAuth 2.0 Status List pattern.
 
+## Table of Contents
+
+- [Features](#features)
+- [Configuration Properties](#configuration-properties)
+  - [Proxy support](#proxy-support)
+- [Compatibility](#compatibility)
+- [Installation](#installation)
+  - [Releases on Maven Central](#releases-on-maven-central)
+  - [Enabling the Status List protocol mapper](#enabling-the-status-list-protocol-mapper)
+- [Performance Considerations](#performance-considerations)
+- [HTTP Endpoints](#http-endpoints)
+  - [Revoke an issued credential](#revoke-an-issued-credential)
+  - [List issued credentials and their status](#list-issued-credentials-and-their-status)
+- [Status List Server API](#status-list-server-api)
+- [Development and Testing](#development-and-testing)
+- [License](#license)
+
 ## Features
 
 - Publish token status to an external status list server
 - Support for OAuth Status List token statuses (VALID, INVALID, SUSPENDED)
-- Fixed connection parameters with safe defaults
-- Secure communication with TLS 1.2/1.3
-- Support for authentication with the status list server
+- Revocation of issued verifiable credentials through Keycloak's `/revoke` endpoint
+- Secure communication with TLS 1.2/1.3, with optional authentication to the status list server
 - Detailed logging with unique request IDs for better traceability
 
 ## Configuration Properties
@@ -65,19 +81,15 @@ This plugin has been tested and verified to work with:
    ./mvnw clean package
    ```
 2. Copy the resulting JAR file from `target/keycloak-token-status-plugin-*.jar` to Keycloak's `providers` directory.
-
 3. Restart Keycloak to load the plugin.
-
 4. Configure the plugin using the realm attributes described in
-   the [Configuration Properties Section](README.md#configuration-properties)
+   [Configuration Properties](#configuration-properties).
 
 ### Releases on Maven Central
 
-The plugin is officially published
+The plugin is published
 to [Maven Central](https://central.sonatype.com/artifact/io.github.adorsys-gis/keycloak-token-status-plugin).
-
-Releases are fully automated via GitHub Actions. A new deployment is triggered whenever a version tag (`vX.Y.Z`)
-is created on the repository. The workflow requires the following secrets to be configured:
+Releases are automated via GitHub Actions and triggered by pushing a version tag (`vX.Y.Z`). The workflow requires the following repository secrets:
 
 | Secret                   | Description                                               |
 | :----------------------- | :-------------------------------------------------------- |
@@ -86,7 +98,7 @@ is created on the repository. The workflow requires the following secrets to be 
 | `GPG_PRIVATE_KEY`        | The ASCII-armored private key used for signing artifacts. |
 | `GPG_PASSPHRASE`         | The passphrase required to unlock the GPG private key.    |
 
-### Configuring Keycloak's credential issuance to use the Status List protocol mapper
+### Enabling the Status List protocol mapper
 
 For the Status List protocol mapper to come into effect, you need to explicitly attach it to the client scope
 corresponding to a specific credential's configuration. Below is a sample such configuration:
@@ -107,16 +119,18 @@ corresponding to a specific credential's configuration. Below is a sample such c
 - **On-Demand (Lazy) Trigger**: Registration is triggered on-demand when a realm's OIDC endpoints are first accessed, but the trigger itself is non-blocking to the caller's thread.
 - **Configurable Timeouts**: Timeouts are configurable via `status-list-issuance-timeout` (default: 10s for runtime) and `status-list-registration-timeout` (default: 30s for background).
 
-## Security Features
+## HTTP Endpoints
 
-- Secure communication using TLS 1.2/1.3
-- Bearer token authentication support for the status list server
+The plugin exposes two inbound endpoints, both realm-scoped under
+`{keycloak-base}/realms/{realm}/protocol/openid-connect`. Both authenticate with a standard Keycloak
+bearer access token belonging to the credential's owner.
 
-## HTTP Endpoints (Revocation Protocol)
+### Revoke an issued credential
 
-Issued credential revocation is initiated by the client application, not by the wallet. The client calls Keycloak's
-standard `/revoke` endpoint with the authenticated user's Keycloak access token as the bearer token. The form payload
-must identify the Keycloak-issued credential to revoke:
+Revocation is initiated by the client application. The plugin overrides Keycloak's standard
+`/revoke` endpoint and activates only when `mode=issued_credential_revocation` is present in the form payload;
+any other value (or none) falls through to Keycloak's default token revocation behavior, even when the plugin
+is disabled.
 
 ```http
 POST /realms/{realm}/protocol/openid-connect/revoke
@@ -126,14 +140,41 @@ Content-Type: application/x-www-form-urlencoded
 mode=issued_credential_revocation&credential_id=<issued-credential-id>&reason=<optional reason>
 ```
 
-The plugin verifies that the bearer token belongs to the user who owns the issued credential, updates the credential's
-status-list entry to `INVALID`, and keeps the issued credential record in Keycloak so clients can continue to display
-it with a revoked status. Requests that do not use `mode=issued_credential_revocation` continue through Keycloak's
-default token revocation behavior.
+| Parameter       | Required | Description                                                              |
+| --------------- | -------- | ------------------------------------------------------------------------ |
+| `mode`          | yes      | Must be `issued_credential_revocation` to select the plugin's behavior   |
+| `credential_id` | yes      | ID of the Keycloak-issued credential to revoke                           |
+| `reason`        | no       | Free-form reason, echoed back in the response                            |
 
-### Issued credential status lookup
+The credential is looked up among those issued to the authenticated user, so a `credential_id` belonging to
+another user is reported as not found. On success the credential's status list entry is set to `INVALID` and the
+issued credential record is kept in Keycloak, so clients can continue to display it with a revoked status.
 
-A frontend app can load the authenticated user's issued credentials with server-backed status information:
+**Success** — `200 OK`, `application/json`:
+
+```json
+{
+  "success": true,
+  "revoked_at": "2026-08-03T10:30:00Z",
+  "revocation_reason": "compromised",
+  "message": "Credential revoked successfully"
+}
+```
+
+**Errors** use the same shape with `"success": false`, `revoked_at` and `revocation_reason` set to `null`, and
+`message` describing the failure:
+
+| Status | Cause                                                                       |
+| ------ | --------------------------------------------------------------------------- |
+| `400`  | Invalid input, such as a missing or blank `credential_id`                   |
+| `401`  | Missing, invalid, or expired bearer token                                   |
+| `404`  | Credential not found for this user, or it has no status list mapping        |
+| `500`  | Service disabled or not configured, or an unexpected error during revocation |
+
+### List issued credentials and their status
+
+Returns the credentials issued to the authenticated user, together with the status recorded in the plugin's
+status list mapping table. The status is read locally and is not fetched from the status list server per request.
 
 ```http
 GET /realms/{realm}/protocol/openid-connect/issued-credential-status
@@ -141,21 +182,37 @@ Authorization: Bearer <user-access-token>
 Accept: application/json
 ```
 
-The response contains only credentials owned by the authenticated user. Each entry includes:
+The response wraps the entries in a `credentials` array:
 
-| Field                    | Description                                                          |
-| ------------------------ | -------------------------------------------------------------------- |
-| `credentialId`           | Keycloak-issued credential ID                                        |
-| `verifiableCredentialId` | Verifiable credential identifier                                     |
-| `issuedAt`               | Issuance timestamp (epoch millis)                                    |
-| `expiresAt`              | Expiration timestamp (epoch millis), if set                          |
-| `clientId`               | Client that requested the credential                                 |
-| `revision`               | Credential revision                                                  |
-| `status`                 | `VALID`, `INVALID`, `SUSPENDED`, or `UNKNOWN` when no mapping exists |
+```json
+{
+  "credentials": [
+    {
+      "credentialId": "8f14e45f-ea8d-4c6b-9f2a-1b7c3d5e9a02",
+      "verifiableCredentialId": "urn:uuid:2c8a1f7b-64d3-4a19-9f0e-7d5b3c1a8e46",
+      "issuedAt": 1754216400000,
+      "expiresAt": 1785752400000,
+      "clientId": "wallet-app",
+      "revision": "1",
+      "status": "VALID"
+    }
+  ]
+}
+```
 
-### Status list server API v1 endpoints
+| Field                    | Type   | Description                                                          |
+| ------------------------ | ------ | -------------------------------------------------------------------- |
+| `credentialId`           | string | Keycloak-issued credential ID                                        |
+| `verifiableCredentialId` | string | Verifiable credential identifier                                     |
+| `issuedAt`               | number | Issuance timestamp as recorded by Keycloak                           |
+| `expiresAt`              | number | Expiration timestamp as recorded by Keycloak; `null` if not set      |
+| `clientId`               | string | Client that requested the credential                                 |
+| `revision`               | string | Credential revision                                                  |
+| `status`                 | string | `VALID`, `INVALID`, `SUSPENDED`, or `UNKNOWN` when no mapping exists |
 
-The plugin uses the status list server API v1 paths:
+## Status List Server API
+
+These are the outbound calls the plugin makes to the configured status list server:
 
 | Operation                             | Endpoint                                                                       |
 | ------------------------------------- | ------------------------------------------------------------------------------ |
@@ -167,32 +224,14 @@ The plugin uses the status list server API v1 paths:
 
 ## Development and Testing
 
-### Running Tests and Formatting
-
-To check code formatting (Spotless), use:
-
 ```bash
-./mvnw spotless:check
+./mvnw test            # run tests
+./mvnw spotless:check  # verify formatting
+./mvnw spotless:apply  # fix formatting
 ```
 
-To automatically remove unused imports, use:
-
-```bash
-./mvnw spotless:apply
-```
-
-To run tests:
-
-```bash
-./mvnw test
-```
-
-### Integration Testing with a Status List Server
-
-For manual testing with a local status list server:
-
-1. Configure the `status-list-server-url` to point to your test server
-2. Enable debug logging to see detailed request/response information
+To test against a local status list server, point `status-list-server-url` at it and enable debug logging to
+see the request and response details.
 
 ## License
 
