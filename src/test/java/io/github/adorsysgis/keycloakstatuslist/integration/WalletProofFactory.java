@@ -1,6 +1,8 @@
 package io.github.adorsysgis.keycloakstatuslist.integration;
 
 import java.security.KeyPairGenerator;
+import java.security.PrivateKey;
+import java.security.PublicKey;
 import java.security.spec.ECGenParameterSpec;
 import org.keycloak.crypto.Algorithm;
 import org.keycloak.crypto.ECDSASignatureSignerContext;
@@ -35,7 +37,7 @@ final class WalletProofFactory {
                 .sign(new ECDSASignatureSignerContext(key(keyPair.getPublic(), keyPair.getPrivate())));
     }
 
-    private static KeyWrapper key(java.security.PublicKey publicKey, java.security.PrivateKey privateKey) {
+    private static KeyWrapper key(PublicKey publicKey, PrivateKey privateKey) {
         KeyWrapper key = new KeyWrapper();
         key.setType(KeyType.EC);
         key.setAlgorithm(Algorithm.ES256);

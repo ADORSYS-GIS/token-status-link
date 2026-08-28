@@ -1,6 +1,6 @@
 {
-  "id": "status-list-it",
-  "realm": "status-list-it",
+  "id": "oid4vc-it",
+  "realm": "oid4vc-it",
   "enabled": true,
   "sslRequired": "none",
   "verifiableCredentialsEnabled": true,
@@ -15,42 +15,6 @@
       }
     ]
   },
-  "users": [
-    {
-      "username": "alice",
-      "enabled": true,
-      "email": "alice@example.test",
-      "firstName": "Alice",
-      "lastName": "Issuer",
-      "attributes": {
-        "birthdate": ["1990-01-01"]
-      },
-      "realmRoles": ["credential-offer-create"],
-      "credentials": [
-        {
-          "type": "password",
-          "value": "password"
-        }
-      ]
-    },
-    {
-      "username": "bob",
-      "enabled": true,
-      "email": "bob@example.test",
-      "firstName": "Bob",
-      "lastName": "Reviewer",
-      "attributes": {
-        "birthdate": ["1991-02-02"]
-      },
-      "realmRoles": ["credential-offer-create"],
-      "credentials": [
-        {
-          "type": "password",
-          "value": "password"
-        }
-      ]
-    }
-  ],
   "clients": [
     {
       "clientId": "openid4vc-rest-api",

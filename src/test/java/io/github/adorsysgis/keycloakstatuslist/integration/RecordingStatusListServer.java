@@ -6,6 +6,7 @@ import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -66,8 +67,11 @@ final class RecordingStatusListServer implements AutoCloseable {
                     && path.endsWith("/statuses")) {
                 String statusListId =
                         path.substring("/api/v1/status-lists/".length(), path.length() - "/statuses".length());
-                recordStatuses(statusListId, exchange.getRequestBody().readAllBytes());
-                respond(exchange, 204, "");
+                if (recordStatuses(statusListId, exchange.getRequestBody().readAllBytes())) {
+                    respond(exchange, 204, "");
+                } else {
+                    respond(exchange, 400, "{\"error\":\"invalid_status_payload\"}");
+                }
                 return;
             }
 
@@ -75,14 +79,26 @@ final class RecordingStatusListServer implements AutoCloseable {
         }
     }
 
-    private void recordStatuses(String statusListId, byte[] body) throws IOException {
+    private boolean recordStatuses(String statusListId, byte[] body) throws IOException {
         JsonNode payload = JsonSerialization.mapper.readTree(body);
-        Map<Long, Integer> statusesByIndex =
-                statuses.computeIfAbsent(statusListId, ignored -> new ConcurrentHashMap<>());
-        for (JsonNode status : payload.path("statuses")) {
-            statusesByIndex.put(
-                    status.path("index").asLong(), status.path("status").asInt());
+        JsonNode statusUpdates = payload.path("statuses");
+        if (!statusUpdates.isArray()) {
+            return false;
         }
+
+        Map<Long, Integer> validatedStatuses = new HashMap<>();
+        for (JsonNode status : statusUpdates) {
+            JsonNode index = status.get("index");
+            JsonNode statusValue = status.get("status");
+            if (index == null || !index.canConvertToLong() || statusValue == null || !statusValue.canConvertToInt()) {
+                return false;
+            }
+            validatedStatuses.put(index.asLong(), statusValue.asInt());
+        }
+
+        statuses.computeIfAbsent(statusListId, ignored -> new ConcurrentHashMap<>())
+                .putAll(validatedStatuses);
+        return true;
     }
 
     private void respond(HttpExchange exchange, int statusCode, String body) throws IOException {

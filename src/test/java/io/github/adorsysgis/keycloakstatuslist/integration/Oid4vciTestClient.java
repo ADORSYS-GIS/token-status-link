@@ -1,5 +1,6 @@
 package io.github.adorsysgis.keycloakstatuslist.integration;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.keycloak.OID4VCConstants.OPENID_CREDENTIAL;
@@ -132,7 +133,7 @@ final class Oid4vciTestClient {
 
         JsonNode credentialPayload = decodeJwtPayload(credential.split("~", 2)[0]);
         JsonNode statusClaim = credentialPayload.path("status");
-        assertTrue(!statusClaim.isMissingNode(), "issued credential must embed status claim");
+        assertFalse(statusClaim.isMissingNode(), "issued credential must embed status claim");
 
         return new IssuedCredentialFixture(
                 issuedCredentialId(credentialAccessToken), credential, statusClaim, credentialAccessToken);

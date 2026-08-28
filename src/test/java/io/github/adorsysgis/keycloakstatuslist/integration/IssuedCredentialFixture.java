@@ -1,6 +1,7 @@
 package io.github.adorsysgis.keycloakstatuslist.integration;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import java.net.URI;
 
 record IssuedCredentialFixture(String id, String credential, JsonNode statusClaim, String credentialAccessToken) {
 
@@ -14,6 +15,18 @@ record IssuedCredentialFixture(String id, String credential, JsonNode statusClai
 
     String statusListId() {
         String uri = statusUri();
-        return uri.substring(uri.lastIndexOf('/') + 1);
+        URI parsedUri;
+        try {
+            parsedUri = URI.create(uri);
+        } catch (IllegalArgumentException e) {
+            throw new AssertionError("Status URI must be a valid URI: " + uri, e);
+        }
+
+        String path = parsedUri.getPath();
+        if (path == null || path.isBlank() || path.endsWith("/")) {
+            throw new AssertionError("Status URI must include a status list id in its path: " + uri);
+        }
+
+        return path.substring(path.lastIndexOf('/') + 1);
     }
 }

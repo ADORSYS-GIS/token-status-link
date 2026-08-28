@@ -29,11 +29,12 @@ abstract class BaseKeycloakIntegrationTest {
 
     private static final String DEFAULT_KEYCLOAK_VERSION = "26.7.2";
     private static final String KEYCLOAK_IMAGE = "quay.io/keycloak/keycloak:";
-    static final String REALM = "status-list-it";
+    static final String REALM = "oid4vc-it";
     static final String PASSWORD = "password";
     static final String CLIENT_ID = "openid4vc-rest-api";
     static final String CLIENT_SECRET = "secret";
     static final String CREDENTIAL_CONFIGURATION_ID = "IdentityCredential";
+    private static final String CREDENTIAL_OFFER_CREATE_ROLE = "credential-offer-create";
     private static final AtomicInteger USER_COUNTER = new AtomicInteger();
 
     static RecordingStatusListServer statusListServer;
@@ -49,7 +50,7 @@ abstract class BaseKeycloakIntegrationTest {
         keycloak = new KeycloakContainer(KEYCLOAK_IMAGE + keycloakVersion())
                 .withDefaultProviderClasses()
                 .withProviderLibsFrom(providerLibs())
-                .withRealmImportFiles("/realms/status-list-it-realm.json")
+                .withRealmImportFiles("/realms/oid4vc-it-realm.json")
                 .withFeaturesEnabled("oid4vc-vci", "oid4vc-vci-rest-credential-offer", "oid4vc-vci-preauth-code")
                 .withEnv("KC_LOG_LEVEL", "INFO,io.github.adorsysgis.keycloakstatuslist:DEBUG")
                 .withEnv("JAVA_OPTS_APPEND", "-Xms512m -Xmx1536m");
@@ -111,10 +112,9 @@ abstract class BaseKeycloakIntegrationTest {
             assertEquals(201, response.getStatus(), "test user should be created");
         }
 
-        String userId = userId(username);
         RoleRepresentation credentialOfferCreate =
-                realm().roles().get("credential-offer-create").toRepresentation();
-        realm().users().get(userId).roles().realmLevel().add(List.of(credentialOfferCreate));
+                realm().roles().get(CREDENTIAL_OFFER_CREATE_ROLE).toRepresentation();
+        realm().users().get(userId(username)).roles().realmLevel().add(List.of(credentialOfferCreate));
     }
 
     private static void grantCredential(String username) throws Exception {
@@ -122,7 +122,7 @@ abstract class BaseKeycloakIntegrationTest {
 
         int statusCode = oid4vci.grantCredential(userId);
         assertTrue(
-                (statusCode >= 200 && statusCode < 300) || statusCode == 409,
+                statusCode >= 200 && statusCode < 300,
                 "credential grant should be created or already exists, got HTTP " + statusCode);
     }
 
