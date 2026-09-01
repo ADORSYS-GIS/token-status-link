@@ -8,7 +8,8 @@ server. It helps you quickly revoke credentials before they expire.
 The primary use case is for verifiable credentials or other long-lived tokens that may need to be invalidated before
 their expiration (for example, if a credential is compromised or must be revoked for compliance reasons).
 
-The status list server should implement the OAuth 2.0 Status List pattern.
+The status list server should implement the
+[OAuth 2.0 Status List](https://datatracker.ietf.org/doc/draft-ietf-oauth-status-list) pattern.
 
 ## Table of Contents
 
@@ -32,7 +33,8 @@ The status list server should implement the OAuth 2.0 Status List pattern.
 - Publish token status to an external status list server
 - Support for OAuth Status List token statuses (VALID, INVALID, SUSPENDED)
 - Revocation of issued verifiable credentials through Keycloak's `/revoke` endpoint
-- Secure communication with TLS 1.2/1.3, with optional authentication to the status list server
+- Secure communication with TLS 1.2/1.3; outbound status list API calls are authenticated with a
+  realm-signed JWT bearer token
 - Detailed logging with unique request IDs for better traceability
 
 ## Configuration Properties
@@ -147,7 +149,7 @@ mode=issued_credential_revocation&credential_id=<issued-credential-id>&reason=<o
 | `reason`        | no       | Free-form reason, echoed back in the response                            |
 
 The credential is looked up among those issued to the authenticated user, so a `credential_id` belonging to
-another user is reported as not found. On success the credential's status list entry is set to `INVALID` and the
+another user is reported as not found. On success, the credential's status list entry is set to `INVALID` and the
 issued credential record is kept in Keycloak, so clients can continue to display it with a revoked status.
 
 **Success** — `200 OK`, `application/json`:
@@ -204,15 +206,16 @@ The response wraps the entries in a `credentials` array:
 | ------------------------ | ------ | -------------------------------------------------------------------- |
 | `credentialId`           | string | Keycloak-issued credential ID                                        |
 | `verifiableCredentialId` | string | Verifiable credential identifier                                     |
-| `issuedAt`               | number | Issuance timestamp as recorded by Keycloak                           |
-| `expiresAt`              | number | Expiration timestamp as recorded by Keycloak; `null` if not set      |
+| `issuedAt`               | number | Issuance timestamp as recorded by Keycloak, in Unix epoch milliseconds |
+| `expiresAt`              | number | Expiration timestamp as recorded by Keycloak, in Unix epoch milliseconds; `null` if not set |
 | `clientId`               | string | Client that requested the credential                                 |
 | `revision`               | string | Credential revision                                                  |
 | `status`                 | string | `VALID`, `INVALID`, `SUSPENDED`, or `UNKNOWN` when no mapping exists |
 
 ## Status List Server API
 
-These are the outbound calls the plugin makes to the configured status list server:
+These are the outbound calls the plugin makes to the configured status list server. Each request includes an
+`Authorization: Bearer <jwt>` header signed with the realm's active signing key.
 
 | Operation                             | Endpoint                                                                       |
 | ------------------------------------- | ------------------------------------------------------------------------------ |
