@@ -1,0 +1,132 @@
+{
+  "id": "oid4vc-it",
+  "realm": "oid4vc-it",
+  "enabled": true,
+  "sslRequired": "none",
+  "verifiableCredentialsEnabled": true,
+  "attributes": {
+    "preAuthorizedCodeLifespanS": "120",
+    "status-list-enabled": "false"
+  },
+  "roles": {
+    "realm": [
+      {
+        "name": "credential-offer-create"
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "openid4vc-rest-api",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "secret",
+      "redirectUris": ["http://localhost/callback"],
+      "directAccessGrantsEnabled": true,
+      "standardFlowEnabled": true,
+      "protocol": "openid-connect",
+      "attributes": {
+        "oid4vci.enabled": "true"
+      },
+      "defaultClientScopes": ["web-origins", "acr", "roles", "profile", "email"],
+      "optionalClientScopes": ["IdentityCredential"]
+    }
+  ],
+  "clientScopes": [
+    {
+      "name": "IdentityCredential",
+      "protocol": "oid4vc",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "vc.credential_configuration_id": "IdentityCredential",
+        "vc.credential_identifier": "IdentityCredential",
+        "vc.format": "dc+sd-jwt",
+        "vc.expiry_in_seconds": "31536000",
+        "vc.verifiable_credential_type": "https://credentials.example.com/identity_credential",
+        "vc.supported_credential_types": "identity_credential",
+        "vc.credential_contexts": "https://credentials.example.com/identity_credential",
+        "vc.cryptographic_binding_methods_supported": "jwk",
+        "vc.credential_signing_alg": "ES256",
+        "vc.display": "[{\"name\":\"Identity Credential\"}]",
+        "vc.issuer_did": "",
+        "vc.sd_jwt.number_of_decoys": "0",
+        "vc.credential_build_config.sd_jwt.visible_claims": "id,iat,nbf,exp,jti,status,sub",
+        "vc.credential_build_config.hash_algorithm": "sha-256",
+        "vc.credential_build_config.token_jws_type": "dc+sd-jwt",
+        "vc.include_in_metadata": "true",
+        "vc.binding_required": "true",
+        "vc.binding_methods_supported": "jwk",
+        "vc.binding_required_proof_types": "jwt"
+      },
+      "protocolMappers": [
+        {
+          "name": "given_name-mapper",
+          "protocol": "oid4vc",
+          "protocolMapper": "oid4vc-user-attribute-mapper",
+          "config": {
+            "claim.name": "given_name",
+            "userAttribute": "firstName",
+            "vc.mandatory": "false"
+          }
+        },
+        {
+          "name": "family_name-mapper",
+          "protocol": "oid4vc",
+          "protocolMapper": "oid4vc-user-attribute-mapper",
+          "config": {
+            "claim.name": "family_name",
+            "userAttribute": "lastName",
+            "vc.mandatory": "false"
+          }
+        },
+        {
+          "name": "sub",
+          "protocol": "oid4vc",
+          "protocolMapper": "oid4vc-subject-id-mapper",
+          "config": {
+            "claim.name": "sub",
+            "userAttribute": "id"
+          }
+        },
+        {
+          "name": "iat",
+          "protocol": "oid4vc",
+          "protocolMapper": "oid4vc-issued-at-time-claim-mapper",
+          "config": {
+            "claim.name": "iat",
+            "valueSource": "COMPUTE"
+          }
+        },
+        {
+          "name": "nbf",
+          "protocol": "oid4vc",
+          "protocolMapper": "oid4vc-issued-at-time-claim-mapper",
+          "config": {
+            "claim.name": "nbf",
+            "valueSource": "COMPUTE"
+          }
+        },
+        {
+          "name": "status-list-claim-mapper",
+          "protocol": "oid4vc",
+          "protocolMapper": "oid4vc-status-list-claim-mapper",
+          "consentRequired": false,
+          "config": {}
+        }
+      ]
+    }
+  ],
+  "components": {
+    "org.keycloak.keys.KeyProvider": [
+      {
+        "name": "ecdsa-generated",
+        "providerId": "ecdsa-generated",
+        "config": {
+          "algorithm": ["ES256"],
+          "ecdsaEllipticCurveKey": ["P-256"],
+          "ecGenerateCertificate": ["true"]
+        }
+      }
+    ]
+  }
+}
