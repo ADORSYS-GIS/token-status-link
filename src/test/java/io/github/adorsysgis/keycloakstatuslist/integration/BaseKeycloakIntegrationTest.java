@@ -85,13 +85,21 @@ abstract class BaseKeycloakIntegrationTest {
     }
 
     static TestUser credentialHolder(String prefix) throws Exception {
+        return createTestUser(prefix, false);
+    }
+
+    static TestUser offerAdmin(String prefix) throws Exception {
+        return createTestUser(prefix, true);
+    }
+
+    private static TestUser createTestUser(String prefix, boolean grantOfferAdminRole) throws Exception {
         String username = prefix + "-" + USER_COUNTER.incrementAndGet();
-        createUser(username);
+        createUser(username, grantOfferAdminRole);
         grantCredential(username);
         return new TestUser(username, oid4vci.userAccessToken(username, PASSWORD));
     }
 
-    private static void createUser(String username) {
+    private static void createUser(String username, boolean grantOfferAdminRole) {
         CredentialRepresentation password = new CredentialRepresentation();
         password.setType(CredentialRepresentation.PASSWORD);
         password.setValue(PASSWORD);
@@ -112,9 +120,11 @@ abstract class BaseKeycloakIntegrationTest {
             assertEquals(201, response.getStatus(), "test user should be created");
         }
 
-        RoleRepresentation credentialOfferCreate =
-                realm().roles().get(CREDENTIAL_OFFER_CREATE_ROLE).toRepresentation();
-        realm().users().get(userId(username)).roles().realmLevel().add(List.of(credentialOfferCreate));
+        if (grantOfferAdminRole) {
+            RoleRepresentation credentialOfferCreate =
+                    realm().roles().get(CREDENTIAL_OFFER_CREATE_ROLE).toRepresentation();
+            realm().users().get(userId(username)).roles().realmLevel().add(List.of(credentialOfferCreate));
+        }
     }
 
     private static void grantCredential(String username) throws Exception {

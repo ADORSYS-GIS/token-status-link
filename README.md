@@ -125,7 +125,8 @@ corresponding to a specific credential's configuration. Below is a sample such c
 
 The plugin exposes two inbound endpoints, both realm-scoped under
 `{keycloak-base}/realms/{realm}/protocol/openid-connect`. Both authenticate with a standard Keycloak
-bearer access token belonging to the credential's owner.
+bearer access token. Listing is always scoped to the authenticated user. Revocation accepts either the
+credential holder or a user with the realm role `credential-offer-create`.
 
 ### Revoke an issued credential
 
@@ -148,9 +149,11 @@ mode=issued_credential_revocation&credential_id=<issued-credential-id>&reason=<o
 | `credential_id` | yes      | ID of the Keycloak-issued credential to revoke                           |
 | `reason`        | no       | Free-form reason, echoed back in the response                            |
 
-The credential is looked up among those issued to the authenticated user, so a `credential_id` belonging to
-another user is reported as not found. On success, the credential's status list entry is set to `INVALID` and the
-issued credential record is kept in Keycloak, so clients can continue to display it with a revoked status.
+The credential is looked up among those issued to the authenticated user. Users with the realm role
+`credential-offer-create` may also revoke a credential issued to another user in the same realm. Callers without
+that role still receive `404` for another user's `credential_id`, the same as for an unknown id. On success, the
+credential's status list entry is set to `INVALID` and the issued credential record is kept in Keycloak, so clients
+can continue to display it with a revoked status.
 
 **Success** — `200 OK`, `application/json`:
 
@@ -170,7 +173,7 @@ issued credential record is kept in Keycloak, so clients can continue to display
 | ------ | --------------------------------------------------------------------------- |
 | `400`  | Invalid input, such as a missing or blank `credential_id`                   |
 | `401`  | Missing, invalid, or expired bearer token                                   |
-| `404`  | Credential not found for this user, or it has no status list mapping        |
+| `404`  | Credential not found for this caller, or it has no status list mapping      |
 | `500`  | Service disabled or not configured, or an unexpected error during revocation |
 
 ### List issued credentials and their status
