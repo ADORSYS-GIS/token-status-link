@@ -30,6 +30,7 @@ import org.keycloak.models.IssuedVerifiableCredentialModel;
 import org.keycloak.models.KeycloakContext;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
+import org.keycloak.models.RoleModel;
 import org.keycloak.models.UserModel;
 import org.keycloak.models.UserProvider;
 import org.keycloak.services.managers.AuthenticationManager.AuthResult;
@@ -62,6 +63,9 @@ class CredentialRevocationServiceTest {
     private UserModel user;
 
     @Mock
+    private RoleModel offerAdminRole;
+
+    @Mock
     private IssuedVerifiableCredentialModel issuedCredential;
 
     private CredentialRevocationService service;
@@ -73,6 +77,9 @@ class CredentialRevocationServiceTest {
         lenient().when(context.getRealm()).thenReturn(realm);
         lenient().when(realm.getId()).thenReturn("realm-1");
         lenient().when(session.users()).thenReturn(userProvider);
+        lenient()
+                .when(realm.getRole(CredentialRevocationService.CREDENTIAL_OFFER_CREATE_ROLE))
+                .thenReturn(null);
     }
 
     @Test
@@ -167,6 +174,57 @@ class CredentialRevocationServiceTest {
         assertTrue(exception.getMessage().contains("Issued credential not found"));
         verify(statusListService, never()).updateStatusList(any(), anyString());
         verify(userProvider, never()).removeIssuedVerifiableCredential(anyString());
+        verify(statusListRepository, never()).findSuccessfulMappingByTokenId("realm-1", "issued-1");
+    }
+
+    @Test
+    void revokeIssuedCredential_offerAdminCanRevokeAnotherUsersCredential() throws Exception {
+        CredentialRevocationRequest request = issuedRevocationRequest("issued-1", "admin revocation");
+        AuthResult authResult = new AuthResult(user, null, null, null);
+        StatusListMappingEntity mapping = statusListMapping("list-1", 7L);
+        mapping.setUserId("holder-2");
+
+        when(user.getId()).thenReturn("admin-1");
+        when(user.hasRole(offerAdminRole)).thenReturn(true);
+        when(realm.getRole(CredentialRevocationService.CREDENTIAL_OFFER_CREATE_ROLE))
+                .thenReturn(offerAdminRole);
+        when(issuedCredential.getId()).thenReturn("issued-1");
+        when(userProvider.getIssuedVerifiableCredentialsStreamByUser("admin-1")).thenReturn(Stream.empty());
+        when(statusListRepository.findSuccessfulMappingByTokenId("realm-1", "issued-1"))
+                .thenReturn(Optional.of(mapping));
+        when(userProvider.getIssuedVerifiableCredentialsStreamByUser("holder-2"))
+                .thenReturn(Stream.of(issuedCredential));
+        when(statusListRepository.findSuccessfulMappingByTokenId("realm-1", "holder-2", "issued-1"))
+                .thenReturn(Optional.of(mapping));
+        doNothing().when(statusListService).updateStatusList(any(), anyString());
+
+        CredentialRevocationResponse response = service.revokeIssuedCredential(request, authResult);
+
+        assertTrue(response.isSuccess());
+        assertEquals("admin revocation", response.getRevocationReason());
+        assertEquals(TokenStatus.INVALID, mapping.getTokenStatus());
+        verify(statusListService).updateStatusList(any(), anyString());
+        verify(statusListRepository).save(mapping);
+        verify(userProvider, never()).removeIssuedVerifiableCredential(anyString());
+    }
+
+    @Test
+    void revokeIssuedCredential_nonAdminDoesNotProbeOtherUsersMappings() throws Exception {
+        CredentialRevocationRequest request = issuedRevocationRequest("issued-1", "reason");
+        AuthResult authResult = new AuthResult(user, null, null, null);
+
+        when(user.getId()).thenReturn("user-1");
+        when(userProvider.getIssuedVerifiableCredentialsStreamByUser("user-1")).thenReturn(Stream.empty());
+        when(realm.getRole(CredentialRevocationService.CREDENTIAL_OFFER_CREATE_ROLE))
+                .thenReturn(offerAdminRole);
+        when(user.hasRole(offerAdminRole)).thenReturn(false);
+
+        StatusListException exception =
+                assertThrows(StatusListException.class, () -> service.revokeIssuedCredential(request, authResult));
+
+        assertEquals(404, exception.getHttpStatus());
+        verify(statusListRepository, never()).findSuccessfulMappingByTokenId("realm-1", "issued-1");
+        verify(statusListService, never()).updateStatusList(any(), anyString());
     }
 
     @Test

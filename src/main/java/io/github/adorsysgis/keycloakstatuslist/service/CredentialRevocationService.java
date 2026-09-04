@@ -18,12 +18,14 @@ import io.github.adorsysgis.keycloakstatuslist.model.TokenStatus;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import org.apache.hc.core5.http.HttpStatus;
 import org.jboss.logging.Logger;
 import org.keycloak.models.IssuedVerifiableCredentialModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
+import org.keycloak.models.RoleModel;
 import org.keycloak.models.UserModel;
 import org.keycloak.services.managers.AuthenticationManager.AuthResult;
 import org.keycloak.utils.StringUtil;
@@ -34,6 +36,7 @@ import org.keycloak.utils.StringUtil;
 public class CredentialRevocationService {
 
     private static final Logger logger = Logger.getLogger(CredentialRevocationService.class);
+    static final String CREDENTIAL_OFFER_CREATE_ROLE = "credential-offer-create";
 
     private final KeycloakSession session;
     private final StatusListRepository statusListRepository;
@@ -76,7 +79,8 @@ public class CredentialRevocationService {
     }
 
     /**
-     * Revokes a Keycloak-tracked issued credential on behalf of the authenticated client application user.
+     * Revokes a Keycloak-tracked issued credential. The caller must own the credential, or hold the
+     * realm role {@code credential-offer-create} to revoke another user's credential in the same realm.
      */
     public CredentialRevocationResponse revokeIssuedCredential(
             CredentialRevocationRequest request, AuthResult authResult) throws StatusListException {
@@ -99,13 +103,9 @@ public class CredentialRevocationService {
                 requestId, userId, credentialId);
 
         try {
-            IssuedVerifiableCredentialModel issuedCredential = session.users()
-                    .getIssuedVerifiableCredentialsStreamByUser(userId)
-                    .filter(issued -> credentialId.equals(issued.getId()))
-                    .findFirst()
-                    .orElseThrow(() -> new StatusListException("Issued credential not found", HttpStatus.SC_NOT_FOUND));
-
-            StatusListMappingEntity mapping = findStatusListMapping(realm.getId(), userId, issuedCredential);
+            IssuedCredentialTarget target = resolveIssuedCredential(user, realm, credentialId);
+            StatusListMappingEntity mapping =
+                    findStatusListMapping(realm.getId(), target.holderUserId(), target.issuedCredential());
             StatusEntry statusEntry = new StatusEntry(mapping.getIdx(), TokenStatus.INVALID);
             StatusListPayload revocationPayload =
                     new StatusListPayload(mapping.getStatusListId(), List.of(statusEntry));
@@ -174,6 +174,46 @@ public class CredentialRevocationService {
 
         return user;
     }
+
+    private IssuedCredentialTarget resolveIssuedCredential(UserModel caller, RealmModel realm, String credentialId)
+            throws StatusListException {
+        return findIssuedCredentialByUser(caller.getId(), credentialId)
+                .map(issued -> new IssuedCredentialTarget(caller.getId(), issued))
+                .or(() -> findIssuedCredentialForOfferAdmin(caller, realm, credentialId))
+                .orElseThrow(() -> new StatusListException("Issued credential not found", HttpStatus.SC_NOT_FOUND));
+    }
+
+    private Optional<IssuedVerifiableCredentialModel> findIssuedCredentialByUser(String userId, String credentialId) {
+        if (StringUtil.isBlank(userId)) {
+            return Optional.empty();
+        }
+
+        return session.users()
+                .getIssuedVerifiableCredentialsStreamByUser(userId)
+                .filter(issued -> credentialId.equals(issued.getId()))
+                .findFirst();
+    }
+
+    private Optional<IssuedCredentialTarget> findIssuedCredentialForOfferAdmin(
+            UserModel caller, RealmModel realm, String credentialId) {
+        if (!canRevokeOtherUsers(caller, realm) || statusListRepository == null) {
+            return Optional.empty();
+        }
+
+        return statusListRepository
+                .findSuccessfulMappingByTokenId(realm.getId(), credentialId)
+                .filter(mapping -> StringUtil.isNotBlank(mapping.getUserId())
+                        && !mapping.getUserId().equals(caller.getId()))
+                .flatMap(mapping -> findIssuedCredentialByUser(mapping.getUserId(), credentialId)
+                        .map(issued -> new IssuedCredentialTarget(mapping.getUserId(), issued)));
+    }
+
+    private boolean canRevokeOtherUsers(UserModel user, RealmModel realm) {
+        RoleModel offerAdminRole = realm.getRole(CREDENTIAL_OFFER_CREATE_ROLE);
+        return offerAdminRole != null && user.hasRole(offerAdminRole);
+    }
+
+    private record IssuedCredentialTarget(String holderUserId, IssuedVerifiableCredentialModel issuedCredential) {}
 
     private IssuedCredentialStatus toIssuedCredentialStatus(
             IssuedVerifiableCredentialModel credential, StatusListMappingEntity mapping) {

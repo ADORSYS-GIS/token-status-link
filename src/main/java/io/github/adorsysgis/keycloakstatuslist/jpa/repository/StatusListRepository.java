@@ -107,7 +107,7 @@ public class StatusListRepository {
      */
     public Optional<StatusListMappingEntity> findSuccessfulMappingByTokenId(
             String realmId, String userId, String tokenId) {
-        if (tokenId == null || tokenId.isBlank()) {
+        if (tokenId == null || tokenId.isBlank() || userId == null || userId.isBlank()) {
             return Optional.empty();
         }
 
@@ -126,6 +126,37 @@ public class StatusListRepository {
             TypedQuery<StatusListMappingEntity> query = em.createQuery(q, StatusListMappingEntity.class);
             query.setParameter("realmId", realmId);
             query.setParameter("userId", userId);
+            query.setParameter("tokenId", tokenId);
+            query.setParameter("status", StatusListMappingEntity.MappingStatus.SUCCESS);
+            query.setMaxResults(1);
+
+            result.set(query.getResultStream().findFirst().orElse(null));
+        });
+
+        return Optional.ofNullable(result.get());
+    }
+
+    /**
+     * Finds the successful status-list mapping for an issued credential id in the realm, regardless of holder.
+     */
+    public Optional<StatusListMappingEntity> findSuccessfulMappingByTokenId(String realmId, String tokenId) {
+        if (tokenId == null || tokenId.isBlank()) {
+            return Optional.empty();
+        }
+
+        AtomicReference<StatusListMappingEntity> result = new AtomicReference<>();
+
+        withEntityManagerInTransaction(em -> {
+            String q = """
+                        SELECT m FROM StatusListMappingEntity m
+                        WHERE m.realmId = :realmId
+                          AND m.tokenId = :tokenId
+                          AND m.status = :status
+                        ORDER BY m.createdTimestamp DESC
+                    """;
+
+            TypedQuery<StatusListMappingEntity> query = em.createQuery(q, StatusListMappingEntity.class);
+            query.setParameter("realmId", realmId);
             query.setParameter("tokenId", tokenId);
             query.setParameter("status", StatusListMappingEntity.MappingStatus.SUCCESS);
             query.setMaxResults(1);
