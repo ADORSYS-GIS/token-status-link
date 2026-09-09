@@ -91,6 +91,23 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
     }
 
     @Test
+    void holderCannotListAnotherUsersIssuedCredentialsViaTargetUser() throws Exception {
+        TestUser owner = credentialHolder("holder-target-owner");
+        TestUser other = credentialHolder("holder-target-other");
+        IssuedCredentialFixture ownerCredential = oid4vci.issueCredential(owner.username(), owner.accessToken());
+        IssuedCredentialFixture otherCredential = oid4vci.issueCredential(other.username(), other.accessToken());
+
+        var response = oid4vci.issuedCredentialStatusesResponse(other.accessToken(), owner.username());
+        assertEquals(200, response.statusCode());
+
+        var otherStatuses = oid4vci.readJson(response).path("credentials");
+        assertEquals(1, otherStatuses.size());
+        assertTrue(containsCredential(otherStatuses, otherCredential.id()));
+        assertFalse(containsCredential(otherStatuses, ownerCredential.id()));
+        assertEquals(other.username(), usernameFor(otherStatuses, otherCredential.id()));
+    }
+
+    @Test
     void revocationRequiresBearerToken() throws Exception {
         TestUser user = credentialHolder("unauthenticated");
         IssuedCredentialFixture credential = oid4vci.issueCredential(user.username(), user.accessToken());
