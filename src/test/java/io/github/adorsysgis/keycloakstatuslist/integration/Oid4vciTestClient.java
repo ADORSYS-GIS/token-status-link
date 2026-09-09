@@ -152,8 +152,17 @@ final class Oid4vciTestClient {
     }
 
     JsonNode issuedCredentialStatuses(String bearerToken) throws IOException, InterruptedException {
+        return issuedCredentialStatuses(bearerToken, null);
+    }
+
+    JsonNode issuedCredentialStatuses(String bearerToken, String username) throws IOException, InterruptedException {
+        KeycloakUriBuilder uri =
+                KeycloakUriBuilder.fromUri(realmEndpoint("/protocol/openid-connect/issued-credential-status"));
+        if (username != null && !username.isBlank()) {
+            uri.queryParam("target_user", username);
+        }
         return readJson(send(HttpRequest.newBuilder()
-                .uri(URI.create(realmEndpoint("/protocol/openid-connect/issued-credential-status")))
+                .uri(uri.build())
                 .headers(headers(bearer(bearerToken)))
                 .GET()
                 .build()));

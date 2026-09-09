@@ -135,13 +135,47 @@ public class CredentialRevocationService {
     }
 
     /**
-     * Lists the authenticated user's issued credentials with status from the plugin mapping table.
+     * Lists issued credentials with status from the plugin mapping table.
+     *
+     * <p>Holders always receive their own credentials. Users with the realm role
+     * {@code credential-offer-create} receive every issued credential in the realm, or those of a
+     * single holder when {@code targetUser} is set. The {@code target_user} filter is ignored for
+     * callers without that role.
      */
     public IssuedCredentialStatusResponse getIssuedCredentialStatuses(AuthResult authResult) {
-        UserModel user = getAuthenticatedUser(authResult);
-        RealmModel realm = session.getContext().getRealm();
-        String userId = user.getId();
+        return getIssuedCredentialStatuses(authResult, null);
+    }
 
+    public IssuedCredentialStatusResponse getIssuedCredentialStatuses(AuthResult authResult, String targetUser) {
+        UserModel caller = getAuthenticatedUser(authResult);
+        RealmModel realm = session.getContext().getRealm();
+
+        List<IssuedCredentialStatus> statuses = resolveHoldersToList(caller, realm, targetUser).stream()
+                .flatMap(holder -> listStatusesForHolder(realm, holder).stream())
+                .toList();
+
+        return new IssuedCredentialStatusResponse(statuses);
+    }
+
+    private List<UserModel> resolveHoldersToList(UserModel caller, RealmModel realm, String targetUser) {
+        if (!isOfferAdmin(caller, realm)) {
+            return List.of(caller);
+        }
+
+        if (StringUtil.isNotBlank(targetUser)) {
+            UserModel holder = session.users().getUserByUsername(realm, targetUser.trim());
+            return holder == null ? List.of() : List.of(holder);
+        }
+
+        return session.users().searchForUserStream(realm, Map.of(), null, null).toList();
+    }
+
+    private List<IssuedCredentialStatus> listStatusesForHolder(RealmModel realm, UserModel holder) {
+        if (holder == null || StringUtil.isBlank(holder.getId())) {
+            return List.of();
+        }
+
+        String userId = holder.getId();
         List<IssuedVerifiableCredentialModel> issuedCredentials = session.users()
                 .getIssuedVerifiableCredentialsStreamByUser(userId)
                 .toList();
@@ -150,14 +184,13 @@ public class CredentialRevocationService {
                 .map(IssuedVerifiableCredentialModel::getId)
                 .filter(StringUtil::isNotBlank)
                 .toList();
-        Map<String, StatusListMappingEntity> mappings =
-                statusListRepository.findSuccessfulMappingsByTokenIds(realm.getId(), userId, credentialIds);
+        Map<String, StatusListMappingEntity> mappings = statusListRepository == null
+                ? Map.of()
+                : statusListRepository.findSuccessfulMappingsByTokenIds(realm.getId(), userId, credentialIds);
 
-        List<IssuedCredentialStatus> statuses = issuedCredentials.stream()
-                .map(credential -> toIssuedCredentialStatus(credential, mappings.get(credential.getId())))
+        return issuedCredentials.stream()
+                .map(credential -> toIssuedCredentialStatus(credential, mappings.get(credential.getId()), holder))
                 .toList();
-
-        return new IssuedCredentialStatusResponse(statuses);
     }
 
     private UserModel getAuthenticatedUser(AuthResult authResult) {
@@ -180,7 +213,7 @@ public class CredentialRevocationService {
                     "Status list mapping repository is not available", HttpStatus.SC_INTERNAL_SERVER_ERROR);
         }
 
-        if (canRevokeOtherUsers(caller, realm)) {
+        if (isOfferAdmin(caller, realm)) {
             return resolveMappingAsOfferAdmin(realm.getId(), credentialId);
         }
         return resolveMappingAsOwner(realm.getId(), caller.getId(), credentialId);
@@ -226,13 +259,13 @@ public class CredentialRevocationService {
                 .findFirst();
     }
 
-    private boolean canRevokeOtherUsers(UserModel user, RealmModel realm) {
+    private boolean isOfferAdmin(UserModel user, RealmModel realm) {
         RoleModel offerAdminRole = realm.getRole(OID4VCIConstants.CREDENTIAL_OFFER_CREATE.getName());
         return offerAdminRole != null && user.hasRole(offerAdminRole);
     }
 
     private IssuedCredentialStatus toIssuedCredentialStatus(
-            IssuedVerifiableCredentialModel credential, StatusListMappingEntity mapping) {
+            IssuedVerifiableCredentialModel credential, StatusListMappingEntity mapping, UserModel holder) {
         return new IssuedCredentialStatus(
                 credential.getId(),
                 credential.getVerifiableCredentialId(),
@@ -240,7 +273,9 @@ public class CredentialRevocationService {
                 credential.getExpiresAt(),
                 credential.getClientId(),
                 credential.getRevision(),
-                resolveTokenStatus(mapping));
+                resolveTokenStatus(mapping),
+                holder != null ? holder.getId() : credential.getUserId(),
+                holder != null ? holder.getUsername() : null);
     }
 
     private String resolveTokenStatus(StatusListMappingEntity mapping) {

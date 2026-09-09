@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import io.github.adorsysgis.keycloakstatuslist.model.TokenStatus;
 import org.junit.jupiter.api.Test;
 
@@ -65,6 +66,31 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
     }
 
     @Test
+    void offerAdminCanListAnotherUsersIssuedCredentials() throws Exception {
+        TestUser owner = credentialHolder("list-owner");
+        TestUser other = credentialHolder("list-other");
+        TestUser admin = offerAdmin("list-admin");
+        IssuedCredentialFixture ownerCredential = oid4vci.issueCredential(owner.username(), owner.accessToken());
+        IssuedCredentialFixture otherCredential = oid4vci.issueCredential(other.username(), other.accessToken());
+
+        var adminStatuses =
+                oid4vci.issuedCredentialStatuses(admin.accessToken()).path("credentials");
+        assertTrue(containsCredential(adminStatuses, ownerCredential.id()));
+        assertTrue(containsCredential(adminStatuses, otherCredential.id()));
+        assertEquals(owner.username(), usernameFor(adminStatuses, ownerCredential.id()));
+
+        var filtered = oid4vci.issuedCredentialStatuses(admin.accessToken(), owner.username())
+                .path("credentials");
+        assertTrue(containsCredential(filtered, ownerCredential.id()));
+        assertFalse(containsCredential(filtered, otherCredential.id()));
+
+        var otherStatuses =
+                oid4vci.issuedCredentialStatuses(other.accessToken()).path("credentials");
+        assertFalse(containsCredential(otherStatuses, ownerCredential.id()));
+        assertTrue(containsCredential(otherStatuses, otherCredential.id()));
+    }
+
+    @Test
     void revocationRequiresBearerToken() throws Exception {
         TestUser user = credentialHolder("unauthenticated");
         IssuedCredentialFixture credential = oid4vci.issueCredential(user.username(), user.accessToken());
@@ -74,5 +100,26 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
         assertEquals(401, response.statusCode());
         assertFalse(oid4vci.readJson(response).path("success").asBoolean(true));
         assertStatusListValue(credential, TokenStatus.VALID.getCode());
+    }
+
+    private static boolean containsCredential(JsonNode statuses, String credentialId) {
+        if (statuses == null || !statuses.isArray()) {
+            return false;
+        }
+        for (JsonNode credential : statuses) {
+            if (credentialId.equals(credential.path("credentialId").asText())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String usernameFor(JsonNode statuses, String credentialId) {
+        for (JsonNode credential : statuses) {
+            if (credentialId.equals(credential.path("credentialId").asText())) {
+                return credential.path("username").asText();
+            }
+        }
+        throw new AssertionError("Credential not found: " + credentialId);
     }
 }

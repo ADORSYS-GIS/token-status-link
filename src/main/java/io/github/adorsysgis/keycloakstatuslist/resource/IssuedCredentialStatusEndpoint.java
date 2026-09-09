@@ -7,6 +7,7 @@ import jakarta.ws.rs.GET;
 import jakarta.ws.rs.HttpMethod;
 import jakarta.ws.rs.OPTIONS;
 import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.jboss.logging.Logger;
@@ -36,7 +37,7 @@ public class IssuedCredentialStatusEndpoint {
 
     @GET
     @Produces(MediaType.APPLICATION_JSON)
-    public Response getIssuedCredentialStatuses() {
+    public Response getIssuedCredentialStatuses(@QueryParam("target_user") String targetUser) {
         try {
             AuthResult authResult = authenticateBearerToken();
             if (authResult == null || authResult.user() == null) {
@@ -44,7 +45,7 @@ public class IssuedCredentialStatusEndpoint {
             }
 
             IssuedCredentialStatusResponse statusResponse =
-                    credentialRevocationService.getIssuedCredentialStatuses(authResult);
+                    credentialRevocationService.getIssuedCredentialStatuses(authResult, targetUser);
 
             return addCors(authResult, Response.ok(statusResponse).type(MediaType.APPLICATION_JSON));
         } catch (IllegalArgumentException e) {
