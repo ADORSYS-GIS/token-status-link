@@ -126,8 +126,7 @@ corresponding to a specific credential's configuration. Below is a sample such c
 The plugin exposes two inbound endpoints, both realm-scoped under
 `{keycloak-base}/realms/{realm}/protocol/openid-connect`. Both authenticate with a standard Keycloak
 bearer access token. Listing is scoped to the authenticated user. Users with the realm role
-`credential-offer-create` also receive credentials issued to other users in the same realm, and may
-filter that list with `target_user`. Revocation accepts either the
+`credential-offer-create` may list another holder with `target_user`. Revocation accepts either the
 credential holder or a user with the realm role `credential-offer-create`.
 
 ### Revoke an issued credential
@@ -183,9 +182,9 @@ can continue to display it with a revoked status.
 Returns issued credentials together with the status recorded in the plugin's status list mapping
 table. The status is read locally and is not fetched from the status list server per request.
 
-Holders always receive their own credentials. Users with the realm role `credential-offer-create`
-receive every issued credential in the realm. They may optionally pass `target_user` to list a single
-holder. Callers without that role still receive only their own credentials; `target_user` is ignored.
+Callers receive their own credentials. Users with the realm role `credential-offer-create` may pass
+`target_user` to list a single holder. Without that query, admins still receive only their own
+credentials. Callers without that role ignore `target_user`.
 
 ```http
 GET /realms/{realm}/protocol/openid-connect/issued-credential-status

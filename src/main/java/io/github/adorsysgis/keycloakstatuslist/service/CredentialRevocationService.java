@@ -137,10 +137,9 @@ public class CredentialRevocationService {
     /**
      * Lists issued credentials with status from the plugin mapping table.
      *
-     * <p>Holders always receive their own credentials. Users with the realm role
-     * {@code credential-offer-create} receive every issued credential in the realm, or those of a
-     * single holder when {@code targetUser} is set. The {@code target_user} filter is ignored for
-     * callers without that role.
+     * <p>Callers receive their own credentials unless they hold the realm role
+     * {@code credential-offer-create} and pass {@code targetUser}. The {@code target_user} filter is
+     * ignored for callers without that role.
      */
     public IssuedCredentialStatusResponse getIssuedCredentialStatuses(AuthResult authResult) {
         return getIssuedCredentialStatuses(authResult, null);
@@ -158,16 +157,12 @@ public class CredentialRevocationService {
     }
 
     private List<UserModel> resolveHoldersToList(UserModel caller, RealmModel realm, String targetUser) {
-        if (!isOfferAdmin(caller, realm)) {
+        if (!isOfferAdmin(caller, realm) || StringUtil.isBlank(targetUser)) {
             return List.of(caller);
         }
 
-        if (StringUtil.isNotBlank(targetUser)) {
-            UserModel holder = session.users().getUserByUsername(realm, targetUser.trim());
-            return holder == null ? List.of() : List.of(holder);
-        }
-
-        return session.users().searchForUserStream(realm, Map.of(), null, null).toList();
+        UserModel holder = session.users().getUserByUsername(realm, targetUser.trim());
+        return holder == null ? List.of() : List.of(holder);
     }
 
     private List<IssuedCredentialStatus> listStatusesForHolder(RealmModel realm, UserModel holder) {

@@ -73,16 +73,16 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
         IssuedCredentialFixture ownerCredential = oid4vci.issueCredential(owner.username(), owner.accessToken());
         IssuedCredentialFixture otherCredential = oid4vci.issueCredential(other.username(), other.accessToken());
 
-        var adminStatuses =
+        var adminOwnStatuses =
                 oid4vci.issuedCredentialStatuses(admin.accessToken()).path("credentials");
-        assertTrue(containsCredential(adminStatuses, ownerCredential.id()));
-        assertTrue(containsCredential(adminStatuses, otherCredential.id()));
-        assertEquals(owner.username(), usernameFor(adminStatuses, ownerCredential.id()));
+        assertFalse(containsCredential(adminOwnStatuses, ownerCredential.id()));
+        assertFalse(containsCredential(adminOwnStatuses, otherCredential.id()));
 
         var filtered = oid4vci.issuedCredentialStatuses(admin.accessToken(), owner.username())
                 .path("credentials");
         assertTrue(containsCredential(filtered, ownerCredential.id()));
         assertFalse(containsCredential(filtered, otherCredential.id()));
+        assertEquals(owner.username(), usernameFor(filtered, ownerCredential.id()));
 
         var otherStatuses =
                 oid4vci.issuedCredentialStatuses(other.accessToken()).path("credentials");

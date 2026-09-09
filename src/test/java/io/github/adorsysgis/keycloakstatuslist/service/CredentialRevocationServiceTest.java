@@ -7,8 +7,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
@@ -346,42 +344,27 @@ class CredentialRevocationServiceTest {
     }
 
     @Test
-    void getIssuedCredentialStatuses_offerAdminListsOtherUsersCredentials() {
+    void getIssuedCredentialStatuses_offerAdminWithoutTargetUserListsOwn() {
         AuthResult authResult = new AuthResult(user, null, null, null);
         IssuedVerifiableCredentialModel ownCredential = issuedCredential("issued-admin", "AdminCredential");
         ownCredential.setUserId("admin-1");
-        IssuedVerifiableCredentialModel holderCredential = issuedCredential("issued-holder", "PidCredential");
-        holderCredential.setUserId("holder-2");
-        StatusListMappingEntity holderMapping = statusListMapping("list-1", 7L);
-        holderMapping.setTokenId("issued-holder");
-        holderMapping.setUserId("holder-2");
-        holderMapping.setTokenStatus(TokenStatus.VALID);
 
         when(user.getId()).thenReturn("admin-1");
         when(user.getUsername()).thenReturn("admin");
         when(user.hasRole(offerAdminRole)).thenReturn(true);
         when(realm.getRole(OID4VCIConstants.CREDENTIAL_OFFER_CREATE.getName()))
                 .thenReturn(offerAdminRole);
-        when(holder.getId()).thenReturn("holder-2");
-        when(holder.getUsername()).thenReturn("bob");
-        when(userProvider.searchForUserStream(eq(realm), eq(Map.of()), isNull(), isNull()))
-                .thenReturn(Stream.of(user, holder));
         when(userProvider.getIssuedVerifiableCredentialsStreamByUser("admin-1")).thenReturn(Stream.of(ownCredential));
-        when(userProvider.getIssuedVerifiableCredentialsStreamByUser("holder-2"))
-                .thenReturn(Stream.of(holderCredential));
         when(statusListRepository.findSuccessfulMappingsByTokenIds("realm-1", "admin-1", List.of("issued-admin")))
                 .thenReturn(Map.of());
-        when(statusListRepository.findSuccessfulMappingsByTokenIds("realm-1", "holder-2", List.of("issued-holder")))
-                .thenReturn(Map.of("issued-holder", holderMapping));
 
         IssuedCredentialStatusResponse response = service.getIssuedCredentialStatuses(authResult);
 
-        assertEquals(2, response.credentials().size());
+        assertEquals(1, response.credentials().size());
         assertEquals("issued-admin", response.credentials().get(0).credentialId());
         assertEquals("admin-1", response.credentials().get(0).userId());
-        assertEquals("issued-holder", response.credentials().get(1).credentialId());
-        assertEquals("bob", response.credentials().get(1).username());
-        assertEquals("VALID", response.credentials().get(1).status());
+        verify(userProvider, never()).getUserByUsername(any(), anyString());
+        verify(userProvider, never()).searchForUserStream(any(), anyMap(), any(), any());
     }
 
     @Test
