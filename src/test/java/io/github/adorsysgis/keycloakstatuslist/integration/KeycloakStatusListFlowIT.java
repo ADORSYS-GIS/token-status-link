@@ -5,8 +5,11 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import io.github.adorsysgis.keycloakstatuslist.config.StatusListConfig;
+import io.github.adorsysgis.keycloakstatuslist.model.IssuedCredentialStatusResponse;
 import io.github.adorsysgis.keycloakstatuslist.model.TokenStatus;
 import org.junit.jupiter.api.Test;
+import org.keycloak.representations.idm.RealmRepresentation;
 
 class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
 
@@ -112,6 +115,74 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
         assertEquals(401, response.statusCode());
         assertFalse(oid4vci.readJson(response).path("success").asBoolean(true));
         assertStatusListValue(credential, TokenStatus.VALID.getCode());
+    }
+
+    @Test
+    void issuanceIsRejectedWhenHolderReachesConfiguredMaxForCredentialType() throws Exception {
+        setMaxCredentialsPerUser("1");
+        try {
+            TestUser holder = credentialHolder("quota-holder");
+            TestUser otherHolder = credentialHolder("quota-other");
+
+            IssuedCredentialFixture first = oid4vci.issueCredential(holder.username(), holder.accessToken());
+            assertCredentialStatus(holder.accessToken(), first.id(), TokenStatus.VALID.name());
+            assertLimit(holder.accessToken(), CREDENTIAL_CONFIGURATION_ID, 1, 1, 0);
+
+            var rejected = oid4vci.requestIssuedCredential(holder.username(), holder.accessToken());
+            assertTrue(
+                    rejected.response().statusCode() >= 400,
+                    "second issuance should be rejected, got HTTP "
+                            + rejected.response().statusCode() + ": "
+                            + rejected.response().body());
+
+            IssuedCredentialFixture otherCredential =
+                    oid4vci.issueCredential(otherHolder.username(), otherHolder.accessToken());
+            assertCredentialStatus(otherHolder.accessToken(), otherCredential.id(), TokenStatus.VALID.name());
+
+            var revokeResponse = oid4vci.revokeCredential(holder.accessToken(), first.id(), "free quota slot");
+            assertEquals(200, revokeResponse.statusCode());
+            assertLimit(holder.accessToken(), CREDENTIAL_CONFIGURATION_ID, 1, 0, 1);
+
+            IssuedCredentialFixture reissued = oid4vci.issueCredential(holder.username(), holder.accessToken());
+            assertCredentialStatus(holder.accessToken(), reissued.id(), TokenStatus.VALID.name());
+            assertLimit(holder.accessToken(), CREDENTIAL_CONFIGURATION_ID, 1, 1, 0);
+        } finally {
+            setMaxCredentialsPerUser(null);
+        }
+    }
+
+    private static void assertLimit(
+            String accessToken, String credentialConfigurationId, int max, int activeCount, int remaining)
+            throws Exception {
+        var limits = oid4vci.issuedCredentialStatuses(accessToken).path("limits");
+        for (var limit : limits) {
+            if (credentialConfigurationId.equals(
+                    limit.path("credentialConfigurationId").asText())) {
+                assertEquals(max, limit.path("max").asInt());
+                assertEquals(activeCount, limit.path("activeCount").asInt());
+                assertEquals(remaining, limit.path("remaining").asInt());
+                assertEquals(
+                        IssuedCredentialStatusResponse.OVERFLOW_POLICY_REJECT,
+                        limit.path("overflowPolicy").asText());
+                return;
+            }
+        }
+        throw new AssertionError("Quota metadata not found for " + credentialConfigurationId + ": " + limits);
+    }
+
+    /**
+     * Uses the realm fallback instead of updating the OID4VC protocol mapper. Mutating that mapper
+     * through the admin API can drop the client scope from credential-configuration lookup and later
+     * issuances then fail with HTTP 409 Duplicate resource.
+     */
+    private static void setMaxCredentialsPerUser(String max) {
+        RealmRepresentation realm = realm().toRepresentation();
+        if (max == null) {
+            realm.getAttributes().remove(StatusListConfig.STATUS_LIST_MAX_CREDENTIALS_PER_USER);
+        } else {
+            realm.getAttributes().put(StatusListConfig.STATUS_LIST_MAX_CREDENTIALS_PER_USER, max);
+        }
+        realm().update(realm);
     }
 
     private static boolean containsCredential(JsonNode statuses, String credentialId) {

@@ -66,4 +66,16 @@
         </addColumn>
     </changeSet>
 
+    <changeSet id="add-credential-configuration-id-to-status-list-mapping" author="adorsys">
+        <addColumn tableName="status_list_mapping">
+            <column name="credential_configuration_id" type="varchar(255)" />
+        </addColumn>
+        <createIndex indexName="idx_status_list_mapping_realm_user_type"
+                     tableName="status_list_mapping">
+            <column name="realm_id" />
+            <column name="user_id" />
+            <column name="credential_configuration_id" />
+        </createIndex>
+    </changeSet>
+
 </databaseChangeLog>
