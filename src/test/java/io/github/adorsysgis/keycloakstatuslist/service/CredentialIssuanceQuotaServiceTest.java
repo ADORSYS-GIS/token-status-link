@@ -86,6 +86,16 @@ class CredentialIssuanceQuotaServiceTest {
     }
 
     @Test
+    void resolveMax_blankMapperConfigFallsBackToRealm() {
+        when(mapperModel.getConfig())
+                .thenReturn(Map.of(CredentialIssuanceQuotaService.MAX_CREDENTIALS_PER_USER_CONFIG, "  "));
+        when(realm.getAttribute(StatusListConfig.STATUS_LIST_MAX_CREDENTIALS_PER_USER))
+                .thenReturn("3");
+
+        assertEquals(3, service.resolveMax(mapperModel, realm));
+    }
+
+    @Test
     void enforceBeforeIssuance_doesNothingWhenUnlimited() {
         service.enforceBeforeIssuance("realm-1", "user-1", "IdentityCredential", 0);
 

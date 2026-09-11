@@ -117,7 +117,7 @@ corresponding to a specific credential's configuration. Below is a sample such c
 }
 ```
 
-`status-list-max-credentials-per-user` is optional. Leave it out or set it to `0` for unlimited issuance of that credential type. When a positive maximum is set, the plugin rejects a new issuance of that type once the holder already has that many successful mappings whose status is not `INVALID`. `SUSPENDED` credentials still occupy a slot. Revoking a credential frees a slot. If a limit is configured and the holder or credential type cannot be resolved, issuance fails closed.
+`status-list-max-credentials-per-user` is optional. Leave it out or blank to inherit the realm fallback. Set it to `0` to leave this credential type unlimited even when the realm has a fallback. When a positive maximum is set, the plugin rejects a new issuance of that type once the holder already has that many successful mappings whose status is not `INVALID`. `SUSPENDED` credentials still occupy a slot. Revoking a credential frees a slot. If a limit is configured and the holder or credential type cannot be resolved, issuance fails closed.
 
 ## Performance Considerations
 
