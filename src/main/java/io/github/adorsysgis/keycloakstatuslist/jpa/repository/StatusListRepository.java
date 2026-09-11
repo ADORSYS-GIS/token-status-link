@@ -1,6 +1,7 @@
 package io.github.adorsysgis.keycloakstatuslist.jpa.repository;
 
 import io.github.adorsysgis.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
+import io.github.adorsysgis.keycloakstatuslist.model.TokenStatus;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import jakarta.persistence.TypedQuery;
@@ -203,6 +204,81 @@ public class StatusListRepository {
         return result.get().stream()
                 .collect(Collectors.toMap(
                         StatusListMappingEntity::getTokenId, Function.identity(), (first, ignored) -> first));
+    }
+
+    /**
+     * Counts successful mappings for the holder and credential type whose token status is not INVALID.
+     * Historical rows without a credential type are excluded because they cannot match the type filter.
+     */
+    public long countSuccessfulNonRevokedMappings(String realmId, String userId, String credentialConfigurationId) {
+        if (isBlank(userId) || isBlank(credentialConfigurationId)) {
+            return 0L;
+        }
+
+        AtomicReference<Long> result = new AtomicReference<>(0L);
+
+        withEntityManagerInTransaction(em -> {
+            String q = """
+                        SELECT COUNT(m) FROM StatusListMappingEntity m
+                        WHERE m.realmId = :realmId
+                          AND m.userId = :userId
+                          AND m.credentialConfigurationId = :credentialConfigurationId
+                          AND m.status = :status
+                          AND m.tokenStatus <> :invalid
+                    """;
+
+            TypedQuery<Long> query = em.createQuery(q, Long.class);
+            query.setParameter("realmId", realmId);
+            query.setParameter("userId", userId);
+            query.setParameter("credentialConfigurationId", credentialConfigurationId);
+            query.setParameter("status", StatusListMappingEntity.MappingStatus.SUCCESS);
+            query.setParameter("invalid", TokenStatus.INVALID);
+
+            result.set(query.getSingleResult());
+        });
+
+        return result.get();
+    }
+
+    /**
+     * Counts successful non-revoked mappings for the holder, grouped by credential type.
+     * Rows without a credential type are omitted.
+     */
+    public Map<String, Long> countSuccessfulNonRevokedMappingsByType(String realmId, String userId) {
+        if (isBlank(userId)) {
+            return Map.of();
+        }
+
+        AtomicReference<List<Object[]>> result = new AtomicReference<>(List.of());
+
+        withEntityManagerInTransaction(em -> {
+            String q = """
+                        SELECT m.credentialConfigurationId, COUNT(m)
+                        FROM StatusListMappingEntity m
+                        WHERE m.realmId = :realmId
+                          AND m.userId = :userId
+                          AND m.credentialConfigurationId IS NOT NULL
+                          AND m.status = :status
+                          AND m.tokenStatus <> :invalid
+                        GROUP BY m.credentialConfigurationId
+                    """;
+
+            TypedQuery<Object[]> query = em.createQuery(q, Object[].class);
+            query.setParameter("realmId", realmId);
+            query.setParameter("userId", userId);
+            query.setParameter("status", StatusListMappingEntity.MappingStatus.SUCCESS);
+            query.setParameter("invalid", TokenStatus.INVALID);
+
+            result.set(query.getResultList());
+        });
+
+        return result.get().stream()
+                .filter(row -> row[0] instanceof String type && !type.isBlank())
+                .collect(Collectors.toMap(row -> (String) row[0], row -> (Long) row[1], Long::sum));
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 
     /**
