@@ -41,7 +41,7 @@ public class CredentialIssuanceQuotaService {
 
     /**
      * Resolves the configured maximum. Mapper / client-scope config wins when present (including
-     * {@code 0} for unlimited). Otherwise the optional realm fallback is used.
+     * {@code 0} for unlimited). Blank or missing mapper values inherit the optional realm fallback.
      */
     public int resolveMax(ProtocolMapperModel mapperModel, RealmModel realm) {
         Optional<String> mapperValue = mapperConfigValue(mapperModel, MAX_CREDENTIALS_PER_USER_CONFIG);
@@ -132,6 +132,6 @@ public class CredentialIssuanceQuotaService {
         }
 
         String value = mapperModel.getConfig().get(key);
-        return value == null ? Optional.empty() : Optional.of(value);
+        return StringUtil.isBlank(value) ? Optional.empty() : Optional.of(value);
     }
 }
