@@ -25,6 +25,7 @@ public class StatusListConfig {
             "status-list-circuit-breaker-failure-threshold";
     public static final String STATUS_LIST_MANDATORY = "status-list-mandatory";
     public static final String STATUS_LIST_MAX_ENTRIES = "status-list-max-entries";
+    public static final String STATUS_LIST_MAX_CREDENTIALS_PER_USER = "status-list-max-credentials-per-user";
     public static final String STATUS_LIST_TLS_TRUST_ALL = "status-list-tls-trust-all";
     public static final String STATUS_LIST_TLS_CA_CERT_PATH = "status-list-tls-ca-cert-path";
 
@@ -181,6 +182,36 @@ public class StatusListConfig {
      */
     public int getCircuitBreakerCooldownSeconds() {
         return DEFAULT_COOLDOWN_SECONDS;
+    }
+
+    /**
+     * Gets the optional realm-wide maximum number of non-revoked credentials per holder and
+     * credential type. Mapper / client-scope config takes precedence when present. Absent or
+     * {@code 0} means unlimited.
+     *
+     * @return the maximum number of credentials, or {@code 0} when unlimited
+     */
+    public int getMaxCredentialsPerUser() {
+        return parseMaxCredentialsPerUser(realm.getAttribute(STATUS_LIST_MAX_CREDENTIALS_PER_USER));
+    }
+
+    /**
+     * Parses a max-credentials-per-user setting. Blank or invalid values are treated as unlimited.
+     *
+     * @param value the configured value
+     * @return a non-negative maximum, or {@code 0} when unlimited
+     */
+    public static int parseMaxCredentialsPerUser(String value) {
+        if (value == null || value.isBlank()) {
+            return 0;
+        }
+
+        try {
+            return Math.max(0, Integer.parseInt(value.trim()));
+        } catch (NumberFormatException e) {
+            logger.warnf("Invalid max credentials per user value '%s'. Treating as unlimited.", value);
+            return 0;
+        }
     }
 
     /**
