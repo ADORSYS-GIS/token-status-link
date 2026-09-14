@@ -352,8 +352,7 @@ class CredentialRevocationServiceTest {
         when(user.getId()).thenReturn("admin-1");
         when(user.getUsername()).thenReturn("admin");
         when(user.hasRole(offerAdminRole)).thenReturn(true);
-        when(realm.getRole(OID4VCIConstants.CREDENTIAL_OFFER_CREATE.getName()))
-                .thenReturn(offerAdminRole);
+        when(realm.getRole(OID4VCIConstants.CREDENTIAL_OFFER_CREATE.getName())).thenReturn(offerAdminRole);
         when(userProvider.getIssuedVerifiableCredentialsStreamByUser("admin-1")).thenReturn(Stream.of(ownCredential));
         when(statusListRepository.findSuccessfulMappingsByTokenIds("realm-1", "admin-1", List.of("issued-admin")))
                 .thenReturn(Map.of());
@@ -375,8 +374,7 @@ class CredentialRevocationServiceTest {
 
         when(user.getId()).thenReturn("admin-1");
         when(user.hasRole(offerAdminRole)).thenReturn(true);
-        when(realm.getRole(OID4VCIConstants.CREDENTIAL_OFFER_CREATE.getName()))
-                .thenReturn(offerAdminRole);
+        when(realm.getRole(OID4VCIConstants.CREDENTIAL_OFFER_CREATE.getName())).thenReturn(offerAdminRole);
         when(userProvider.getUserByUsername(realm, "bob")).thenReturn(holder);
         when(holder.getId()).thenReturn("holder-2");
         when(holder.getUsername()).thenReturn("bob");
@@ -418,8 +416,7 @@ class CredentialRevocationServiceTest {
 
         when(user.getId()).thenReturn("admin-1");
         when(user.hasRole(offerAdminRole)).thenReturn(true);
-        when(realm.getRole(OID4VCIConstants.CREDENTIAL_OFFER_CREATE.getName()))
-                .thenReturn(offerAdminRole);
+        when(realm.getRole(OID4VCIConstants.CREDENTIAL_OFFER_CREATE.getName())).thenReturn(offerAdminRole);
         when(userProvider.getUserByUsername(realm, "missing")).thenReturn(null);
 
         IssuedCredentialStatusResponse response = service.getIssuedCredentialStatuses(authResult, "missing");
