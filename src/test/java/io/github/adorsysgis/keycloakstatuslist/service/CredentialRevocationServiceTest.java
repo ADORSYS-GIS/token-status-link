@@ -26,6 +26,7 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.keycloak.constants.OID4VCIConstants;
 import org.keycloak.models.IssuedVerifiableCredentialModel;
 import org.keycloak.models.KeycloakContext;
 import org.keycloak.models.KeycloakSession;
@@ -78,7 +79,7 @@ class CredentialRevocationServiceTest {
         lenient().when(realm.getId()).thenReturn("realm-1");
         lenient().when(session.users()).thenReturn(userProvider);
         lenient()
-                .when(realm.getRole(CredentialRevocationService.CREDENTIAL_OFFER_CREATE_ROLE))
+                .when(realm.getRole(OID4VCIConstants.CREDENTIAL_OFFER_CREATE.getName()))
                 .thenReturn(null);
     }
 
@@ -186,16 +187,13 @@ class CredentialRevocationServiceTest {
 
         when(user.getId()).thenReturn("admin-1");
         when(user.hasRole(offerAdminRole)).thenReturn(true);
-        when(realm.getRole(CredentialRevocationService.CREDENTIAL_OFFER_CREATE_ROLE))
+        when(realm.getRole(OID4VCIConstants.CREDENTIAL_OFFER_CREATE.getName()))
                 .thenReturn(offerAdminRole);
         when(issuedCredential.getId()).thenReturn("issued-1");
-        when(userProvider.getIssuedVerifiableCredentialsStreamByUser("admin-1")).thenReturn(Stream.empty());
         when(statusListRepository.findSuccessfulMappingByTokenId("realm-1", "issued-1"))
                 .thenReturn(Optional.of(mapping));
         when(userProvider.getIssuedVerifiableCredentialsStreamByUser("holder-2"))
                 .thenReturn(Stream.of(issuedCredential));
-        when(statusListRepository.findSuccessfulMappingByTokenId("realm-1", "holder-2", "issued-1"))
-                .thenReturn(Optional.of(mapping));
         doNothing().when(statusListService).updateStatusList(any(), anyString());
 
         CredentialRevocationResponse response = service.revokeIssuedCredential(request, authResult);
@@ -205,6 +203,8 @@ class CredentialRevocationServiceTest {
         assertEquals(TokenStatus.INVALID, mapping.getTokenStatus());
         verify(statusListService).updateStatusList(any(), anyString());
         verify(statusListRepository).save(mapping);
+        verify(statusListRepository).findSuccessfulMappingByTokenId("realm-1", "issued-1");
+        verify(statusListRepository, never()).findSuccessfulMappingByTokenId("realm-1", "holder-2", "issued-1");
         verify(userProvider, never()).removeIssuedVerifiableCredential(anyString());
     }
 
@@ -215,7 +215,7 @@ class CredentialRevocationServiceTest {
 
         when(user.getId()).thenReturn("user-1");
         when(userProvider.getIssuedVerifiableCredentialsStreamByUser("user-1")).thenReturn(Stream.empty());
-        when(realm.getRole(CredentialRevocationService.CREDENTIAL_OFFER_CREATE_ROLE))
+        when(realm.getRole(OID4VCIConstants.CREDENTIAL_OFFER_CREATE.getName()))
                 .thenReturn(offerAdminRole);
         when(user.hasRole(offerAdminRole)).thenReturn(false);
 
