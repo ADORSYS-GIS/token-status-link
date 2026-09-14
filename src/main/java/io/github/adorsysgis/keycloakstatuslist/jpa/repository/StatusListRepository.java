@@ -134,16 +134,14 @@ public class StatusListRepository {
         AtomicReference<StatusListMappingEntity> result = new AtomicReference<>();
 
         withEntityManagerInTransaction(em -> {
-            String q = enforceUser
-                    ? """
+            String q = enforceUser ? """
                                 SELECT m FROM StatusListMappingEntity m
                                 WHERE m.realmId = :realmId
                                   AND m.userId = :userId
                                   AND m.tokenId = :tokenId
                                   AND m.status = :status
                                 ORDER BY m.createdTimestamp DESC
-                            """
-                    : """
+                            """ : """
                                 SELECT m FROM StatusListMappingEntity m
                                 WHERE m.realmId = :realmId
                                   AND m.tokenId = :tokenId

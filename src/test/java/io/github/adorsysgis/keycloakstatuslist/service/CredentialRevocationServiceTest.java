@@ -187,8 +187,7 @@ class CredentialRevocationServiceTest {
 
         when(user.getId()).thenReturn("admin-1");
         when(user.hasRole(offerAdminRole)).thenReturn(true);
-        when(realm.getRole(OID4VCIConstants.CREDENTIAL_OFFER_CREATE.getName()))
-                .thenReturn(offerAdminRole);
+        when(realm.getRole(OID4VCIConstants.CREDENTIAL_OFFER_CREATE.getName())).thenReturn(offerAdminRole);
         when(issuedCredential.getId()).thenReturn("issued-1");
         when(statusListRepository.findSuccessfulMappingByTokenId("realm-1", "issued-1"))
                 .thenReturn(Optional.of(mapping));
@@ -215,8 +214,7 @@ class CredentialRevocationServiceTest {
 
         when(user.getId()).thenReturn("user-1");
         when(userProvider.getIssuedVerifiableCredentialsStreamByUser("user-1")).thenReturn(Stream.empty());
-        when(realm.getRole(OID4VCIConstants.CREDENTIAL_OFFER_CREATE.getName()))
-                .thenReturn(offerAdminRole);
+        when(realm.getRole(OID4VCIConstants.CREDENTIAL_OFFER_CREATE.getName())).thenReturn(offerAdminRole);
         when(user.hasRole(offerAdminRole)).thenReturn(false);
 
         StatusListException exception =

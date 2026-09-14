@@ -173,8 +173,8 @@ public class CredentialRevocationService {
         return user;
     }
 
-    private StatusListMappingEntity resolveMappingForRevocation(
-            UserModel caller, RealmModel realm, String credentialId) throws StatusListException {
+    private StatusListMappingEntity resolveMappingForRevocation(UserModel caller, RealmModel realm, String credentialId)
+            throws StatusListException {
         if (statusListRepository == null) {
             throw new StatusListException(
                     "Status list mapping repository is not available", HttpStatus.SC_INTERNAL_SERVER_ERROR);
