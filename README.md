@@ -26,6 +26,7 @@ The status list server should implement the
   - [List issued credentials and their status](#list-issued-credentials-and-their-status)
 - [Status List Server API](#status-list-server-api)
 - [Development and Testing](#development-and-testing)
+- [Integrative demo](#integrative-demo)
 - [License](#license)
 
 ## Features
@@ -238,6 +239,15 @@ These are the outbound calls the plugin makes to the configured status list serv
 
 To test against a local status list server, point `status-list-server-url` at it and enable debug logging to
 see the request and response details.
+
+## Integrative demo
+
+This plugin is one of several components we maintain that can be combined into an end-to-end credential revocation
+demo: a user obtains a verifiable credential, presents it to log in, has it revoked, and can no longer use it
+for logging in. Together with the [OpenID4VP plugin](https://github.com/ADORSYS-GIS/keycloak-oid4vp-plugin) for
+Keycloak, the [status list server](https://github.com/adorsys/status-list-server), and the
+[Mock FE](https://github.com/ADORSYS-GIS/keycloak-oid4vc-mock-fe) demo frontend app, they can be wired up
+integratively as described in the [credential revocation demo setup guide](./docs/credential-revocation-demo/setup.md).
 
 ## License
 
