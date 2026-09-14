@@ -18,12 +18,15 @@ import io.github.adorsysgis.keycloakstatuslist.model.TokenStatus;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import org.apache.hc.core5.http.HttpStatus;
 import org.jboss.logging.Logger;
+import org.keycloak.constants.OID4VCIConstants;
 import org.keycloak.models.IssuedVerifiableCredentialModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
+import org.keycloak.models.RoleModel;
 import org.keycloak.models.UserModel;
 import org.keycloak.services.managers.AuthenticationManager.AuthResult;
 import org.keycloak.utils.StringUtil;
@@ -76,7 +79,8 @@ public class CredentialRevocationService {
     }
 
     /**
-     * Revokes a Keycloak-tracked issued credential on behalf of the authenticated client application user.
+     * Revokes a Keycloak-tracked issued credential. The caller must own the credential, or hold the
+     * realm role {@code credential-offer-create} to revoke another user's credential in the same realm.
      */
     public CredentialRevocationResponse revokeIssuedCredential(
             CredentialRevocationRequest request, AuthResult authResult) throws StatusListException {
@@ -99,13 +103,7 @@ public class CredentialRevocationService {
                 requestId, userId, credentialId);
 
         try {
-            IssuedVerifiableCredentialModel issuedCredential = session.users()
-                    .getIssuedVerifiableCredentialsStreamByUser(userId)
-                    .filter(issued -> credentialId.equals(issued.getId()))
-                    .findFirst()
-                    .orElseThrow(() -> new StatusListException("Issued credential not found", HttpStatus.SC_NOT_FOUND));
-
-            StatusListMappingEntity mapping = findStatusListMapping(realm.getId(), userId, issuedCredential);
+            StatusListMappingEntity mapping = resolveMappingForRevocation(user, realm, credentialId);
             StatusEntry statusEntry = new StatusEntry(mapping.getIdx(), TokenStatus.INVALID);
             StatusListPayload revocationPayload =
                     new StatusListPayload(mapping.getStatusListId(), List.of(statusEntry));
@@ -175,6 +173,64 @@ public class CredentialRevocationService {
         return user;
     }
 
+    private StatusListMappingEntity resolveMappingForRevocation(UserModel caller, RealmModel realm, String credentialId)
+            throws StatusListException {
+        if (statusListRepository == null) {
+            throw new StatusListException(
+                    "Status list mapping repository is not available", HttpStatus.SC_INTERNAL_SERVER_ERROR);
+        }
+
+        if (canRevokeOtherUsers(caller, realm)) {
+            return resolveMappingAsOfferAdmin(realm.getId(), credentialId);
+        }
+        return resolveMappingAsOwner(realm.getId(), caller.getId(), credentialId);
+    }
+
+    private StatusListMappingEntity resolveMappingAsOwner(String realmId, String userId, String credentialId)
+            throws StatusListException {
+        IssuedVerifiableCredentialModel issuedCredential = findIssuedCredentialByUser(userId, credentialId)
+                .orElseThrow(() -> new StatusListException("Issued credential not found", HttpStatus.SC_NOT_FOUND));
+
+        String issuedCredentialId = issuedCredential.getId();
+        if (StringUtil.isBlank(issuedCredentialId)) {
+            throw new IllegalStateException("Issued credential is missing its Keycloak id");
+        }
+
+        return statusListRepository
+                .findSuccessfulMappingByTokenId(realmId, userId, issuedCredentialId)
+                .orElseThrow(() -> new StatusListException(
+                        "Status list mapping not found for issued credential", HttpStatus.SC_NOT_FOUND));
+    }
+
+    private StatusListMappingEntity resolveMappingAsOfferAdmin(String realmId, String credentialId)
+            throws StatusListException {
+        StatusListMappingEntity mapping = statusListRepository
+                .findSuccessfulMappingByTokenId(realmId, credentialId)
+                .filter(candidate -> StringUtil.isNotBlank(candidate.getUserId()))
+                .orElseThrow(() -> new StatusListException("Issued credential not found", HttpStatus.SC_NOT_FOUND));
+
+        findIssuedCredentialByUser(mapping.getUserId(), credentialId)
+                .orElseThrow(() -> new StatusListException("Issued credential not found", HttpStatus.SC_NOT_FOUND));
+
+        return mapping;
+    }
+
+    private Optional<IssuedVerifiableCredentialModel> findIssuedCredentialByUser(String userId, String credentialId) {
+        if (StringUtil.isBlank(userId)) {
+            return Optional.empty();
+        }
+
+        return session.users()
+                .getIssuedVerifiableCredentialsStreamByUser(userId)
+                .filter(issued -> credentialId.equals(issued.getId()))
+                .findFirst();
+    }
+
+    private boolean canRevokeOtherUsers(UserModel user, RealmModel realm) {
+        RoleModel offerAdminRole = realm.getRole(OID4VCIConstants.CREDENTIAL_OFFER_CREATE.getName());
+        return offerAdminRole != null && user.hasRole(offerAdminRole);
+    }
+
     private IssuedCredentialStatus toIssuedCredentialStatus(
             IssuedVerifiableCredentialModel credential, StatusListMappingEntity mapping) {
         return new IssuedCredentialStatus(
@@ -193,24 +249,5 @@ public class CredentialRevocationService {
         }
 
         return mapping.getTokenStatus().name();
-    }
-
-    private StatusListMappingEntity findStatusListMapping(
-            String realmId, String userId, IssuedVerifiableCredentialModel issuedCredential)
-            throws StatusListException {
-        if (statusListRepository == null) {
-            throw new StatusListException(
-                    "Status list mapping repository is not available", HttpStatus.SC_INTERNAL_SERVER_ERROR);
-        }
-
-        String issuedCredentialId = issuedCredential.getId();
-        if (StringUtil.isBlank(issuedCredentialId)) {
-            throw new IllegalStateException("Issued credential is missing its Keycloak id");
-        }
-
-        return statusListRepository
-                .findSuccessfulMappingByTokenId(realmId, userId, issuedCredentialId)
-                .orElseThrow(() -> new StatusListException(
-                        "Status list mapping not found for issued credential", HttpStatus.SC_NOT_FOUND));
     }
 }

@@ -51,6 +51,20 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
     }
 
     @Test
+    void offerAdminCanRevokeAnotherUsersCredential() throws Exception {
+        TestUser owner = credentialHolder("admin-revoke-owner");
+        TestUser admin = offerAdmin("offer-admin");
+        IssuedCredentialFixture ownerCredential = oid4vci.issueCredential(owner.username(), owner.accessToken());
+
+        var response = oid4vci.revokeCredential(admin.accessToken(), ownerCredential.id(), "admin revocation");
+
+        assertEquals(200, response.statusCode());
+        assertTrue(oid4vci.readJson(response).path("success").asBoolean(false));
+        assertStatusListValue(ownerCredential, TokenStatus.INVALID.getCode());
+        assertCredentialStatus(owner.accessToken(), ownerCredential.id(), TokenStatus.INVALID.name());
+    }
+
+    @Test
     void revocationRequiresBearerToken() throws Exception {
         TestUser user = credentialHolder("unauthenticated");
         IssuedCredentialFixture credential = oid4vci.issueCredential(user.username(), user.accessToken());

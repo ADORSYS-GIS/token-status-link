@@ -16,6 +16,7 @@ import org.jboss.logging.Logger;
 import org.keycloak.connections.jpa.JpaConnectionProvider;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.utils.KeycloakModelUtils;
+import org.keycloak.utils.StringUtil;
 
 public class StatusListRepository {
 
@@ -107,25 +108,52 @@ public class StatusListRepository {
      */
     public Optional<StatusListMappingEntity> findSuccessfulMappingByTokenId(
             String realmId, String userId, String tokenId) {
-        if (tokenId == null || tokenId.isBlank()) {
+        if (StringUtil.isBlank(userId)) {
+            return Optional.empty();
+        }
+        return findSuccessfulMappingByTokenIdInternal(realmId, userId, tokenId);
+    }
+
+    /**
+     * Finds the successful status-list mapping for an issued credential id in the realm, regardless of holder.
+     */
+    public Optional<StatusListMappingEntity> findSuccessfulMappingByTokenId(String realmId, String tokenId) {
+        return findSuccessfulMappingByTokenIdInternal(realmId, null, tokenId);
+    }
+
+    /**
+     * Shared lookup for a successful mapping by token id. When {@code userId} is non-blank, the holder is enforced.
+     */
+    private Optional<StatusListMappingEntity> findSuccessfulMappingByTokenIdInternal(
+            String realmId, String userId, String tokenId) {
+        if (StringUtil.isBlank(tokenId)) {
             return Optional.empty();
         }
 
+        boolean enforceUser = StringUtil.isNotBlank(userId);
         AtomicReference<StatusListMappingEntity> result = new AtomicReference<>();
 
         withEntityManagerInTransaction(em -> {
-            String q = """
-                        SELECT m FROM StatusListMappingEntity m
-                        WHERE m.realmId = :realmId
-                          AND m.userId = :userId
-                          AND m.tokenId = :tokenId
-                          AND m.status = :status
-                        ORDER BY m.createdTimestamp DESC
-                    """;
+            String q = enforceUser ? """
+                                SELECT m FROM StatusListMappingEntity m
+                                WHERE m.realmId = :realmId
+                                  AND m.userId = :userId
+                                  AND m.tokenId = :tokenId
+                                  AND m.status = :status
+                                ORDER BY m.createdTimestamp DESC
+                            """ : """
+                                SELECT m FROM StatusListMappingEntity m
+                                WHERE m.realmId = :realmId
+                                  AND m.tokenId = :tokenId
+                                  AND m.status = :status
+                                ORDER BY m.createdTimestamp DESC
+                            """;
 
             TypedQuery<StatusListMappingEntity> query = em.createQuery(q, StatusListMappingEntity.class);
             query.setParameter("realmId", realmId);
-            query.setParameter("userId", userId);
+            if (enforceUser) {
+                query.setParameter("userId", userId);
+            }
             query.setParameter("tokenId", tokenId);
             query.setParameter("status", StatusListMappingEntity.MappingStatus.SUCCESS);
             query.setMaxResults(1);
