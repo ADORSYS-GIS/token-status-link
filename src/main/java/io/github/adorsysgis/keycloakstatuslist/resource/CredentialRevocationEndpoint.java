@@ -20,7 +20,6 @@ import org.keycloak.models.RealmModel;
 import org.keycloak.protocol.oidc.endpoints.TokenRevocationEndpoint;
 import org.keycloak.services.managers.AppAuthManager;
 import org.keycloak.services.managers.AuthenticationManager.AuthResult;
-import org.keycloak.utils.StringUtil;
 
 public class CredentialRevocationEndpoint extends TokenRevocationEndpoint {
 
@@ -54,18 +53,18 @@ public class CredentialRevocationEndpoint extends TokenRevocationEndpoint {
             return super.revoke();
         }
 
+        if (!isServiceConfigured()) {
+            logger.warn("Will fail because credential revocation service is not configured");
+            return createErrorResponse(
+                    Response.Status.INTERNAL_SERVER_ERROR, "Credential revocation service is misconfigured");
+        }
+
         if (!isServiceEnabled()) {
             logger.debug("Will fail because credential revocation service is disabled");
             // In a RealmResourceProvider, we don't have a super.revoke().
             // We should return an error or handle it differently.
             return createErrorResponse(
                     Response.Status.INTERNAL_SERVER_ERROR, "Credential revocation service is disabled");
-        }
-
-        if (!isServiceConfigured()) {
-            logger.warn("Will fail because credential revocation service is not configured");
-            return createErrorResponse(
-                    Response.Status.INTERNAL_SERVER_ERROR, "Credential revocation service is not configured");
         }
 
         logger.infof("Attempting credential revocation via Token Status List. Mode: %s", revocationMode);
@@ -140,11 +139,8 @@ public class CredentialRevocationEndpoint extends TokenRevocationEndpoint {
     private boolean isServiceConfigured() {
         try {
             RealmModel realm = session.getContext().getRealm();
-            StatusListConfig config = new StatusListConfig(realm);
-
-            // Check if the service is enabled and has a valid server URL
-            return config.isEnabled() && StringUtil.isNotBlank(config.getServerUrl());
-
+            new StatusListConfig(realm);
+            return true;
         } catch (Exception e) {
             logger.warn("Error checking service configuration", e);
             return false;

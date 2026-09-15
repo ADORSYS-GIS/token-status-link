@@ -65,7 +65,11 @@ public class StatusListProtocolMapper extends OID4VCMapper {
     public StatusListProtocolMapper(KeycloakSession session) {
         this.session = session;
         this.statusListRepository = new StatusListRepository(session);
-        this.statusListService = createStatusListService(session);
+        // Only build the status list client when the feature is explicitly opted in for the realm.
+        // This keeps the mapper constructible for realms where the feature is disabled (the default)
+        // and avoids requiring the server URL unless the feature is actually enabled.
+        StatusListConfig config = new StatusListConfig(session.getContext().getRealm());
+        this.statusListService = config.isEnabled() ? createStatusListService(session) : null;
         this.issuedCredentialIdResolver = new IssuedCredentialIdResolver(session);
     }
 
@@ -305,6 +309,11 @@ public class StatusListProtocolMapper extends OID4VCMapper {
     }
 
     private void sendStatusToServer(long idx, String statusListId) throws IOException, StatusListException {
+        if (statusListService == null) {
+            logger.error("statusListService unexpected null. Cannot send status to server");
+            return;
+        }
+
         // Prepare payload
         StatusListService.StatusListPayload payload = new StatusListService.StatusListPayload(
                 statusListId, List.of(new StatusListService.StatusListPayload.StatusEntry(idx, TokenStatus.VALID)));
