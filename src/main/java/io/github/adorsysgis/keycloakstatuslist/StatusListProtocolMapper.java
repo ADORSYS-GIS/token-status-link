@@ -6,6 +6,7 @@ import io.github.adorsysgis.keycloakstatuslist.client.ApacheHttpStatusListClient
 import io.github.adorsysgis.keycloakstatuslist.client.StatusListHttpClient;
 import io.github.adorsysgis.keycloakstatuslist.config.StatusListConfig;
 import io.github.adorsysgis.keycloakstatuslist.config.StatusListEndpointUriResolver;
+import io.github.adorsysgis.keycloakstatuslist.exception.CredentialIssuanceQuotaException;
 import io.github.adorsysgis.keycloakstatuslist.exception.StatusListException;
 import io.github.adorsysgis.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
 import io.github.adorsysgis.keycloakstatuslist.jpa.repository.StatusListRepository;
@@ -190,8 +191,8 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         String credentialConfigurationId = resolveCredentialConfigurationId();
         int maxCredentialsPerUser = credentialIssuanceQuotaService.resolveMax(
                 mapperModel, session.getContext().getRealm());
-        credentialIssuanceQuotaService.enforceBeforeIssuance(
-                realmId, userId, credentialConfigurationId, maxCredentialsPerUser);
+        credentialIssuanceQuotaService.requireHolderAndTypeWhenLimited(
+                userId, credentialConfigurationId, maxCredentialsPerUser);
 
         // Build URI for status list
         String listId = statusListRepository.getNextStatusListId(realmId, config.getStatusListMaxEntries());
@@ -199,8 +200,8 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         URI uri = URI.create(resolver.statusListUrl(listId));
         logger.debugf("Configuration: listId=%s, uri=%s", listId, uri);
 
-        Status status =
-                sendStatusAndStoreIndexMapping(listId, uri.toString(), userId, tokenId, credentialConfigurationId);
+        Status status = sendStatusAndStoreIndexMapping(
+                listId, uri.toString(), userId, tokenId, credentialConfigurationId, maxCredentialsPerUser);
 
         if (status == null) {
             failIssuanceIfMandatory(config);
@@ -307,12 +308,19 @@ public class StatusListProtocolMapper extends OID4VCMapper {
 
     /**
      * Send status to server to create status list entry and store index mapping in database.
+     * When {@code maxCredentialsPerUser} is positive, the quota check runs in the same transaction
+     * as the {@code INIT} reservation under a per-holder/type lock.
      */
     public Status sendStatusAndStoreIndexMapping(
-            String statusListId, String uri, String userId, String tokenId, String credentialConfigurationId) {
+            String statusListId,
+            String uri,
+            String userId,
+            String tokenId,
+            String credentialConfigurationId,
+            int maxCredentialsPerUser) {
         StatusListMappingEntity mapping =
                 createInitialMapping(statusListId, userId, tokenId, credentialConfigurationId);
-        if (!reserveIndex(mapping)) {
+        if (!reserveIndex(mapping, maxCredentialsPerUser)) {
             return null;
         }
 
@@ -336,15 +344,32 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         return mapping;
     }
 
-    private boolean reserveIndex(StatusListMappingEntity mapping) {
+    private boolean reserveIndex(StatusListMappingEntity mapping, int maxCredentialsPerUser) {
         logger.debugf(
                 "Booking next index for status list mapping: status_list_id=%s, userId=%s, tokenId=%s",
                 mapping.getStatusListId(), mapping.getUserId(), mapping.getTokenId());
 
+        credentialIssuanceQuotaService.ensureQuotaLockExists(
+                mapping.getRealmId(),
+                mapping.getUserId(),
+                mapping.getCredentialConfigurationId(),
+                maxCredentialsPerUser);
+
         try {
-            statusListRepository.withEntityManagerInTransaction(em -> persistInitialMapping(em, mapping));
+            statusListRepository.withEntityManagerInTransaction(em -> {
+                credentialIssuanceQuotaService.enforceWithinReservationTransaction(
+                        em,
+                        mapping.getRealmId(),
+                        mapping.getUserId(),
+                        mapping.getCredentialConfigurationId(),
+                        maxCredentialsPerUser);
+                persistInitialMapping(em, mapping);
+            });
             return true;
         } catch (RuntimeException e) {
+            if (e instanceof CredentialIssuanceQuotaException) {
+                throw e;
+            }
             logger.error("Failed to initiate index mapping", e);
             return false;
         }

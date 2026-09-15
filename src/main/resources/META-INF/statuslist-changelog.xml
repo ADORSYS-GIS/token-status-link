@@ -67,6 +67,10 @@
     </changeSet>
 
     <changeSet id="add-credential-configuration-id-to-status-list-mapping" author="adorsys">
+        <!--
+          Existing rows remain NULL. Quota enforcement and limits metadata ignore those legacy
+          rows (see README upgrade note); only post-migration issuances store a type and count.
+        -->
         <addColumn tableName="status_list_mapping">
             <column name="credential_configuration_id" type="varchar(255)" />
         </addColumn>
@@ -76,6 +80,23 @@
             <column name="user_id" />
             <column name="credential_configuration_id" />
         </createIndex>
+    </changeSet>
+
+    <changeSet id="create-status-list-quota-lock" author="adorsys">
+        <createTable tableName="status_list_quota_lock">
+            <column name="realm_id" type="varchar(255)">
+                <constraints nullable="false" />
+            </column>
+            <column name="user_id" type="varchar(255)">
+                <constraints nullable="false" />
+            </column>
+            <column name="credential_configuration_id" type="varchar(255)">
+                <constraints nullable="false" />
+            </column>
+        </createTable>
+        <addPrimaryKey tableName="status_list_quota_lock"
+                       columnNames="realm_id,user_id,credential_configuration_id"
+                       constraintName="pk_status_list_quota_lock" />
     </changeSet>
 
 </databaseChangeLog>
