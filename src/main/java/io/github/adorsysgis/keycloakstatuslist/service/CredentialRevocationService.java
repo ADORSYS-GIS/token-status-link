@@ -149,20 +149,17 @@ public class CredentialRevocationService {
         UserModel caller = getAuthenticatedUser(authResult);
         RealmModel realm = session.getContext().getRealm();
 
-        List<IssuedCredentialStatus> statuses = resolveHoldersToList(caller, realm, targetUser).stream()
-                .flatMap(holder -> listStatusesForHolder(realm, holder).stream())
-                .toList();
-
-        return new IssuedCredentialStatusResponse(statuses);
+        return resolveHolder(caller, realm, targetUser)
+                .map(holder -> new IssuedCredentialStatusResponse(listStatusesForHolder(realm, holder)))
+                .orElseGet(() -> new IssuedCredentialStatusResponse(List.of()));
     }
 
-    private List<UserModel> resolveHoldersToList(UserModel caller, RealmModel realm, String targetUser) {
+    private Optional<UserModel> resolveHolder(UserModel caller, RealmModel realm, String targetUser) {
         if (!isOfferAdmin(caller, realm) || StringUtil.isBlank(targetUser)) {
-            return List.of(caller);
+            return Optional.of(caller);
         }
 
-        UserModel holder = session.users().getUserByUsername(realm, targetUser.trim());
-        return holder == null ? List.of() : List.of(holder);
+        return Optional.ofNullable(session.users().getUserByUsername(realm, targetUser.trim()));
     }
 
     private List<IssuedCredentialStatus> listStatusesForHolder(RealmModel realm, UserModel holder) {
@@ -179,9 +176,8 @@ public class CredentialRevocationService {
                 .map(IssuedVerifiableCredentialModel::getId)
                 .filter(StringUtil::isNotBlank)
                 .toList();
-        Map<String, StatusListMappingEntity> mappings = statusListRepository == null
-                ? Map.of()
-                : statusListRepository.findSuccessfulMappingsByTokenIds(realm.getId(), userId, credentialIds);
+        Map<String, StatusListMappingEntity> mappings =
+                statusListRepository.findSuccessfulMappingsByTokenIds(realm.getId(), userId, credentialIds);
 
         return issuedCredentials.stream()
                 .map(credential -> toIssuedCredentialStatus(credential, mappings.get(credential.getId()), holder))
@@ -269,8 +265,8 @@ public class CredentialRevocationService {
                 credential.getClientId(),
                 credential.getRevision(),
                 resolveTokenStatus(mapping),
-                holder != null ? holder.getId() : credential.getUserId(),
-                holder != null ? holder.getUsername() : null);
+                holder.getId(),
+                holder.getUsername());
     }
 
     private String resolveTokenStatus(StatusListMappingEntity mapping) {
