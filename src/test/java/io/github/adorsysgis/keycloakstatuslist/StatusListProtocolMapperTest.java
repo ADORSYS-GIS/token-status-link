@@ -29,10 +29,12 @@ import io.github.adorsysgis.keycloakstatuslist.exception.StatusListException;
 import io.github.adorsysgis.keycloakstatuslist.helpers.MockKeycloakTest;
 import io.github.adorsysgis.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
 import io.github.adorsysgis.keycloakstatuslist.jpa.repository.StatusListRepository;
+import io.github.adorsysgis.keycloakstatuslist.model.IssuedCredentialStatusResponse;
 import io.github.adorsysgis.keycloakstatuslist.model.Status;
 import io.github.adorsysgis.keycloakstatuslist.model.StatusListClaim;
 import io.github.adorsysgis.keycloakstatuslist.model.TokenStatus;
 import io.github.adorsysgis.keycloakstatuslist.service.CredentialIssuanceQuotaService;
+import io.github.adorsysgis.keycloakstatuslist.service.CredentialRevocationService;
 import io.github.adorsysgis.keycloakstatuslist.service.StatusListService;
 import jakarta.persistence.PersistenceException;
 import jakarta.ws.rs.core.HttpHeaders;
@@ -42,6 +44,7 @@ import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ThreadLocalRandom;
 import nl.altindag.log.LogCaptor;
 import org.junit.jupiter.api.BeforeEach;
@@ -124,10 +127,13 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         assertEquals("Status List Claim Mapper", mapper.getDisplayType());
         assertTrue(mapper.getHelpText().contains("status list claim"));
         assertFalse(mapper.includeInMetadata());
-        assertEquals(1, mapper.getIndividualConfigProperties().size());
+        assertEquals(2, mapper.getIndividualConfigProperties().size());
         assertEquals(
                 CredentialIssuanceQuotaService.MAX_CREDENTIALS_PER_USER_CONFIG,
                 mapper.getIndividualConfigProperties().get(0).getName());
+        assertEquals(
+                CredentialIssuanceQuotaService.OVERFLOW_POLICY_CONFIG,
+                mapper.getIndividualConfigProperties().get(1).getName());
         mapper.close();
     }
 
@@ -284,7 +290,9 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
     @Test
     void shouldNotMap_WhenSendingStatusFails() throws Exception {
         mockGetNextIndex();
-        when(realm.getAttribute(StatusListConfig.STATUS_LIST_MANDATORY)).thenReturn("false");
+        lenient()
+                .when(realm.getAttribute(StatusListConfig.STATUS_LIST_MANDATORY))
+                .thenReturn("false");
         doThrow(new StatusListException("Server not reachable"))
                 .when(statusListService)
                 .publishOrUpdate(any(StatusListService.StatusListPayload.class));
@@ -308,7 +316,9 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
     @Test
     void shouldContinueIssuance_WhenOptionalAndDbPersistenceFails() {
         mockGetNextIndex();
-        when(realm.getAttribute(StatusListConfig.STATUS_LIST_MANDATORY)).thenReturn("false");
+        lenient()
+                .when(realm.getAttribute(StatusListConfig.STATUS_LIST_MANDATORY))
+                .thenReturn("false");
         doThrow(new PersistenceException("DB Error")).when(entityManager).persist(any());
 
         mapper.setClaim(claims, userSession);
@@ -322,7 +332,9 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
     @Test
     void shouldFailIssuance_WhenMandatoryAndDbPersistenceFails() {
         mockGetNextIndex();
-        when(realm.getAttribute(StatusListConfig.STATUS_LIST_MANDATORY)).thenReturn("true");
+        lenient()
+                .when(realm.getAttribute(StatusListConfig.STATUS_LIST_MANDATORY))
+                .thenReturn("true");
         doThrow(new PersistenceException("DB Error")).when(entityManager).persist(any());
 
         assertThrows(RuntimeException.class, () -> mapper.setClaim(claims, userSession));
@@ -334,7 +346,9 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
     @Test
     void shouldFailIssuance_WhenMandatoryAndSendingStatusFails() throws Exception {
         mockGetNextIndex();
-        when(realm.getAttribute(StatusListConfig.STATUS_LIST_MANDATORY)).thenReturn("true");
+        lenient()
+                .when(realm.getAttribute(StatusListConfig.STATUS_LIST_MANDATORY))
+                .thenReturn("true");
         doThrow(new StatusListException("Server not reachable"))
                 .when(statusListService)
                 .publishOrUpdate(any(StatusListService.StatusListPayload.class));
@@ -430,6 +444,38 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         assertEquals("PidCredential", entityCaptor.getValue().getCredentialConfigurationId());
     }
 
+    @Test
+    void shouldRevokeOldestAndContinue_WhenOverflowPolicyIsRevokeOldest() throws Exception {
+        mockGetNextIndex();
+        stubHolder("holder-1");
+        stubMapperConfig("1", IssuedCredentialStatusResponse.OVERFLOW_POLICY_REVOKE_OLDEST);
+        when(headers.getHeaderString(HttpHeaders.AUTHORIZATION))
+                .thenReturn("Bearer " + accessTokenWithIssuedCredentialId("issued-credential-2"));
+
+        StatusListMappingEntity oldest = new StatusListMappingEntity();
+        oldest.setId("oldest-mapping");
+        oldest.setIdx(7L);
+        oldest.setStatusListId(TEST_LIST_ID);
+        oldest.setTokenId("issued-credential-1");
+        oldest.setTokenStatus(TokenStatus.VALID);
+
+        lenient()
+                .doReturn(1L, 0L)
+                .when(statusListRepository)
+                .countSuccessfulNonRevokedMappings(TEST_REALM_ID, "holder-1", "PidCredential");
+        lenient()
+                .doReturn(Optional.of(oldest))
+                .when(statusListRepository)
+                .findOldestSuccessfulNonRevokedMapping(TEST_REALM_ID, "holder-1", "PidCredential");
+
+        mapper.setClaim(claims, userSession);
+
+        assertThat(claims.keySet(), hasItem(Constants.STATUS_CLAIM_KEY));
+        verify(statusListService).updateStatusList(any(StatusListService.StatusListPayload.class), anyString());
+        assertEquals(TokenStatus.INVALID, oldest.getTokenStatus());
+        verify(statusListRepository).save(oldest);
+    }
+
     private void mockDefaultRealmConfig() {
         lenient()
                 .when(realm.getAttribute(StatusListConfig.STATUS_LIST_ENABLED))
@@ -445,6 +491,9 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
                 .thenReturn(String.valueOf(StatusListConfig.DEFAULT_MAX_ENTRIES));
         lenient()
                 .when(realm.getAttribute(StatusListConfig.STATUS_LIST_MAX_CREDENTIALS_PER_USER))
+                .thenReturn(null);
+        lenient()
+                .when(realm.getAttribute(StatusListConfig.STATUS_LIST_OVERFLOW_POLICY))
                 .thenReturn(null);
     }
 
@@ -467,7 +516,11 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
                 .when(statusListRepository)
                 .countSuccessfulNonRevokedMappings(anyString(), anyString(), anyString());
         setPrivateField(
-                mapper, "credentialIssuanceQuotaService", new CredentialIssuanceQuotaService(statusListRepository));
+                mapper,
+                "credentialIssuanceQuotaService",
+                new CredentialIssuanceQuotaService(
+                        statusListRepository,
+                        new CredentialRevocationService(session, statusListService, statusListRepository)));
     }
 
     private void stubHolder(String userId) {
@@ -476,9 +529,24 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
     }
 
     private void stubMapperMax(String max) {
+        stubMapperConfig(max, null);
+    }
+
+    private void stubMapperConfig(String max, String overflowPolicy) {
+        if (overflowPolicy == null) {
+            lenient()
+                    .when(mapperModel.getConfig())
+                    .thenReturn(Map.of(CredentialIssuanceQuotaService.MAX_CREDENTIALS_PER_USER_CONFIG, max));
+            return;
+        }
+
         lenient()
                 .when(mapperModel.getConfig())
-                .thenReturn(Map.of(CredentialIssuanceQuotaService.MAX_CREDENTIALS_PER_USER_CONFIG, max));
+                .thenReturn(Map.of(
+                        CredentialIssuanceQuotaService.MAX_CREDENTIALS_PER_USER_CONFIG,
+                        max,
+                        CredentialIssuanceQuotaService.OVERFLOW_POLICY_CONFIG,
+                        overflowPolicy));
     }
 
     private long mockGetNextIndex() {

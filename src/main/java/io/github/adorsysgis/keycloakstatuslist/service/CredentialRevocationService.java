@@ -107,12 +107,7 @@ public class CredentialRevocationService {
                     .orElseThrow(() -> new StatusListException("Issued credential not found", HttpStatus.SC_NOT_FOUND));
 
             StatusListMappingEntity mapping = findStatusListMapping(realm.getId(), userId, issuedCredential);
-            StatusEntry statusEntry = new StatusEntry(mapping.getIdx(), TokenStatus.INVALID);
-            StatusListPayload revocationPayload =
-                    new StatusListPayload(mapping.getStatusListId(), List.of(statusEntry));
-            getStatusListService().updateStatusList(revocationPayload, requestId);
-            mapping.setTokenStatus(TokenStatus.INVALID);
-            statusListRepository.save(mapping);
+            revokeMapping(mapping, requestId);
 
             Instant revokedAt = Instant.now();
             logger.infof(
@@ -135,6 +130,30 @@ public class CredentialRevocationService {
                     requestId, e.getMessage(), e);
             throw new StatusListException("Failed to process issued credential revocation: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Marks a status-list mapping INVALID on the status list server and in the local store.
+     * Used by holder-initiated revocation and by the {@code REVOKE_OLDEST} issuance overflow policy.
+     */
+    public void revokeMapping(StatusListMappingEntity mapping) throws StatusListException {
+        revokeMapping(mapping, UUID.randomUUID().toString());
+    }
+
+    private void revokeMapping(StatusListMappingEntity mapping, String requestId) throws StatusListException {
+        if (mapping == null) {
+            throw new IllegalArgumentException("Status list mapping is required");
+        }
+        if (statusListRepository == null) {
+            throw new StatusListException(
+                    "Status list mapping repository is not available", HttpStatus.SC_INTERNAL_SERVER_ERROR);
+        }
+
+        StatusEntry statusEntry = new StatusEntry(mapping.getIdx(), TokenStatus.INVALID);
+        StatusListPayload revocationPayload = new StatusListPayload(mapping.getStatusListId(), List.of(statusEntry));
+        getStatusListService().updateStatusList(revocationPayload, requestId);
+        mapping.setTokenStatus(TokenStatus.INVALID);
+        statusListRepository.save(mapping);
     }
 
     /**

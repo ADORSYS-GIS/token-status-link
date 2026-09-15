@@ -1,6 +1,7 @@
 package io.github.adorsysgis.keycloakstatuslist;
 
 import static io.github.adorsysgis.keycloakstatuslist.jpa.entity.StatusListMappingEntity.MappingStatus;
+import static io.github.adorsysgis.keycloakstatuslist.model.IssuedCredentialStatusResponse.OVERFLOW_POLICY_REVOKE_OLDEST;
 
 import io.github.adorsysgis.keycloakstatuslist.client.ApacheHttpStatusListClient;
 import io.github.adorsysgis.keycloakstatuslist.client.StatusListHttpClient;
@@ -14,6 +15,7 @@ import io.github.adorsysgis.keycloakstatuslist.model.StatusListClaim;
 import io.github.adorsysgis.keycloakstatuslist.model.TokenStatus;
 import io.github.adorsysgis.keycloakstatuslist.service.CircuitBreaker;
 import io.github.adorsysgis.keycloakstatuslist.service.CredentialIssuanceQuotaService;
+import io.github.adorsysgis.keycloakstatuslist.service.CredentialRevocationService;
 import io.github.adorsysgis.keycloakstatuslist.service.CryptoIdentityService;
 import io.github.adorsysgis.keycloakstatuslist.service.CustomHttpClient;
 import io.github.adorsysgis.keycloakstatuslist.service.IssuedCredentialIdResolver;
@@ -51,7 +53,8 @@ import org.keycloak.utils.StringUtil;
 public class StatusListProtocolMapper extends OID4VCMapper {
 
     private static final Logger logger = Logger.getLogger(StatusListProtocolMapper.class);
-    private static final List<ProviderConfigProperty> CONFIG_PROPERTIES = List.of(maxCredentialsPerUserProperty());
+    private static final List<ProviderConfigProperty> CONFIG_PROPERTIES =
+            List.of(maxCredentialsPerUserProperty(), overflowPolicyProperty());
 
     private final KeycloakSession session;
     private final StatusListService statusListService;
@@ -73,7 +76,9 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         this.statusListRepository = new StatusListRepository(session);
         this.statusListService = createStatusListService(session);
         this.issuedCredentialIdResolver = new IssuedCredentialIdResolver(session);
-        this.credentialIssuanceQuotaService = new CredentialIssuanceQuotaService(statusListRepository);
+        this.credentialIssuanceQuotaService = new CredentialIssuanceQuotaService(
+                statusListRepository,
+                new CredentialRevocationService(session, statusListService, statusListRepository));
     }
 
     /**
@@ -123,7 +128,8 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         return """
                 Adds a status list claim to issued verifiable credentials.
                 The status list server URL is configured at the realm level.
-                Optionally limits how many non-revoked credentials of this type a holder may have.
+                Optionally limits how many non-revoked credentials of this type a holder may have,
+                and chooses whether to reject issuance or revoke the oldest credential when the limit is reached.
                 """;
     }
 
@@ -181,10 +187,11 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         String tokenId = resolveTokenId(claims);
         String userId = resolveHolderUserId(userSessionModel);
         String credentialConfigurationId = resolveCredentialConfigurationId();
-        int maxCredentialsPerUser = credentialIssuanceQuotaService.resolveMax(
-                mapperModel, session.getContext().getRealm());
+        RealmModel realm = session.getContext().getRealm();
+        int maxCredentialsPerUser = credentialIssuanceQuotaService.resolveMax(mapperModel, realm);
+        String overflowPolicy = credentialIssuanceQuotaService.resolveOverflowPolicy(mapperModel, realm);
         credentialIssuanceQuotaService.enforceBeforeIssuance(
-                realmId, userId, credentialConfigurationId, maxCredentialsPerUser);
+                realmId, userId, credentialConfigurationId, maxCredentialsPerUser, overflowPolicy);
 
         // Build URI for status list
         String listId = statusListRepository.getNextStatusListId(realmId, config.getStatusListMaxEntries());
@@ -394,6 +401,18 @@ public class StatusListProtocolMapper extends OID4VCMapper {
                 "Maximum number of non-revoked credentials of this type a holder may have. Leave empty or set to 0 for unlimited.");
         property.setType(ProviderConfigProperty.STRING_TYPE);
         property.setDefaultValue("0");
+        return property;
+    }
+
+    private static ProviderConfigProperty overflowPolicyProperty() {
+        ProviderConfigProperty property = new ProviderConfigProperty();
+        property.setName(CredentialIssuanceQuotaService.OVERFLOW_POLICY_CONFIG);
+        property.setLabel("Overflow policy");
+        property.setHelpText(
+                "When the max credentials limit is reached: REJECT fails issuance; REVOKE_OLDEST revokes the oldest non-revoked credential of this type and continues. Defaults to REJECT. The mapper value is used when set; otherwise the realm setting applies.");
+        property.setType(ProviderConfigProperty.LIST_TYPE);
+        property.setOptions(List.of(StatusListConfig.DEFAULT_OVERFLOW_POLICY, OVERFLOW_POLICY_REVOKE_OLDEST));
+        property.setDefaultValue(StatusListConfig.DEFAULT_OVERFLOW_POLICY);
         return property;
     }
 }

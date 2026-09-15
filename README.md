@@ -54,6 +54,7 @@ The plugin can be configured at the realm level with the following properties:
 | `status-list-mandatory`                         | If true, publication failures block issuance; if false, failures are logged and issuance continues without a status claim | `false`                               |
 | `status-list-max-entries`                       | Maximum number of entries to publish under the same status list                                                           | `10000`                               |
 | `status-list-max-credentials-per-user`          | Optional realm fallback for the maximum number of non-revoked credentials per holder and credential type. Mapper config takes precedence. Absent or `0` means unlimited. | `0`                                   |
+| `status-list-overflow-policy`                   | Optional realm fallback for overflow behavior when the max is reached: `REJECT` or `REVOKE_OLDEST`. Mapper config takes precedence. | `REJECT`                              |
 | `status-list-tls-trust-all`                     | Instructs the status-list http-client to trust all TLS certificates. **DO NOT USE IN PRODUCTION**                         | `false`                               |
 | `status-list-tls-ca-cert-path`                  | Path to a PEM-encoded CA certificate to be trusted by the status-list http-client, in addition to the JVM defaults        | `null`                                |
 
@@ -112,12 +113,18 @@ corresponding to a specific credential's configuration. Below is a sample such c
   "protocol": "oid4vc",
   "protocolMapper": "oid4vc-status-list-claim-mapper",
   "config": {
-    "status-list-max-credentials-per-user": "3"
+    "status-list-max-credentials-per-user": "3",
+    "status-list-overflow-policy": "REJECT"
   }
 }
 ```
 
-`status-list-max-credentials-per-user` is optional. Leave it out or blank to inherit the realm fallback. Set it to `0` to leave this credential type unlimited even when the realm has a fallback. When a positive maximum is set, the plugin rejects a new issuance of that type once the holder already has that many successful mappings whose status is not `INVALID`. `SUSPENDED` credentials still occupy a slot. Revoking a credential frees a slot. If a limit is configured and the holder or credential type cannot be resolved, issuance fails closed.
+`status-list-max-credentials-per-user` is optional. Leave it out or blank to inherit the realm fallback. Set it to `0` to leave this credential type unlimited even when the realm has a fallback. When a positive maximum is set, the plugin applies `status-list-overflow-policy` once the holder already has that many successful mappings whose status is not `INVALID`. `SUSPENDED` credentials still occupy a slot. Revoking a credential frees a slot. If a limit is configured and the holder or credential type cannot be resolved, issuance fails closed.
+
+`status-list-overflow-policy` defaults to `REJECT` in the mapper UI. The mapper value is used when present. If the mapper omits the key, the optional realm attribute is used, then `REJECT`. Supported values:
+
+- `REJECT` — fail the new issuance when the limit is reached.
+- `REVOKE_OLDEST` — revoke the oldest successful non-`INVALID` mapping for that holder and type, then continue issuance. If that revocation fails, issuance fails (no silent over-limit).
 
 ## Performance Considerations
 
@@ -234,8 +241,8 @@ Each `limits` entry describes the holder's quota for one credential type:
 | `credentialConfigurationId`| string | Credential type the cap applies to                                   |
 | `max`                      | number | Configured maximum of non-revoked credentials of this type           |
 | `activeCount`              | number | Successful mappings whose status is not `INVALID`                    |
-| `remaining`                | number | Slots left before issuance of this type is rejected                  |
-| `overflowPolicy`           | string | Currently always `REJECT`                                            |
+| `remaining`                | number | Slots left before the overflow policy applies                        |
+| `overflowPolicy`           | string | Configured overflow behavior: `REJECT` or `REVOKE_OLDEST`            |
 
 ## Status List Server API
 
