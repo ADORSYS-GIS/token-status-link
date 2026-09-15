@@ -6,6 +6,7 @@ public record IssuedCredentialStatusResponse(
         List<IssuedCredentialStatus> credentials, List<IssuedCredentialLimit> limits) {
 
     public static final String OVERFLOW_POLICY_REJECT = "REJECT";
+    public static final String OVERFLOW_POLICY_REVOKE_OLDEST = "REVOKE_OLDEST";
 
     public IssuedCredentialStatusResponse {
         credentials = credentials == null ? List.of() : List.copyOf(credentials);

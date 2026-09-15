@@ -1,10 +1,12 @@
 package io.github.adorsysgis.keycloakstatuslist.service;
 
-import static io.github.adorsysgis.keycloakstatuslist.model.IssuedCredentialStatusResponse.OVERFLOW_POLICY_REJECT;
+import static io.github.adorsysgis.keycloakstatuslist.model.IssuedCredentialStatusResponse.OVERFLOW_POLICY_REVOKE_OLDEST;
 
 import io.github.adorsysgis.keycloakstatuslist.StatusListProtocolMapper;
 import io.github.adorsysgis.keycloakstatuslist.config.StatusListConfig;
 import io.github.adorsysgis.keycloakstatuslist.exception.CredentialIssuanceQuotaException;
+import io.github.adorsysgis.keycloakstatuslist.exception.StatusListException;
+import io.github.adorsysgis.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
 import io.github.adorsysgis.keycloakstatuslist.jpa.repository.StatusListRepository;
 import io.github.adorsysgis.keycloakstatuslist.model.IssuedCredentialStatusResponse.IssuedCredentialLimit;
 import jakarta.persistence.EntityManager;
@@ -29,16 +31,28 @@ public class CredentialIssuanceQuotaService {
     private static final Logger logger = Logger.getLogger(CredentialIssuanceQuotaService.class);
 
     public static final String MAX_CREDENTIALS_PER_USER_CONFIG = StatusListConfig.STATUS_LIST_MAX_CREDENTIALS_PER_USER;
+    public static final String OVERFLOW_POLICY_CONFIG = StatusListConfig.STATUS_LIST_OVERFLOW_POLICY;
 
     public static final String LIMIT_REACHED_MESSAGE =
             "Issued credential limit reached for this user and credential type";
     public static final String FAIL_CLOSED_MESSAGE =
             "Issued credential limit is configured but holder or credential type could not be resolved";
+    public static final String REVOKE_OLDEST_FAILED_MESSAGE =
+            "Failed to revoke the oldest credential to free an issuance slot";
+    public static final String REVOKE_OLDEST_UNAVAILABLE_MESSAGE =
+            "Overflow policy REVOKE_OLDEST requires revocation support";
 
     private final StatusListRepository statusListRepository;
+    private final CredentialRevocationService credentialRevocationService;
 
     public CredentialIssuanceQuotaService(StatusListRepository statusListRepository) {
+        this(statusListRepository, null);
+    }
+
+    public CredentialIssuanceQuotaService(
+            StatusListRepository statusListRepository, CredentialRevocationService credentialRevocationService) {
         this.statusListRepository = statusListRepository;
+        this.credentialRevocationService = credentialRevocationService;
     }
 
     /**
@@ -52,6 +66,21 @@ public class CredentialIssuanceQuotaService {
         }
 
         return realm == null ? 0 : new StatusListConfig(realm).getMaxCredentialsPerUser();
+    }
+
+    /**
+     * Resolves the overflow policy. A mapper / client-scope value wins when present. If the mapper
+     * omits the key, the optional realm attribute is used. Defaults to {@code REJECT}.
+     */
+    public String resolveOverflowPolicy(ProtocolMapperModel mapperModel, RealmModel realm) {
+        Optional<String> mapperValue = mapperConfigValue(mapperModel, OVERFLOW_POLICY_CONFIG);
+        if (mapperValue.isPresent()) {
+            return StatusListConfig.parseOverflowPolicy(mapperValue.get());
+        }
+
+        return realm == null
+                ? StatusListConfig.DEFAULT_OVERFLOW_POLICY
+                : new StatusListConfig(realm).getOverflowPolicy();
     }
 
     /**
@@ -70,12 +99,19 @@ public class CredentialIssuanceQuotaService {
     }
 
     /**
-     * Acquires the per-holder/type quota lock and rejects issuance when occupying mappings
+     * Acquires the per-holder/type quota lock and applies the overflow policy when occupying mappings
      * ({@code INIT} or {@code SUCCESS}, not {@code INVALID}) already meet {@code max}. Must run in
-     * the same transaction that persists the new {@code INIT} mapping.
+     * the same transaction that persists the new {@code INIT} mapping. {@code REVOKE_OLDEST} revokes
+     * the oldest successful non-{@code INVALID} mapping and continues only if a slot is actually
+     * freed; a failed revocation fails issuance.
      */
     public void enforceWithinReservationTransaction(
-            EntityManager em, String realmId, String userId, String credentialConfigurationId, int max) {
+            EntityManager em,
+            String realmId,
+            String userId,
+            String credentialConfigurationId,
+            int max,
+            String overflowPolicy) {
         if (max <= 0) {
             return;
         }
@@ -84,11 +120,57 @@ public class CredentialIssuanceQuotaService {
         statusListRepository.acquireQuotaLock(em, realmId, userId, credentialConfigurationId);
         long occupyingCount =
                 statusListRepository.countOccupyingMappings(em, realmId, userId, credentialConfigurationId);
-        if (occupyingCount >= max) {
+        if (occupyingCount < max) {
+            return;
+        }
+
+        String policy = StatusListConfig.parseOverflowPolicy(overflowPolicy);
+        if (OVERFLOW_POLICY_REVOKE_OLDEST.equals(policy)) {
+            revokeOldestToFreeSlot(realmId, userId, credentialConfigurationId, max, occupyingCount);
+            occupyingCount =
+                    statusListRepository.countOccupyingMappings(em, realmId, userId, credentialConfigurationId);
+            if (occupyingCount < max) {
+                return;
+            }
+        }
+
+        logger.warnf(
+                "Rejecting issuance: userId=%s, credentialConfigurationId=%s, occupyingCount=%d, max=%d",
+                userId, credentialConfigurationId, occupyingCount, max);
+        throw CredentialIssuanceQuotaException.limitReached(LIMIT_REACHED_MESSAGE);
+    }
+
+    private void revokeOldestToFreeSlot(
+            String realmId, String userId, String credentialConfigurationId, int max, long occupyingCount) {
+        if (credentialRevocationService == null) {
+            logger.error(REVOKE_OLDEST_UNAVAILABLE_MESSAGE);
+            throw CredentialIssuanceQuotaException.failClosed(REVOKE_OLDEST_UNAVAILABLE_MESSAGE);
+        }
+
+        StatusListMappingEntity oldest = statusListRepository
+                .findOldestSuccessfulNonRevokedMapping(realmId, userId, credentialConfigurationId)
+                .orElse(null);
+        if (oldest == null) {
             logger.warnf(
-                    "Rejecting issuance: userId=%s, credentialConfigurationId=%s, occupyingCount=%d, max=%d",
-                    userId, credentialConfigurationId, occupyingCount, max);
+                    "No oldest mapping found to revoke despite occupyingCount=%d: userId=%s, credentialConfigurationId=%s",
+                    occupyingCount, userId, credentialConfigurationId);
             throw CredentialIssuanceQuotaException.limitReached(LIMIT_REACHED_MESSAGE);
+        }
+
+        logger.infof(
+                "Revoking oldest credential for overflow: userId=%s, credentialConfigurationId=%s, mappingId=%s, tokenId=%s, occupyingCount=%d, max=%d",
+                userId, credentialConfigurationId, oldest.getId(), oldest.getTokenId(), occupyingCount, max);
+
+        try {
+            credentialRevocationService.revokeMapping(oldest);
+        } catch (StatusListException | RuntimeException e) {
+            logger.errorf(
+                    e,
+                    "Failed to revoke oldest credential: userId=%s, credentialConfigurationId=%s, mappingId=%s",
+                    userId,
+                    credentialConfigurationId,
+                    oldest.getId());
+            throw CredentialIssuanceQuotaException.failClosed(REVOKE_OLDEST_FAILED_MESSAGE);
         }
     }
 
@@ -138,8 +220,9 @@ public class CredentialIssuanceQuotaService {
         }
 
         long activeCount = activeCounts.getOrDefault(credentialConfigurationId, 0L);
+        String overflowPolicy = resolveOverflowPolicy(mapper, realm);
         return Optional.of(new IssuedCredentialLimit(
-                credentialConfigurationId, max, activeCount, Math.max(0L, max - activeCount), OVERFLOW_POLICY_REJECT));
+                credentialConfigurationId, max, activeCount, Math.max(0L, max - activeCount), overflowPolicy));
     }
 
     private static ProtocolMapperModel findStatusListMapper(ClientScopeModel scope) {

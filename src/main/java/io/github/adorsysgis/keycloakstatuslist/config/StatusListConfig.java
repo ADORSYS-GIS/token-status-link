@@ -26,6 +26,7 @@ public class StatusListConfig {
     public static final String STATUS_LIST_MANDATORY = "status-list-mandatory";
     public static final String STATUS_LIST_MAX_ENTRIES = "status-list-max-entries";
     public static final String STATUS_LIST_MAX_CREDENTIALS_PER_USER = "status-list-max-credentials-per-user";
+    public static final String STATUS_LIST_OVERFLOW_POLICY = "status-list-overflow-policy";
     public static final String STATUS_LIST_TLS_TRUST_ALL = "status-list-tls-trust-all";
     public static final String STATUS_LIST_TLS_CA_CERT_PATH = "status-list-tls-ca-cert-path";
 
@@ -33,6 +34,7 @@ public class StatusListConfig {
     public static final boolean DEFAULT_ENABLED = false;
     public static final boolean DEFAULT_MANDATORY = false;
     public static final int DEFAULT_MAX_ENTRIES = 10000;
+    public static final String DEFAULT_OVERFLOW_POLICY = "REJECT";
     public static final boolean DEFAULT_TLS_TRUST_ALL = false;
 
     // Default values for issuance path (runtime)
@@ -223,6 +225,39 @@ public class StatusListConfig {
         }
 
         return parsed;
+    }
+
+    /**
+     * Gets the optional realm-wide overflow policy used when the per-user credential limit is reached.
+     * Mapper / client-scope config takes precedence when present. Defaults to {@code REJECT}.
+     *
+     * @return {@code REJECT} or {@code REVOKE_OLDEST}
+     */
+    public String getOverflowPolicy() {
+        return parseOverflowPolicy(realm.getAttribute(STATUS_LIST_OVERFLOW_POLICY));
+    }
+
+    /**
+     * Parses an overflow-policy setting. Blank or unknown values default to {@code REJECT}.
+     *
+     * @param value the configured value
+     * @return {@code REJECT} or {@code REVOKE_OLDEST}
+     */
+    public static String parseOverflowPolicy(String value) {
+        if (value == null || value.isBlank()) {
+            return DEFAULT_OVERFLOW_POLICY;
+        }
+
+        String normalized = value.trim().toUpperCase();
+        if ("REVOKE_OLDEST".equals(normalized)) {
+            return "REVOKE_OLDEST";
+        }
+        if ("REJECT".equals(normalized)) {
+            return "REJECT";
+        }
+
+        logger.warnf("Invalid overflow policy '%s'. Using default: %s", value, DEFAULT_OVERFLOW_POLICY);
+        return DEFAULT_OVERFLOW_POLICY;
     }
 
     /**

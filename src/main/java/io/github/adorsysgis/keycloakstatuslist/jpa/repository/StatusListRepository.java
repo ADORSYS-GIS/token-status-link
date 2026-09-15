@@ -215,6 +215,43 @@ public class StatusListRepository {
             """;
 
     /**
+     * Finds the oldest successful mapping for the holder and credential type whose token status is not
+     * INVALID. Used by the {@code REVOKE_OLDEST} overflow policy.
+     */
+    public Optional<StatusListMappingEntity> findOldestSuccessfulNonRevokedMapping(
+            String realmId, String userId, String credentialConfigurationId) {
+        if (isBlank(userId) || isBlank(credentialConfigurationId)) {
+            return Optional.empty();
+        }
+
+        AtomicReference<StatusListMappingEntity> result = new AtomicReference<>();
+
+        withEntityManagerInTransaction(em -> {
+            String q = """
+                        SELECT m FROM StatusListMappingEntity m
+                        WHERE m.realmId = :realmId
+                          AND m.userId = :userId
+                          AND m.credentialConfigurationId = :credentialConfigurationId
+                          AND m.status = :status
+                          AND m.tokenStatus <> :invalid
+                        ORDER BY m.createdTimestamp ASC
+                    """;
+
+            TypedQuery<StatusListMappingEntity> query = em.createQuery(q, StatusListMappingEntity.class);
+            query.setParameter("realmId", realmId);
+            query.setParameter("userId", userId);
+            query.setParameter("credentialConfigurationId", credentialConfigurationId);
+            query.setParameter("status", StatusListMappingEntity.MappingStatus.SUCCESS);
+            query.setParameter("invalid", TokenStatus.INVALID);
+            query.setMaxResults(1);
+
+            result.set(query.getResultStream().findFirst().orElse(null));
+        });
+
+        return Optional.ofNullable(result.get());
+    }
+
+    /**
      * Counts successful mappings for the holder and credential type whose token status is not INVALID.
      */
     public long countSuccessfulNonRevokedMappings(String realmId, String userId, String credentialConfigurationId) {
