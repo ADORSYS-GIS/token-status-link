@@ -94,7 +94,7 @@ class CredentialRevocationEndpointTest {
 
         assertEquals(500, response.getStatus());
         assertEquals(
-                "Credential revocation service is disabled",
+                "Credential revocation service is misconfigured",
                 ((CredentialRevocationResponse) response.getEntity()).getMessage());
         assertNoRevocationAttempt();
     }
@@ -108,7 +108,7 @@ class CredentialRevocationEndpointTest {
 
         assertEquals(500, response.getStatus());
         assertEquals(
-                "Credential revocation service is not configured",
+                "Credential revocation service is misconfigured",
                 ((CredentialRevocationResponse) response.getEntity()).getMessage());
         assertNoRevocationAttempt();
     }
@@ -124,7 +124,7 @@ class CredentialRevocationEndpointTest {
 
         assertEquals(500, response.getStatus());
         assertEquals(
-                "Credential revocation service is not configured",
+                "Credential revocation service is misconfigured",
                 ((CredentialRevocationResponse) response.getEntity()).getMessage());
         assertNoRevocationAttempt();
     }

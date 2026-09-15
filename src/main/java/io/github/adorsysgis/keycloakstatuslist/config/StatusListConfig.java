@@ -3,6 +3,7 @@ package io.github.adorsysgis.keycloakstatuslist.config;
 import java.util.UUID;
 import org.jboss.logging.Logger;
 import org.keycloak.models.RealmModel;
+import org.keycloak.utils.StringUtil;
 
 /**
  * Configuration holder for the Token Status plugin. This class provides access to the plugin
@@ -29,8 +30,7 @@ public class StatusListConfig {
     public static final String STATUS_LIST_TLS_CA_CERT_PATH = "status-list-tls-ca-cert-path";
 
     // Default values
-    public static final boolean DEFAULT_ENABLED = true;
-    public static final String DEFAULT_SERVER_URL = "https://statuslist.eudi-adorsys.com";
+    public static final boolean DEFAULT_ENABLED = false;
     public static final boolean DEFAULT_MANDATORY = false;
     public static final int DEFAULT_MAX_ENTRIES = 10000;
     public static final boolean DEFAULT_TLS_TRUST_ALL = false;
@@ -52,6 +52,13 @@ public class StatusListConfig {
 
     public StatusListConfig(RealmModel realm) {
         this.realm = realm;
+        // Fail fast when a realm opts in but does not configure the required server URL. Realms that
+        // have not enabled the feature stay constructible (the default), so this never throws for them.
+        if (isEnabled() && StringUtil.isBlank(realm.getAttribute(STATUS_LIST_SERVER_URL))) {
+            throw new IllegalStateException(String.format(
+                    "Status list server URL is not configured or empty for realm %s. Set the '%s' realm attribute.",
+                    realm.getName(), STATUS_LIST_SERVER_URL));
+        }
     }
 
     /**
@@ -88,11 +95,10 @@ public class StatusListConfig {
     /**
      * Gets the URL of the status list server.
      *
-     * @return the status list server URL
+     * @return the status list server URL, or {@code null}/{@code blank} if not configured
      */
     public String getServerUrl() {
-        String value = realm.getAttribute(STATUS_LIST_SERVER_URL);
-        return value != null ? value : DEFAULT_SERVER_URL;
+        return realm.getAttribute(STATUS_LIST_SERVER_URL);
     }
 
     /**
