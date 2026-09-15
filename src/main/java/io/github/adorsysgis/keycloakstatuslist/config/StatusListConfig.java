@@ -187,7 +187,8 @@ public class StatusListConfig {
     /**
      * Gets the optional realm-wide maximum number of non-revoked credentials per holder and
      * credential type. Mapper / client-scope config takes precedence when present. Absent or
-     * {@code 0} means unlimited.
+     * {@code 0} means unlimited. Invalid or negative values fail closed (see
+     * {@link #parseMaxCredentialsPerUser(String)}).
      *
      * @return the maximum number of credentials, or {@code 0} when unlimited
      */
@@ -196,22 +197,34 @@ public class StatusListConfig {
     }
 
     /**
-     * Parses a max-credentials-per-user setting. Blank or invalid values are treated as unlimited.
+     * Parses a max-credentials-per-user setting. Blank means unlimited ({@code 0}). Non-numeric or
+     * negative values are rejected so misconfiguration cannot silently disable the quota.
      *
      * @param value the configured value
      * @return a non-negative maximum, or {@code 0} when unlimited
+     * @throws IllegalArgumentException if the value is non-numeric or negative
      */
     public static int parseMaxCredentialsPerUser(String value) {
         if (value == null || value.isBlank()) {
             return 0;
         }
 
+        final int parsed;
         try {
-            return Math.max(0, Integer.parseInt(value.trim()));
+            parsed = Integer.parseInt(value.trim());
         } catch (NumberFormatException e) {
-            logger.warnf("Invalid max credentials per user value '%s'. Treating as unlimited.", value);
-            return 0;
+            throw new IllegalArgumentException(
+                    "Invalid status-list-max-credentials-per-user value '" + value
+                            + "': must be a non-negative integer",
+                    e);
         }
+
+        if (parsed < 0) {
+            throw new IllegalArgumentException("Invalid status-list-max-credentials-per-user value '" + value
+                    + "': must be a non-negative integer");
+        }
+
+        return parsed;
     }
 
     /**

@@ -5,8 +5,18 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.adorsysgis.keycloakstatuslist.config.StatusListConfig;
+import io.github.adorsysgis.keycloakstatuslist.exception.CredentialIssuanceQuotaException;
 import io.github.adorsysgis.keycloakstatuslist.model.IssuedCredentialStatusResponse;
 import io.github.adorsysgis.keycloakstatuslist.model.TokenStatus;
+import io.github.adorsysgis.keycloakstatuslist.service.CredentialIssuanceQuotaService;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.keycloak.representations.idm.RealmRepresentation;
 
@@ -77,11 +87,7 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
             assertLimit(holder.accessToken(), CREDENTIAL_CONFIGURATION_ID, 1, 1, 0);
 
             var rejected = oid4vci.requestIssuedCredential(holder.username(), holder.accessToken());
-            assertTrue(
-                    rejected.response().statusCode() >= 400,
-                    "second issuance should be rejected, got HTTP "
-                            + rejected.response().statusCode() + ": "
-                            + rejected.response().body());
+            assertQuotaRejection(rejected);
 
             IssuedCredentialFixture otherCredential =
                     oid4vci.issueCredential(otherHolder.username(), otherHolder.accessToken());
@@ -96,6 +102,72 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
             assertLimit(holder.accessToken(), CREDENTIAL_CONFIGURATION_ID, 1, 1, 0);
         } finally {
             setMaxCredentialsPerUser(null);
+        }
+    }
+
+    @Test
+    void concurrentIssuanceRespectsConfiguredMaxOfOne() throws Exception {
+        setMaxCredentialsPerUser("1");
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            TestUser holder = credentialHolder("quota-race");
+            CountDownLatch start = new CountDownLatch(1);
+
+            Callable<Oid4vciTestClient.CredentialIssuanceAttempt> attempt = () -> {
+                assertTrue(start.await(30, TimeUnit.SECONDS), "workers should start together");
+                return oid4vci.requestIssuedCredential(holder.username(), holder.accessToken());
+            };
+
+            Future<Oid4vciTestClient.CredentialIssuanceAttempt> first = executor.submit(attempt);
+            Future<Oid4vciTestClient.CredentialIssuanceAttempt> second = executor.submit(attempt);
+            start.countDown();
+
+            List<Oid4vciTestClient.CredentialIssuanceAttempt> attempts = new ArrayList<>();
+            attempts.add(first.get(60, TimeUnit.SECONDS));
+            attempts.add(second.get(60, TimeUnit.SECONDS));
+
+            long successes = attempts.stream()
+                    .filter(a ->
+                            a.response().statusCode() >= 200 && a.response().statusCode() < 300)
+                    .count();
+            long conflicts = attempts.stream()
+                    .filter(a -> a.response().statusCode() == 409)
+                    .count();
+
+            assertEquals(1, successes, "exactly one concurrent issuance should succeed: " + attempts);
+            assertEquals(1, conflicts, "exactly one concurrent issuance should return 409: " + attempts);
+            attempts.stream()
+                    .filter(a -> a.response().statusCode() == 409)
+                    .forEach(KeycloakStatusListFlowIT::assertQuotaRejection);
+            assertLimit(holder.accessToken(), CREDENTIAL_CONFIGURATION_ID, 1, 1, 0);
+        } finally {
+            executor.shutdownNow();
+            setMaxCredentialsPerUser(null);
+        }
+    }
+
+    private static void assertQuotaRejection(Oid4vciTestClient.CredentialIssuanceAttempt attempt) {
+        assertEquals(
+                409,
+                attempt.response().statusCode(),
+                "quota rejection should be HTTP 409 Conflict, got HTTP "
+                        + attempt.response().statusCode() + ": "
+                        + attempt.response().body());
+        try {
+            var body = oid4vci.readJson(attempt.response());
+            assertEquals(
+                    CredentialIssuanceQuotaException.ERROR_LIMIT_REACHED,
+                    body.path("error").asText(),
+                    "quota rejection body: " + attempt.response().body());
+            assertEquals(
+                    CredentialIssuanceQuotaService.LIMIT_REACHED_MESSAGE,
+                    body.path("error_description").asText(),
+                    "quota rejection body: " + attempt.response().body());
+        } catch (Exception e) {
+            throw new AssertionError(
+                    "Failed to parse quota rejection body: "
+                            + attempt.response().body(),
+                    e);
         }
     }
 
