@@ -138,14 +138,11 @@ public class CredentialRevocationService {
      * Lists issued credentials with status from the plugin mapping table.
      *
      * <p>Callers receive their own credentials unless they hold the realm role
-     * {@code credential-offer-create} and pass {@code targetUser}. The {@code target_user} filter is
-     * ignored for callers without that role.
+     * {@code credential-offer-create} and pass {@code targetUser}. Callers without that role receive
+     * {@code 403} if {@code target_user} is provided.
      */
-    public IssuedCredentialStatusResponse getIssuedCredentialStatuses(AuthResult authResult) {
-        return getIssuedCredentialStatuses(authResult, null);
-    }
-
-    public IssuedCredentialStatusResponse getIssuedCredentialStatuses(AuthResult authResult, String targetUser) {
+    public IssuedCredentialStatusResponse getIssuedCredentialStatuses(AuthResult authResult, String targetUser)
+            throws StatusListException {
         UserModel caller = getAuthenticatedUser(authResult);
         RealmModel realm = session.getContext().getRealm();
 
@@ -154,19 +151,20 @@ public class CredentialRevocationService {
                 .orElseGet(() -> new IssuedCredentialStatusResponse(List.of()));
     }
 
-    private Optional<UserModel> resolveHolder(UserModel caller, RealmModel realm, String targetUser) {
-        if (!isOfferAdmin(caller, realm) || StringUtil.isBlank(targetUser)) {
+    private Optional<UserModel> resolveHolder(UserModel caller, RealmModel realm, String targetUser)
+            throws StatusListException {
+        if (StringUtil.isBlank(targetUser)) {
             return Optional.of(caller);
+        }
+        if (!isOfferAdmin(caller, realm)) {
+            throw new StatusListException(
+                    "Not authorized to list another user's issued credentials", HttpStatus.SC_FORBIDDEN);
         }
 
         return Optional.ofNullable(session.users().getUserByUsername(realm, targetUser.trim()));
     }
 
     private List<IssuedCredentialStatus> listStatusesForHolder(RealmModel realm, UserModel holder) {
-        if (holder == null || StringUtil.isBlank(holder.getId())) {
-            return List.of();
-        }
-
         String userId = holder.getId();
         List<IssuedVerifiableCredentialModel> issuedCredentials = session.users()
                 .getIssuedVerifiableCredentialsStreamByUser(userId)

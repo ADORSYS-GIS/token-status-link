@@ -184,7 +184,7 @@ table. The status is read locally and is not fetched from the status list server
 
 Callers receive their own credentials. Users with the realm role `credential-offer-create` may pass
 `target_user` to list a single holder. Without that query, admins still receive only their own
-credentials. Callers without that role ignore `target_user`.
+credentials. Callers without that role receive `403` if `target_user` is set.
 
 ```http
 GET /realms/{realm}/protocol/openid-connect/issued-credential-status

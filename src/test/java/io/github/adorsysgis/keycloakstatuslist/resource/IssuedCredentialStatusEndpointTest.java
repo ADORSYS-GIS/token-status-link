@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
+import io.github.adorsysgis.keycloakstatuslist.exception.StatusListException;
 import io.github.adorsysgis.keycloakstatuslist.model.CredentialRevocationResponse;
 import io.github.adorsysgis.keycloakstatuslist.model.IssuedCredentialStatusResponse;
 import io.github.adorsysgis.keycloakstatuslist.model.IssuedCredentialStatusResponse.IssuedCredentialStatus;
@@ -95,6 +96,18 @@ class IssuedCredentialStatusEndpointTest {
     }
 
     @Test
+    void shouldMapStatusListExceptionToConfiguredHttpStatus() {
+        endpoint.authResult = new AuthResult(user, null, null, client);
+        credentialRevocationService.statusListException = new StatusListException("Not authorized", 403);
+
+        Response response = endpoint.getIssuedCredentialStatuses("bob");
+
+        assertEquals(403, response.getStatus());
+        assertEquals("Not authorized", ((CredentialRevocationResponse) response.getEntity()).getMessage());
+        assertEquals("bob", credentialRevocationService.lastTargetUser);
+    }
+
+    @Test
     void shouldMapIllegalArgumentExceptionToBadRequest() {
         endpoint.authResult = new AuthResult(user, null, null, client);
         credentialRevocationService.illegalArgumentException = new IllegalArgumentException("bad request");
@@ -141,6 +154,7 @@ class IssuedCredentialStatusEndpointTest {
         private AuthResult lastAuthResult;
         private String lastTargetUser;
         private IssuedCredentialStatusResponse response = new IssuedCredentialStatusResponse(List.of());
+        private StatusListException statusListException;
         private IllegalArgumentException illegalArgumentException;
         private RuntimeException runtimeException;
 
@@ -149,9 +163,13 @@ class IssuedCredentialStatusEndpointTest {
         }
 
         @Override
-        public IssuedCredentialStatusResponse getIssuedCredentialStatuses(AuthResult authResult, String targetUser) {
+        public IssuedCredentialStatusResponse getIssuedCredentialStatuses(AuthResult authResult, String targetUser)
+                throws StatusListException {
             this.lastAuthResult = authResult;
             this.lastTargetUser = targetUser;
+            if (statusListException != null) {
+                throw statusListException;
+            }
             if (illegalArgumentException != null) {
                 throw illegalArgumentException;
             }
