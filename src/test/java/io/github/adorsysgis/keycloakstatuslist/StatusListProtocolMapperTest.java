@@ -18,6 +18,7 @@ import static org.keycloak.OID4VCConstants.OPENID_CREDENTIAL;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.anyString;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
@@ -27,6 +28,7 @@ import static org.mockito.Mockito.when;
 
 import io.github.adorsysgis.keycloakstatuslist.config.StatusListConfig;
 import io.github.adorsysgis.keycloakstatuslist.config.StatusListEndpointUriResolver;
+import io.github.adorsysgis.keycloakstatuslist.exception.CredentialIssuanceQuotaException;
 import io.github.adorsysgis.keycloakstatuslist.exception.StatusListException;
 import io.github.adorsysgis.keycloakstatuslist.helpers.MockKeycloakTest;
 import io.github.adorsysgis.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
@@ -410,11 +412,13 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         lenient()
                 .doReturn(1L)
                 .when(statusListRepository)
-                .countSuccessfulNonRevokedMappings(TEST_REALM_ID, "holder-1", "PidCredential");
+                .countOccupyingMappings(any(), eq(TEST_REALM_ID), eq("holder-1"), eq("PidCredential"));
 
-        RuntimeException exception = assertThrows(RuntimeException.class, () -> mapper.setClaim(claims, userSession));
+        CredentialIssuanceQuotaException exception =
+                assertThrows(CredentialIssuanceQuotaException.class, () -> mapper.setClaim(claims, userSession));
 
         assertEquals(CredentialIssuanceQuotaService.LIMIT_REACHED_MESSAGE, exception.getMessage());
+        assertEquals(409, exception.getResponse().getStatus());
         verify(entityManager, never()).persist(any());
         assertThat(claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
     }
@@ -426,9 +430,11 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         when(headers.getHeaderString(HttpHeaders.AUTHORIZATION))
                 .thenReturn("Bearer " + accessTokenWithIssuedCredentialId("issued-credential-1"));
 
-        RuntimeException exception = assertThrows(RuntimeException.class, () -> mapper.setClaim(claims, userSession));
+        CredentialIssuanceQuotaException exception =
+                assertThrows(CredentialIssuanceQuotaException.class, () -> mapper.setClaim(claims, userSession));
 
         assertEquals(CredentialIssuanceQuotaService.FAIL_CLOSED_MESSAGE, exception.getMessage());
+        assertEquals(400, exception.getResponse().getStatus());
         verify(entityManager, never()).persist(any());
     }
 
@@ -438,9 +444,26 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         stubHolder("holder-1");
         stubMapperMax("1");
 
-        RuntimeException exception = assertThrows(RuntimeException.class, () -> mapper.setClaim(claims, userSession));
+        CredentialIssuanceQuotaException exception =
+                assertThrows(CredentialIssuanceQuotaException.class, () -> mapper.setClaim(claims, userSession));
 
         assertEquals(CredentialIssuanceQuotaService.FAIL_CLOSED_MESSAGE, exception.getMessage());
+        assertEquals(400, exception.getResponse().getStatus());
+        verify(entityManager, never()).persist(any());
+    }
+
+    @Test
+    void shouldFailClosed_WhenLimitConfigurationIsInvalid() {
+        mockGetNextIndex();
+        stubHolder("holder-1");
+        stubMapperMax("abc");
+        when(headers.getHeaderString(HttpHeaders.AUTHORIZATION))
+                .thenReturn("Bearer " + accessTokenWithIssuedCredentialId("issued-credential-1"));
+
+        IllegalArgumentException exception =
+                assertThrows(IllegalArgumentException.class, () -> mapper.setClaim(claims, userSession));
+
+        assertTrue(exception.getMessage().contains("status-list-max-credentials-per-user"));
         verify(entityManager, never()).persist(any());
     }
 
@@ -454,7 +477,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         lenient()
                 .doReturn(1L)
                 .when(statusListRepository)
-                .countSuccessfulNonRevokedMappings(TEST_REALM_ID, "holder-1", "PidCredential");
+                .countOccupyingMappings(any(), eq(TEST_REALM_ID), eq("holder-1"), eq("PidCredential"));
 
         mapper.setClaim(claims, userSession);
 
@@ -498,7 +521,9 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         lenient()
                 .doReturn(0L)
                 .when(statusListRepository)
-                .countSuccessfulNonRevokedMappings(anyString(), anyString(), anyString());
+                .countOccupyingMappings(any(), anyString(), anyString(), anyString());
+        lenient().doNothing().when(statusListRepository).ensureQuotaLockExists(anyString(), anyString(), anyString());
+        lenient().doNothing().when(statusListRepository).acquireQuotaLock(any(), anyString(), anyString(), anyString());
         setPrivateField(
                 mapper, "credentialIssuanceQuotaService", new CredentialIssuanceQuotaService(statusListRepository));
     }

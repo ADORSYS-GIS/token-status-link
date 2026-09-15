@@ -4,8 +4,10 @@ import static io.github.adorsysgis.keycloakstatuslist.model.IssuedCredentialStat
 
 import io.github.adorsysgis.keycloakstatuslist.StatusListProtocolMapper;
 import io.github.adorsysgis.keycloakstatuslist.config.StatusListConfig;
+import io.github.adorsysgis.keycloakstatuslist.exception.CredentialIssuanceQuotaException;
 import io.github.adorsysgis.keycloakstatuslist.jpa.repository.StatusListRepository;
 import io.github.adorsysgis.keycloakstatuslist.model.IssuedCredentialStatusResponse.IssuedCredentialLimit;
+import jakarta.persistence.EntityManager;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -53,27 +55,48 @@ public class CredentialIssuanceQuotaService {
     }
 
     /**
-     * Rejects issuance when a limit is configured and the holder already has that many active
-     * credentials of this type. {@code SUSPENDED} credentials still occupy a slot; {@code INVALID}
-     * ones do not.
+     * Validates that holder and credential type are present when a limit is configured. Call before
+     * reserving a status-list index; the count check runs later inside the reservation transaction
+     * via {@link #enforceWithinReservationTransaction}.
      */
-    public void enforceBeforeIssuance(String realmId, String userId, String credentialConfigurationId, int max) {
+    public void requireHolderAndTypeWhenLimited(String userId, String credentialConfigurationId, int max) {
         if (max <= 0) {
             return;
         }
         if (StringUtil.isBlank(userId) || StringUtil.isBlank(credentialConfigurationId)) {
             logger.error(FAIL_CLOSED_MESSAGE);
-            throw new RuntimeException(FAIL_CLOSED_MESSAGE);
+            throw CredentialIssuanceQuotaException.failClosed(FAIL_CLOSED_MESSAGE);
         }
+    }
 
-        long activeCount =
-                statusListRepository.countSuccessfulNonRevokedMappings(realmId, userId, credentialConfigurationId);
-        if (activeCount >= max) {
-            logger.warnf(
-                    "Rejecting issuance: userId=%s, credentialConfigurationId=%s, activeCount=%d, max=%d",
-                    userId, credentialConfigurationId, activeCount, max);
-            throw new RuntimeException(LIMIT_REACHED_MESSAGE);
+    /**
+     * Acquires the per-holder/type quota lock and rejects issuance when occupying mappings
+     * ({@code INIT} or {@code SUCCESS}, not {@code INVALID}) already meet {@code max}. Must run in
+     * the same transaction that persists the new {@code INIT} mapping.
+     */
+    public void enforceWithinReservationTransaction(
+            EntityManager em, String realmId, String userId, String credentialConfigurationId, int max) {
+        if (max <= 0) {
+            return;
         }
+        requireHolderAndTypeWhenLimited(userId, credentialConfigurationId, max);
+
+        statusListRepository.acquireQuotaLock(em, realmId, userId, credentialConfigurationId);
+        long occupyingCount =
+                statusListRepository.countOccupyingMappings(em, realmId, userId, credentialConfigurationId);
+        if (occupyingCount >= max) {
+            logger.warnf(
+                    "Rejecting issuance: userId=%s, credentialConfigurationId=%s, occupyingCount=%d, max=%d",
+                    userId, credentialConfigurationId, occupyingCount, max);
+            throw CredentialIssuanceQuotaException.limitReached(LIMIT_REACHED_MESSAGE);
+        }
+    }
+
+    public void ensureQuotaLockExists(String realmId, String userId, String credentialConfigurationId, int max) {
+        if (max <= 0) {
+            return;
+        }
+        statusListRepository.ensureQuotaLockExists(realmId, userId, credentialConfigurationId);
     }
 
     /**

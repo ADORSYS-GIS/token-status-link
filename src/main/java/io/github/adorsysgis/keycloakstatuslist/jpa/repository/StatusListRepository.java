@@ -1,6 +1,7 @@
 package io.github.adorsysgis.keycloakstatuslist.jpa.repository;
 
 import io.github.adorsysgis.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
+import io.github.adorsysgis.keycloakstatuslist.jpa.entity.StatusListQuotaLockEntity;
 import io.github.adorsysgis.keycloakstatuslist.model.TokenStatus;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
@@ -206,9 +207,15 @@ public class StatusListRepository {
                         StatusListMappingEntity::getTokenId, Function.identity(), (first, ignored) -> first));
     }
 
+    private static final String SUCCESSFUL_NON_REVOKED_BASE_PREDICATE = """
+            m.realmId = :realmId
+              AND m.userId = :userId
+              AND m.status = :status
+              AND m.tokenStatus <> :invalid
+            """;
+
     /**
      * Counts successful mappings for the holder and credential type whose token status is not INVALID.
-     * Historical rows without a credential type are excluded because they cannot match the type filter.
      */
     public long countSuccessfulNonRevokedMappings(String realmId, String userId, String credentialConfigurationId) {
         if (isBlank(userId) || isBlank(credentialConfigurationId)) {
@@ -218,26 +225,103 @@ public class StatusListRepository {
         AtomicReference<Long> result = new AtomicReference<>(0L);
 
         withEntityManagerInTransaction(em -> {
-            String q = """
-                        SELECT COUNT(m) FROM StatusListMappingEntity m
-                        WHERE m.realmId = :realmId
-                          AND m.userId = :userId
-                          AND m.credentialConfigurationId = :credentialConfigurationId
-                          AND m.status = :status
-                          AND m.tokenStatus <> :invalid
-                    """;
-
-            TypedQuery<Long> query = em.createQuery(q, Long.class);
-            query.setParameter("realmId", realmId);
-            query.setParameter("userId", userId);
-            query.setParameter("credentialConfigurationId", credentialConfigurationId);
-            query.setParameter("status", StatusListMappingEntity.MappingStatus.SUCCESS);
-            query.setParameter("invalid", TokenStatus.INVALID);
-
-            result.set(query.getSingleResult());
+            result.set(countSuccessfulNonRevokedMappings(em, realmId, userId, credentialConfigurationId));
         });
 
         return result.get();
+    }
+
+    /**
+     * Counts successful non-revoked mappings. Must run inside an open transaction.
+     */
+    public long countSuccessfulNonRevokedMappings(
+            EntityManager em, String realmId, String userId, String credentialConfigurationId) {
+        String q = """
+                    SELECT COUNT(m) FROM StatusListMappingEntity m
+                    WHERE %s
+                      AND m.credentialConfigurationId = :credentialConfigurationId
+                """.formatted(SUCCESSFUL_NON_REVOKED_BASE_PREDICATE);
+
+        TypedQuery<Long> query = em.createQuery(q, Long.class);
+        bindSuccessfulNonRevokedParams(query, realmId, userId);
+        query.setParameter("credentialConfigurationId", credentialConfigurationId);
+
+        return query.getSingleResult();
+    }
+
+    /**
+     * Counts mappings that currently occupy a quota slot ({@code INIT} or {@code SUCCESS}, not
+     * {@code INVALID}). Must run inside an open transaction, typically after {@link #acquireQuotaLock}.
+     */
+    public long countOccupyingMappings(
+            EntityManager em, String realmId, String userId, String credentialConfigurationId) {
+        String q = """
+                    SELECT COUNT(m) FROM StatusListMappingEntity m
+                    WHERE m.realmId = :realmId
+                      AND m.userId = :userId
+                      AND m.credentialConfigurationId = :credentialConfigurationId
+                      AND m.status IN :statuses
+                      AND m.tokenStatus <> :invalid
+                """;
+
+        TypedQuery<Long> query = em.createQuery(q, Long.class);
+        query.setParameter("realmId", realmId);
+        query.setParameter("userId", userId);
+        query.setParameter("credentialConfigurationId", credentialConfigurationId);
+        query.setParameter(
+                "statuses",
+                List.of(StatusListMappingEntity.MappingStatus.INIT, StatusListMappingEntity.MappingStatus.SUCCESS));
+        query.setParameter("invalid", TokenStatus.INVALID);
+
+        return query.getSingleResult();
+    }
+
+    /**
+     * Ensures a quota-lock row exists for the holder and credential type. Safe to call concurrently;
+     * insert races are ignored. Run before {@link #acquireQuotaLock}.
+     */
+    public void ensureQuotaLockExists(String realmId, String userId, String credentialConfigurationId) {
+        StatusListQuotaLockEntity.QuotaLockId id =
+                new StatusListQuotaLockEntity.QuotaLockId(realmId, userId, credentialConfigurationId);
+        if (quotaLockExists(id)) {
+            return;
+        }
+
+        try {
+            withEntityManagerInTransaction(
+                    em -> em.persist(new StatusListQuotaLockEntity(realmId, userId, credentialConfigurationId)));
+        } catch (RuntimeException e) {
+            if (quotaLockExists(id)) {
+                logger.debugf(
+                        e,
+                        "Quota lock already exists for realmId=%s userId=%s credentialConfigurationId=%s",
+                        realmId,
+                        userId,
+                        credentialConfigurationId);
+                return;
+            }
+            throw e;
+        }
+    }
+
+    private boolean quotaLockExists(StatusListQuotaLockEntity.QuotaLockId id) {
+        AtomicReference<Boolean> exists = new AtomicReference<>(false);
+        withEntityManagerInTransaction(em -> exists.set(em.find(StatusListQuotaLockEntity.class, id) != null));
+        return Boolean.TRUE.equals(exists.get());
+    }
+
+    /**
+     * Serializes quota check + reservation for one holder and credential type by locking the dedicated
+     * row. Call {@link #ensureQuotaLockExists} first. Must run inside an open transaction.
+     */
+    public void acquireQuotaLock(EntityManager em, String realmId, String userId, String credentialConfigurationId) {
+        StatusListQuotaLockEntity.QuotaLockId id =
+                new StatusListQuotaLockEntity.QuotaLockId(realmId, userId, credentialConfigurationId);
+        StatusListQuotaLockEntity lock = em.find(StatusListQuotaLockEntity.class, id, LockModeType.PESSIMISTIC_WRITE);
+        if (lock == null) {
+            throw new IllegalStateException(
+                    "Quota lock row missing for " + realmId + "/" + userId + "/" + credentialConfigurationId);
+        }
     }
 
     /**
@@ -255,19 +339,13 @@ public class StatusListRepository {
             String q = """
                         SELECT m.credentialConfigurationId, COUNT(m)
                         FROM StatusListMappingEntity m
-                        WHERE m.realmId = :realmId
-                          AND m.userId = :userId
+                        WHERE %s
                           AND m.credentialConfigurationId IS NOT NULL
-                          AND m.status = :status
-                          AND m.tokenStatus <> :invalid
                         GROUP BY m.credentialConfigurationId
-                    """;
+                    """.formatted(SUCCESSFUL_NON_REVOKED_BASE_PREDICATE);
 
             TypedQuery<Object[]> query = em.createQuery(q, Object[].class);
-            query.setParameter("realmId", realmId);
-            query.setParameter("userId", userId);
-            query.setParameter("status", StatusListMappingEntity.MappingStatus.SUCCESS);
-            query.setParameter("invalid", TokenStatus.INVALID);
+            bindSuccessfulNonRevokedParams(query, realmId, userId);
 
             result.set(query.getResultList());
         });
@@ -275,6 +353,13 @@ public class StatusListRepository {
         return result.get().stream()
                 .filter(row -> row[0] instanceof String type && !type.isBlank())
                 .collect(Collectors.toMap(row -> (String) row[0], row -> (Long) row[1], Long::sum));
+    }
+
+    private static void bindSuccessfulNonRevokedParams(TypedQuery<?> query, String realmId, String userId) {
+        query.setParameter("realmId", realmId);
+        query.setParameter("userId", userId);
+        query.setParameter("status", StatusListMappingEntity.MappingStatus.SUCCESS);
+        query.setParameter("invalid", TokenStatus.INVALID);
     }
 
     private static boolean isBlank(String value) {

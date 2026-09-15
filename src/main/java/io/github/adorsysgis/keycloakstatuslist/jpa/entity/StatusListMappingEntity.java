@@ -40,7 +40,7 @@ public class StatusListMappingEntity {
     @Column(name = "realm_id")
     private String realmId;
 
-    /** OID4VC credential configuration id; null on rows issued before this column existed. */
+    /** OID4VC credential configuration id; {@code null} on pre-migration rows. */
     @Column(name = "credential_configuration_id")
     private String credentialConfigurationId;
 
