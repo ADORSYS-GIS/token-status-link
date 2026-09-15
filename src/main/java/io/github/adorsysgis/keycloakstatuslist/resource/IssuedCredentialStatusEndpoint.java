@@ -1,5 +1,6 @@
 package io.github.adorsysgis.keycloakstatuslist.resource;
 
+import io.github.adorsysgis.keycloakstatuslist.exception.StatusListException;
 import io.github.adorsysgis.keycloakstatuslist.model.CredentialRevocationResponse;
 import io.github.adorsysgis.keycloakstatuslist.model.IssuedCredentialStatusResponse;
 import io.github.adorsysgis.keycloakstatuslist.service.CredentialRevocationService;
@@ -7,6 +8,7 @@ import jakarta.ws.rs.GET;
 import jakarta.ws.rs.HttpMethod;
 import jakarta.ws.rs.OPTIONS;
 import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.jboss.logging.Logger;
@@ -36,7 +38,7 @@ public class IssuedCredentialStatusEndpoint {
 
     @GET
     @Produces(MediaType.APPLICATION_JSON)
-    public Response getIssuedCredentialStatuses() {
+    public Response getIssuedCredentialStatuses(@QueryParam("target_user") String targetUser) {
         try {
             AuthResult authResult = authenticateBearerToken();
             if (authResult == null || authResult.user() == null) {
@@ -44,9 +46,15 @@ public class IssuedCredentialStatusEndpoint {
             }
 
             IssuedCredentialStatusResponse statusResponse =
-                    credentialRevocationService.getIssuedCredentialStatuses(authResult);
+                    credentialRevocationService.getIssuedCredentialStatuses(authResult, targetUser);
 
             return addCors(authResult, Response.ok(statusResponse).type(MediaType.APPLICATION_JSON));
+        } catch (StatusListException e) {
+            logger.errorf(e, "Issued credential status lookup failed due to status list error");
+            return Response.status(e.getHttpStatus())
+                    .entity(CredentialRevocationResponse.error(e.getMessage()))
+                    .type(MediaType.APPLICATION_JSON)
+                    .build();
         } catch (IllegalArgumentException e) {
             logger.errorf(e, "Issued credential status lookup failed due to invalid input");
             return createErrorResponse(Response.Status.BAD_REQUEST, e.getMessage());

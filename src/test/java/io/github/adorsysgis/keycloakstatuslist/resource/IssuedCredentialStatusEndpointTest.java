@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
+import io.github.adorsysgis.keycloakstatuslist.exception.StatusListException;
 import io.github.adorsysgis.keycloakstatuslist.model.CredentialRevocationResponse;
 import io.github.adorsysgis.keycloakstatuslist.model.IssuedCredentialStatusResponse;
 import io.github.adorsysgis.keycloakstatuslist.model.IssuedCredentialStatusResponse.IssuedCredentialStatus;
@@ -46,9 +47,9 @@ class IssuedCredentialStatusEndpointTest {
         AuthResult authResult = new AuthResult(user, null, null, client);
         endpoint.authResult = authResult;
         credentialRevocationService.response = new IssuedCredentialStatusResponse(List.of(new IssuedCredentialStatus(
-                "issued-1", "PidCredential", 123L, 456L, "wallet-client", "revision-1", "VALID")));
+                "issued-1", "PidCredential", 123L, 456L, "wallet-client", "revision-1", "VALID", "user-1", "alice")));
 
-        Response response = endpoint.getIssuedCredentialStatuses();
+        Response response = endpoint.getIssuedCredentialStatuses(null);
 
         assertEquals(200, response.getStatus());
         assertInstanceOf(IssuedCredentialStatusResponse.class, response.getEntity());
@@ -57,13 +58,26 @@ class IssuedCredentialStatusEndpointTest {
         assertEquals("issued-1", entity.credentials().get(0).credentialId());
         assertEquals("VALID", entity.credentials().get(0).status());
         assertEquals(authResult, credentialRevocationService.lastAuthResult);
+        assertNull(credentialRevocationService.lastTargetUser);
+    }
+
+    @Test
+    void shouldForwardTargetUserQueryParam() {
+        AuthResult authResult = new AuthResult(user, null, null, client);
+        endpoint.authResult = authResult;
+
+        Response response = endpoint.getIssuedCredentialStatuses("alice");
+
+        assertEquals(200, response.getStatus());
+        assertEquals(authResult, credentialRevocationService.lastAuthResult);
+        assertEquals("alice", credentialRevocationService.lastTargetUser);
     }
 
     @Test
     void shouldReturnUnauthorizedWhenBearerTokenIsInvalid() {
         endpoint.authResult = null;
 
-        Response response = endpoint.getIssuedCredentialStatuses();
+        Response response = endpoint.getIssuedCredentialStatuses(null);
 
         assertEquals(401, response.getStatus());
         assertEquals("Invalid bearer token", ((CredentialRevocationResponse) response.getEntity()).getMessage());
@@ -74,7 +88,7 @@ class IssuedCredentialStatusEndpointTest {
     void shouldReturnUnauthorizedWhenBearerTokenHasNoUser() {
         endpoint.authResult = new AuthResult(null, null, null, client);
 
-        Response response = endpoint.getIssuedCredentialStatuses();
+        Response response = endpoint.getIssuedCredentialStatuses(null);
 
         assertEquals(401, response.getStatus());
         assertEquals("Invalid bearer token", ((CredentialRevocationResponse) response.getEntity()).getMessage());
@@ -82,11 +96,23 @@ class IssuedCredentialStatusEndpointTest {
     }
 
     @Test
+    void shouldMapStatusListExceptionToConfiguredHttpStatus() {
+        endpoint.authResult = new AuthResult(user, null, null, client);
+        credentialRevocationService.statusListException = new StatusListException("Not authorized", 403);
+
+        Response response = endpoint.getIssuedCredentialStatuses("bob");
+
+        assertEquals(403, response.getStatus());
+        assertEquals("Not authorized", ((CredentialRevocationResponse) response.getEntity()).getMessage());
+        assertEquals("bob", credentialRevocationService.lastTargetUser);
+    }
+
+    @Test
     void shouldMapIllegalArgumentExceptionToBadRequest() {
         endpoint.authResult = new AuthResult(user, null, null, client);
         credentialRevocationService.illegalArgumentException = new IllegalArgumentException("bad request");
 
-        Response response = endpoint.getIssuedCredentialStatuses();
+        Response response = endpoint.getIssuedCredentialStatuses(null);
 
         assertEquals(400, response.getStatus());
         assertEquals("bad request", ((CredentialRevocationResponse) response.getEntity()).getMessage());
@@ -97,7 +123,7 @@ class IssuedCredentialStatusEndpointTest {
         endpoint.authResult = new AuthResult(user, null, null, client);
         credentialRevocationService.runtimeException = new RuntimeException("boom");
 
-        Response response = endpoint.getIssuedCredentialStatuses();
+        Response response = endpoint.getIssuedCredentialStatuses(null);
 
         assertEquals(500, response.getStatus());
         assertEquals(
@@ -126,7 +152,9 @@ class IssuedCredentialStatusEndpointTest {
 
     private static final class FakeCredentialRevocationService extends CredentialRevocationService {
         private AuthResult lastAuthResult;
+        private String lastTargetUser;
         private IssuedCredentialStatusResponse response = new IssuedCredentialStatusResponse(List.of());
+        private StatusListException statusListException;
         private IllegalArgumentException illegalArgumentException;
         private RuntimeException runtimeException;
 
@@ -135,8 +163,13 @@ class IssuedCredentialStatusEndpointTest {
         }
 
         @Override
-        public IssuedCredentialStatusResponse getIssuedCredentialStatuses(AuthResult authResult) {
+        public IssuedCredentialStatusResponse getIssuedCredentialStatuses(AuthResult authResult, String targetUser)
+                throws StatusListException {
             this.lastAuthResult = authResult;
+            this.lastTargetUser = targetUser;
+            if (statusListException != null) {
+                throw statusListException;
+            }
             if (illegalArgumentException != null) {
                 throw illegalArgumentException;
             }
