@@ -55,6 +55,7 @@ The plugin can be configured at the realm level with the following properties:
 | `status-list-mandatory`                         | If true, publication failures block issuance; if false, failures are logged and issuance continues without a status claim                                                                                                        | `false`          |
 | `status-list-max-entries`                       | Maximum number of entries to publish under the same status list                                                                                                                                                                  | `10000`          |
 | `status-list-max-credentials-per-user`          | Optional realm fallback for the maximum number of non-revoked credentials per holder and credential type. Mapper config takes precedence. Absent or `0` means unlimited. Non-numeric or negative values are rejected (fail closed) | `0`              |
+| `status-list-overflow-policy`                   | Optional realm fallback for overflow behavior when the max is reached: `REJECT` or `REVOKE_OLDEST`. Mapper config takes precedence. Defaults to `REJECT`                                                                         | `REJECT`         |
 | `status-list-tls-trust-all`                     | Instructs the status-list http-client to trust all TLS certificates. **DO NOT USE IN PRODUCTION**                                                                                                                                | `false`          |
 | `status-list-tls-ca-cert-path`                  | Path to a PEM-encoded CA certificate to be trusted by the status-list http-client, in addition to the JVM defaults                                                                                                               | `null`           |
 
@@ -117,7 +118,8 @@ corresponding to a specific credential's configuration. Below is a sample such c
   "protocol": "oid4vc",
   "protocolMapper": "oid4vc-status-list-claim-mapper",
   "config": {
-    "status-list-max-credentials-per-user": "3"
+    "status-list-max-credentials-per-user": "3",
+    "status-list-overflow-policy": "REJECT"
   }
 }
 ```
@@ -126,7 +128,12 @@ corresponding to a specific credential's configuration. Below is a sample such c
 
 A positive value caps live holdings of that type: `SUCCESS`/`FAILURE` mappings that still have an issued credential and are not `INVALID`. `FAILURE` counts because issuance continues when status-list is not mandatory. `SUSPENDED` still occupies a slot; revoke frees one. `limits.activeCount` is that same count. In-flight `INIT` rows count only during reservation (not in `activeCount`) so concurrent requests cannot overshoot.
 
-Missing holder or type with a limit set fails closed (`400`, `credential_limit_unresolved`). Limit reached is `409`, `credential_limit_reached`, with an `error_description`. Non-numeric or negative values are rejected. Quota check, list-id choice, and index reservation share one transaction that locks the latest realm mapping, or the Keycloak realm row when none exists yet.
+When the cap is reached the plugin applies `status-list-overflow-policy`. The mapper value is used when present. If the mapper omits the key, the optional realm attribute is used, then `REJECT`. Supported values:
+
+- `REJECT` — fail the new issuance (`409`, `credential_limit_reached`, with an `error_description`).
+- `REVOKE_OLDEST` — revoke the oldest occupying mapping for that holder and type, then continue issuance. If that revocation fails, issuance fails (no silent over-limit).
+
+Missing holder or type with a limit set fails closed (`400`, `credential_limit_unresolved`). Non-numeric or negative values are rejected. Quota check, list-id choice, and index reservation share one transaction that locks the latest realm mapping, or the Keycloak realm row when none exists yet.
 
 **Upgrade note (legacy mappings):** The Liquibase change that adds `credential_configuration_id` leaves existing `status_list_mapping` rows as `NULL`. Those pre-migration credentials are intentionally excluded from quota counts and from `limits` metadata, because their credential type cannot be recovered reliably. Quotas therefore apply only to credentials issued after the migration (when the mapper persists `credential_configuration_id`). Enabling a limit after upgrade does not count older active credentials toward that limit; revoke them manually first if you need a hard cap that includes holdings issued before the upgrade.
 
@@ -272,8 +279,8 @@ Each `limits` entry describes the holder's quota for one credential type:
 | `credentialConfigurationId`| string | Credential type the cap applies to                                   |
 | `max`                      | number | Configured maximum of non-revoked credentials of this type           |
 | `activeCount`              | number | `SUCCESS`/`FAILURE` mappings that still have an issued credential (not `INVALID`). In-flight `INIT` rows are not included |
-| `remaining`                | number | Slots left before issuance of this type is rejected                  |
-| `overflowPolicy`           | string | Currently always `REJECT`                                            |
+| `remaining`                | number | Slots left before the overflow policy applies                        |
+| `overflowPolicy`           | string | Configured overflow behavior: `REJECT` or `REVOKE_OLDEST`            |
 
 ## Status List Server API
 

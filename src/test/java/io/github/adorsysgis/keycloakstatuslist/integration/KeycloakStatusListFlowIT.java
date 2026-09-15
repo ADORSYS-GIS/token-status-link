@@ -128,14 +128,20 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
 
     @Test
     void issuanceIsRejectedWhenHolderReachesConfiguredMaxForCredentialType() throws Exception {
-        setMaxCredentialsPerUser("1");
+        setIssuanceQuota("1", null);
         try {
             TestUser holder = credentialHolder("quota-holder");
             TestUser otherHolder = credentialHolder("quota-other");
 
             IssuedCredentialFixture first = oid4vci.issueCredential(holder.username(), holder.accessToken());
             assertCredentialStatus(holder.accessToken(), first.id(), TokenStatus.VALID.name());
-            assertLimit(holder.accessToken(), CREDENTIAL_CONFIGURATION_ID, 1, 1, 0);
+            assertLimit(
+                    holder.accessToken(),
+                    CREDENTIAL_CONFIGURATION_ID,
+                    1,
+                    1,
+                    0,
+                    CredentialIssuanceQuotaService.OVERFLOW_POLICY_REJECT);
 
             var rejected = oid4vci.tryIssueCredential(holder.username(), holder.accessToken());
             assertQuotaRejection(rejected);
@@ -146,19 +152,71 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
 
             var revokeResponse = oid4vci.revokeCredential(holder.accessToken(), first.id(), "free quota slot");
             assertEquals(200, revokeResponse.statusCode());
-            assertLimit(holder.accessToken(), CREDENTIAL_CONFIGURATION_ID, 1, 0, 1);
+            assertLimit(
+                    holder.accessToken(),
+                    CREDENTIAL_CONFIGURATION_ID,
+                    1,
+                    0,
+                    1,
+                    CredentialIssuanceQuotaService.OVERFLOW_POLICY_REJECT);
 
             IssuedCredentialFixture reissued = oid4vci.issueCredential(holder.username(), holder.accessToken());
             assertCredentialStatus(holder.accessToken(), reissued.id(), TokenStatus.VALID.name());
-            assertLimit(holder.accessToken(), CREDENTIAL_CONFIGURATION_ID, 1, 1, 0);
+            assertLimit(
+                    holder.accessToken(),
+                    CREDENTIAL_CONFIGURATION_ID,
+                    1,
+                    1,
+                    0,
+                    CredentialIssuanceQuotaService.OVERFLOW_POLICY_REJECT);
         } finally {
-            setMaxCredentialsPerUser(null);
+            setIssuanceQuota(null, null);
+        }
+    }
+
+    @Test
+    void issuanceRevokesOldestWhenOverflowPolicyIsRevokeOldest() throws Exception {
+        setIssuanceQuota("1", CredentialIssuanceQuotaService.OVERFLOW_POLICY_REVOKE_OLDEST);
+        try {
+            TestUser holder = credentialHolder("quota-revoke-oldest");
+            TestUser otherHolder = credentialHolder("quota-revoke-other");
+
+            IssuedCredentialFixture first = oid4vci.issueCredential(holder.username(), holder.accessToken());
+            assertCredentialStatus(holder.accessToken(), first.id(), TokenStatus.VALID.name());
+            assertStatusListValue(first, TokenStatus.VALID.getCode());
+            assertLimit(
+                    holder.accessToken(),
+                    CREDENTIAL_CONFIGURATION_ID,
+                    1,
+                    1,
+                    0,
+                    CredentialIssuanceQuotaService.OVERFLOW_POLICY_REVOKE_OLDEST);
+
+            IssuedCredentialFixture second = oid4vci.issueCredential(holder.username(), holder.accessToken());
+            assertCredentialStatus(holder.accessToken(), first.id(), TokenStatus.INVALID.name());
+            assertCredentialStatus(holder.accessToken(), second.id(), TokenStatus.VALID.name());
+            assertStatusListValue(first, TokenStatus.INVALID.getCode());
+            assertStatusListValue(second, TokenStatus.VALID.getCode());
+            assertLimit(
+                    holder.accessToken(),
+                    CREDENTIAL_CONFIGURATION_ID,
+                    1,
+                    1,
+                    0,
+                    CredentialIssuanceQuotaService.OVERFLOW_POLICY_REVOKE_OLDEST);
+
+            IssuedCredentialFixture otherCredential =
+                    oid4vci.issueCredential(otherHolder.username(), otherHolder.accessToken());
+            assertCredentialStatus(otherHolder.accessToken(), otherCredential.id(), TokenStatus.VALID.name());
+            assertStatusListValue(otherCredential, TokenStatus.VALID.getCode());
+        } finally {
+            setIssuanceQuota(null, null);
         }
     }
 
     @Test
     void concurrentIssuanceRespectsConfiguredMaxOfOne() throws Exception {
-        setMaxCredentialsPerUser("1");
+        setIssuanceQuota("1", null);
         ExecutorService executor = Executors.newFixedThreadPool(2);
         try {
             TestUser holder = credentialHolder("quota-race");
@@ -191,10 +249,16 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
             attempts.stream()
                     .filter(a -> a.response().statusCode() == 409)
                     .forEach(KeycloakStatusListFlowIT::assertQuotaRejection);
-            assertLimit(holder.accessToken(), CREDENTIAL_CONFIGURATION_ID, 1, 1, 0);
+            assertLimit(
+                    holder.accessToken(),
+                    CREDENTIAL_CONFIGURATION_ID,
+                    1,
+                    1,
+                    0,
+                    CredentialIssuanceQuotaService.OVERFLOW_POLICY_REJECT);
         } finally {
             executor.shutdownNow();
-            setMaxCredentialsPerUser(null);
+            setIssuanceQuota(null, null);
         }
     }
 
@@ -224,7 +288,12 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
     }
 
     private static void assertLimit(
-            String accessToken, String credentialConfigurationId, int max, int activeCount, int remaining)
+            String accessToken,
+            String credentialConfigurationId,
+            int max,
+            int activeCount,
+            int remaining,
+            String overflowPolicy)
             throws Exception {
         var limits = oid4vci.issuedCredentialStatuses(accessToken).path("limits");
         assertTrue(limits.isArray(), "limits must be an array: " + limits);
@@ -237,9 +306,7 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
         assertEquals(max, limit.path("max").asInt());
         assertEquals(activeCount, limit.path("activeCount").asInt());
         assertEquals(remaining, limit.path("remaining").asInt());
-        assertEquals(
-                CredentialIssuanceQuotaService.OVERFLOW_POLICY_REJECT,
-                limit.path("overflowPolicy").asText());
+        assertEquals(overflowPolicy, limit.path("overflowPolicy").asText());
     }
 
     /**
@@ -247,13 +314,10 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
      * through the admin API can drop the client scope from credential-configuration lookup and later
      * issuances then fail with HTTP 409 Duplicate resource.
      */
-    private static void setMaxCredentialsPerUser(String max) {
+    private static void setIssuanceQuota(String max, String overflowPolicy) {
         RealmRepresentation realm = realm().toRepresentation();
-        if (max == null) {
-            realm.getAttributes().remove(StatusListConfig.STATUS_LIST_MAX_CREDENTIALS_PER_USER);
-        } else {
-            realm.getAttributes().put(StatusListConfig.STATUS_LIST_MAX_CREDENTIALS_PER_USER, max);
-        }
+        putOrRemoveAttribute(realm, StatusListConfig.STATUS_LIST_MAX_CREDENTIALS_PER_USER, max);
+        putOrRemoveAttribute(realm, StatusListConfig.STATUS_LIST_OVERFLOW_POLICY, overflowPolicy);
         realm().update(realm);
     }
 
@@ -276,5 +340,13 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
             }
         }
         throw new AssertionError("Credential not found: " + credentialId);
+    }
+
+    private static void putOrRemoveAttribute(RealmRepresentation realm, String key, String value) {
+        if (value == null) {
+            realm.getAttributes().remove(key);
+        } else {
+            realm.getAttributes().put(key, value);
+        }
     }
 }
