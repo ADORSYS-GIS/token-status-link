@@ -13,6 +13,7 @@ import io.github.adorsysgis.keycloakstatuslist.jpa.repository.StatusListReposito
 import io.github.adorsysgis.keycloakstatuslist.model.CredentialRevocationRequest;
 import io.github.adorsysgis.keycloakstatuslist.model.CredentialRevocationResponse;
 import io.github.adorsysgis.keycloakstatuslist.model.IssuedCredentialStatusResponse;
+import io.github.adorsysgis.keycloakstatuslist.model.IssuedCredentialStatusResponse.IssuedCredentialLimit;
 import io.github.adorsysgis.keycloakstatuslist.model.IssuedCredentialStatusResponse.IssuedCredentialStatus;
 import io.github.adorsysgis.keycloakstatuslist.model.TokenStatus;
 import java.time.Instant;
@@ -157,7 +158,10 @@ public class CredentialRevocationService {
                 .map(credential -> toIssuedCredentialStatus(credential, mappings.get(credential.getId())))
                 .toList();
 
-        return new IssuedCredentialStatusResponse(statuses);
+        List<IssuedCredentialLimit> limits =
+                new CredentialIssuanceQuotaService(statusListRepository).listLimits(realm, userId);
+
+        return new IssuedCredentialStatusResponse(statuses, limits);
     }
 
     private UserModel getAuthenticatedUser(AuthResult authResult) {

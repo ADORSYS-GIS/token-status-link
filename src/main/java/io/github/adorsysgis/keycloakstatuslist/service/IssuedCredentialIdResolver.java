@@ -1,10 +1,11 @@
 package io.github.adorsysgis.keycloakstatuslist.service;
 
+import static org.keycloak.OID4VCConstants.CREDENTIAL_CONFIGURATION_ID;
 import static org.keycloak.OID4VCConstants.OPENID_CREDENTIAL;
 
 import jakarta.ws.rs.core.HttpHeaders;
-import java.util.List;
 import java.util.Optional;
+import java.util.stream.Stream;
 import org.apache.hc.client5.http.auth.StandardAuthScheme;
 import org.jboss.logging.Logger;
 import org.keycloak.TokenVerifier;
@@ -27,10 +28,19 @@ public class IssuedCredentialIdResolver {
     }
 
     public Optional<String> resolve() {
-        return getAccessTokenFromAuthorizationHeader()
-                .flatMap(this::readAccessToken)
-                .map(AccessToken::getAuthorizationDetails)
-                .flatMap(this::findIssuedCredentialId);
+        return openidCredentialDetails()
+                .map(detail -> detail.getCustomData().get(OID4VCAuthorizationDetail.ISSUED_CREDENTIAL_ID))
+                .filter(String.class::isInstance)
+                .map(String.class::cast)
+                .filter(StringUtil::isNotBlank)
+                .findFirst();
+    }
+
+    public Optional<String> resolveCredentialConfigurationId() {
+        return openidCredentialDetails()
+                .map(this::readCredentialConfigurationId)
+                .filter(StringUtil::isNotBlank)
+                .findFirst();
     }
 
     private Optional<String> getAccessTokenFromAuthorizationHeader() {
@@ -71,17 +81,27 @@ public class IssuedCredentialIdResolver {
         }
     }
 
-    private Optional<String> findIssuedCredentialId(List<AuthorizationDetailsJSONRepresentation> authorizationDetails) {
-        if (authorizationDetails == null || authorizationDetails.isEmpty()) {
-            return Optional.empty();
+    private Stream<AuthorizationDetailsJSONRepresentation> openidCredentialDetails() {
+        return getAccessTokenFromAuthorizationHeader()
+                .flatMap(this::readAccessToken)
+                .map(AccessToken::getAuthorizationDetails)
+                .stream()
+                .flatMap(details -> details == null ? Stream.empty() : details.stream())
+                .filter(detail -> OPENID_CREDENTIAL.equals(detail.getType()));
+    }
+
+    private String readCredentialConfigurationId(AuthorizationDetailsJSONRepresentation detail) {
+        Object custom =
+                detail.getCustomData() == null ? null : detail.getCustomData().get(CREDENTIAL_CONFIGURATION_ID);
+        if (custom instanceof String value) {
+            return value;
         }
 
-        return authorizationDetails.stream()
-                .filter(detail -> OPENID_CREDENTIAL.equals(detail.getType()))
-                .map(detail -> detail.getCustomData().get(OID4VCAuthorizationDetail.ISSUED_CREDENTIAL_ID))
-                .filter(String.class::isInstance)
-                .map(String.class::cast)
-                .filter(StringUtil::isNotBlank)
-                .findFirst();
+        try {
+            return detail.asSubtype(OID4VCAuthorizationDetail.class).getCredentialConfigurationId();
+        } catch (RuntimeException e) {
+            logger.debug("Could not read credential_configuration_id from authorization details", e);
+            return null;
+        }
     }
 }
