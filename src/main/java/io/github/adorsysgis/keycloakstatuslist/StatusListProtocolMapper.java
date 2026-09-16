@@ -19,6 +19,7 @@ import io.github.adorsysgis.keycloakstatuslist.service.CryptoIdentityService;
 import io.github.adorsysgis.keycloakstatuslist.service.CustomHttpClient;
 import io.github.adorsysgis.keycloakstatuslist.service.IssuedCredentialIdResolver;
 import io.github.adorsysgis.keycloakstatuslist.service.IssuedCredentialIdResolver.OpenidCredentialAuthorization;
+import io.github.adorsysgis.keycloakstatuslist.service.RejectedIssuanceCleanup;
 import io.github.adorsysgis.keycloakstatuslist.service.StatusListService;
 import jakarta.persistence.EntityManager;
 import java.io.IOException;
@@ -69,6 +70,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
     private final StatusListRepository statusListRepository;
     private final IssuedCredentialIdResolver issuedCredentialIdResolver;
     private final CredentialIssuanceQuotaService credentialIssuanceQuotaService;
+    private final RejectedIssuanceCleanup rejectedIssuanceCleanup;
 
     public StatusListProtocolMapper() {
         // An empty mapper constructor is required by Keycloak
@@ -77,6 +79,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         this.statusListRepository = null;
         this.issuedCredentialIdResolver = null;
         this.credentialIssuanceQuotaService = null;
+        this.rejectedIssuanceCleanup = null;
     }
 
     public StatusListProtocolMapper(KeycloakSession session) {
@@ -91,6 +94,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
                 config.isEnabled() && isValidHttpUrl(config.getServerUrl()) ? createStatusListService(session) : null;
         this.issuedCredentialIdResolver = new IssuedCredentialIdResolver(session);
         this.credentialIssuanceQuotaService = new CredentialIssuanceQuotaService(session, statusListRepository);
+        this.rejectedIssuanceCleanup = new RejectedIssuanceCleanup(session, statusListRepository);
     }
 
     /**
@@ -197,24 +201,34 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         }
 
         OpenidCredentialAuthorization authorization = issuedCredentialIdResolver.resolveOpenidCredential();
+        String issuedCredentialId = authorization.issuedCredentialId().orElse(null);
         String tokenId = resolveTokenId(claims, authorization.issuedCredentialId());
         String userId = resolveHolderUserId(userSessionModel);
         String credentialConfigurationId =
                 authorization.credentialConfigurationId().orElse(null);
-        int maxCredentialsPerUser = credentialIssuanceQuotaService.resolveMax(
-                mapperModel, session.getContext().getRealm());
-        credentialIssuanceQuotaService.requireHolderAndTypeWhenLimited(
-                userId, credentialConfigurationId, maxCredentialsPerUser);
+        Status status;
+        try {
+            int maxCredentialsPerUser = credentialIssuanceQuotaService.resolveMax(
+                    mapperModel, session.getContext().getRealm());
+            credentialIssuanceQuotaService.requireHolderAndTypeWhenLimited(
+                    userId, credentialConfigurationId, maxCredentialsPerUser);
 
-        Status status = sendStatusAndStoreIndexMapping(
-                serverUrl,
-                userId,
-                tokenId,
-                credentialConfigurationId,
-                maxCredentialsPerUser,
-                config.getStatusListMaxEntries());
+            status = sendStatusAndStoreIndexMapping(
+                    serverUrl,
+                    userId,
+                    tokenId,
+                    credentialConfigurationId,
+                    maxCredentialsPerUser,
+                    config.getStatusListMaxEntries());
+        } catch (RuntimeException e) {
+            discardRejectedIssuance(realmId, issuedCredentialId);
+            throw e;
+        }
 
         if (status == null) {
+            if (config.isMandatory()) {
+                discardRejectedIssuance(realmId, issuedCredentialId);
+            }
             failIssuanceIfMandatory(config);
             return;
         }
@@ -245,6 +259,19 @@ public class StatusListProtocolMapper extends OID4VCMapper {
             logger.debugf("Invalid URL format: %s", url);
             return false;
         }
+    }
+
+    /**
+     * Drops the Keycloak issued-credential row when this mapper rejects issuance, and marks any
+     * {@code INIT} reservation for that id as {@code FAILURE}. The row is created at token time,
+     * before mappers run, and has no failed status to mark.
+     */
+    private void discardRejectedIssuance(String realmId, String issuedCredentialId) {
+        if (rejectedIssuanceCleanup == null) {
+            logger.error("Cannot delete orphan issued credential: cleanup is not available");
+            return;
+        }
+        rejectedIssuanceCleanup.discard(realmId, issuedCredentialId);
     }
 
     private String resolveTokenId(Map<String, Object> claims, Optional<String> issuedCredentialId) {
