@@ -11,5 +11,7 @@ public record IssuedCredentialStatusResponse(List<IssuedCredentialStatus> creden
             Long expiresAt,
             String clientId,
             String revision,
-            String status) {}
+            String status,
+            String userId,
+            String username) {}
 }

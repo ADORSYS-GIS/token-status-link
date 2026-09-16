@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
@@ -20,6 +21,7 @@ import io.github.adorsysgis.keycloakstatuslist.model.CredentialRevocationRequest
 import io.github.adorsysgis.keycloakstatuslist.model.CredentialRevocationResponse;
 import io.github.adorsysgis.keycloakstatuslist.model.IssuedCredentialStatusResponse;
 import io.github.adorsysgis.keycloakstatuslist.model.TokenStatus;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Stream;
@@ -62,6 +64,9 @@ class CredentialRevocationServiceTest {
 
     @Mock
     private UserModel user;
+
+    @Mock
+    private UserModel holder;
 
     @Mock
     private RoleModel offerAdminRole;
@@ -289,7 +294,7 @@ class CredentialRevocationServiceTest {
     }
 
     @Test
-    void getIssuedCredentialStatuses_returnsUserCredentialsWithServerBackedStatuses() {
+    void getIssuedCredentialStatuses_returnsUserCredentialsWithServerBackedStatuses() throws Exception {
         AuthResult authResult = new AuthResult(user, null, null, null);
         IssuedVerifiableCredentialModel activeCredential = issuedCredential("issued-1", "PidCredential");
         IssuedVerifiableCredentialModel revokedCredential = issuedCredential("issued-2", "IdentityCredential");
@@ -301,37 +306,119 @@ class CredentialRevocationServiceTest {
         revokedMapping.setTokenStatus(TokenStatus.INVALID);
 
         when(user.getId()).thenReturn("user-1");
+        when(user.getUsername()).thenReturn("alice");
         when(userProvider.getIssuedVerifiableCredentialsStreamByUser("user-1"))
                 .thenReturn(Stream.of(activeCredential, revokedCredential));
         when(statusListRepository.findSuccessfulMappingsByTokenIds(
-                        "realm-1", "user-1", java.util.List.of("issued-1", "issued-2")))
+                        "realm-1", "user-1", List.of("issued-1", "issued-2")))
                 .thenReturn(Map.of("issued-1", activeMapping, "issued-2", revokedMapping));
 
-        IssuedCredentialStatusResponse response = service.getIssuedCredentialStatuses(authResult);
+        IssuedCredentialStatusResponse response = service.getIssuedCredentialStatuses(authResult, null);
 
         assertEquals(2, response.credentials().size());
         assertEquals("issued-1", response.credentials().get(0).credentialId());
         assertEquals("PidCredential", response.credentials().get(0).verifiableCredentialId());
         assertEquals("VALID", response.credentials().get(0).status());
+        assertEquals("user-1", response.credentials().get(0).userId());
+        assertEquals("alice", response.credentials().get(0).username());
         assertEquals("issued-2", response.credentials().get(1).credentialId());
         assertEquals("INVALID", response.credentials().get(1).status());
     }
 
     @Test
-    void getIssuedCredentialStatuses_returnsUnknownWhenMappingIsMissing() {
+    void getIssuedCredentialStatuses_returnsUnknownWhenMappingIsMissing() throws Exception {
         AuthResult authResult = new AuthResult(user, null, null, null);
         IssuedVerifiableCredentialModel credential = issuedCredential("issued-1", "PidCredential");
 
         when(user.getId()).thenReturn("user-1");
+        when(user.getUsername()).thenReturn("alice");
         when(userProvider.getIssuedVerifiableCredentialsStreamByUser("user-1")).thenReturn(Stream.of(credential));
-        when(statusListRepository.findSuccessfulMappingsByTokenIds("realm-1", "user-1", java.util.List.of("issued-1")))
+        when(statusListRepository.findSuccessfulMappingsByTokenIds("realm-1", "user-1", List.of("issued-1")))
                 .thenReturn(Map.of());
 
-        IssuedCredentialStatusResponse response = service.getIssuedCredentialStatuses(authResult);
+        IssuedCredentialStatusResponse response = service.getIssuedCredentialStatuses(authResult, null);
 
         assertEquals(1, response.credentials().size());
         assertEquals("issued-1", response.credentials().get(0).credentialId());
         assertEquals("UNKNOWN", response.credentials().get(0).status());
+    }
+
+    @Test
+    void getIssuedCredentialStatuses_offerAdminWithoutTargetUserListsOwn() throws Exception {
+        AuthResult authResult = new AuthResult(user, null, null, null);
+        IssuedVerifiableCredentialModel ownCredential = issuedCredential("issued-admin", "AdminCredential");
+        ownCredential.setUserId("admin-1");
+
+        when(user.getId()).thenReturn("admin-1");
+        when(user.getUsername()).thenReturn("admin");
+        when(userProvider.getIssuedVerifiableCredentialsStreamByUser("admin-1")).thenReturn(Stream.of(ownCredential));
+        when(statusListRepository.findSuccessfulMappingsByTokenIds("realm-1", "admin-1", List.of("issued-admin")))
+                .thenReturn(Map.of());
+
+        IssuedCredentialStatusResponse response = service.getIssuedCredentialStatuses(authResult, null);
+
+        assertEquals(1, response.credentials().size());
+        assertEquals("issued-admin", response.credentials().get(0).credentialId());
+        assertEquals("admin-1", response.credentials().get(0).userId());
+        verify(userProvider, never()).getUserByUsername(any(), anyString());
+        verify(userProvider, never()).searchForUserStream(any(), anyMap(), any(), any());
+    }
+
+    @Test
+    void getIssuedCredentialStatuses_offerAdminFiltersByTargetUser() throws Exception {
+        AuthResult authResult = new AuthResult(user, null, null, null);
+        IssuedVerifiableCredentialModel holderCredential = issuedCredential("issued-holder", "PidCredential");
+        holderCredential.setUserId("holder-2");
+
+        when(user.getId()).thenReturn("admin-1");
+        when(user.hasRole(offerAdminRole)).thenReturn(true);
+        when(realm.getRole(OID4VCIConstants.CREDENTIAL_OFFER_CREATE.getName())).thenReturn(offerAdminRole);
+        when(userProvider.getUserByUsername(realm, "bob")).thenReturn(holder);
+        when(holder.getId()).thenReturn("holder-2");
+        when(holder.getUsername()).thenReturn("bob");
+        when(userProvider.getIssuedVerifiableCredentialsStreamByUser("holder-2"))
+                .thenReturn(Stream.of(holderCredential));
+        when(statusListRepository.findSuccessfulMappingsByTokenIds("realm-1", "holder-2", List.of("issued-holder")))
+                .thenReturn(Map.of());
+
+        IssuedCredentialStatusResponse response = service.getIssuedCredentialStatuses(authResult, "bob");
+
+        assertEquals(1, response.credentials().size());
+        assertEquals("issued-holder", response.credentials().get(0).credentialId());
+        assertEquals("bob", response.credentials().get(0).username());
+        verify(userProvider, never()).searchForUserStream(any(), anyMap(), any(), any());
+    }
+
+    @Test
+    void getIssuedCredentialStatuses_nonAdminWithTargetUserThrowsForbidden() {
+        AuthResult authResult = new AuthResult(user, null, null, null);
+
+        when(user.getId()).thenReturn("user-1");
+        when(realm.getRole(OID4VCIConstants.CREDENTIAL_OFFER_CREATE.getName())).thenReturn(offerAdminRole);
+        when(user.hasRole(offerAdminRole)).thenReturn(false);
+
+        StatusListException exception =
+                assertThrows(StatusListException.class, () -> service.getIssuedCredentialStatuses(authResult, "bob"));
+
+        assertEquals(403, exception.getHttpStatus());
+        assertTrue(exception.getMessage().contains("Not authorized"));
+        verify(userProvider, never()).getUserByUsername(any(), anyString());
+        verify(userProvider, never()).getIssuedVerifiableCredentialsStreamByUser(anyString());
+        verify(userProvider, never()).searchForUserStream(any(), anyMap(), any(), any());
+    }
+
+    @Test
+    void getIssuedCredentialStatuses_offerAdminUnknownTargetUserReturnsEmpty() throws Exception {
+        AuthResult authResult = new AuthResult(user, null, null, null);
+
+        when(user.getId()).thenReturn("admin-1");
+        when(user.hasRole(offerAdminRole)).thenReturn(true);
+        when(realm.getRole(OID4VCIConstants.CREDENTIAL_OFFER_CREATE.getName())).thenReturn(offerAdminRole);
+        when(userProvider.getUserByUsername(realm, "missing")).thenReturn(null);
+
+        IssuedCredentialStatusResponse response = service.getIssuedCredentialStatuses(authResult, "missing");
+
+        assertTrue(response.credentials().isEmpty());
     }
 
     private CredentialRevocationRequest issuedRevocationRequest(String credentialId, String reason) {

@@ -136,7 +136,8 @@ corresponding to a specific credential's configuration. Below is a sample such c
 
 The plugin exposes two inbound endpoints, both realm-scoped under
 `{keycloak-base}/realms/{realm}/protocol/openid-connect`. Both authenticate with a standard Keycloak
-bearer access token. Listing is always scoped to the authenticated user. Revocation accepts either the
+bearer access token. Listing is scoped to the authenticated user. Users with the realm role
+`credential-offer-create` may list another holder with `target_user`. Revocation accepts either the
 credential holder or a user with the realm role `credential-offer-create`.
 
 ### Revoke an issued credential
@@ -189,11 +190,21 @@ can continue to display it with a revoked status.
 
 ### List issued credentials and their status
 
-Returns the credentials issued to the authenticated user, together with the status recorded in the plugin's
-status list mapping table. The status is read locally and is not fetched from the status list server per request.
+Returns issued credentials together with the status recorded in the plugin's status list mapping
+table. The status is read locally and is not fetched from the status list server per request.
+
+Callers receive their own credentials. Users with the realm role `credential-offer-create` may pass
+`target_user` to list a single holder. Without that query, admins still receive only their own
+credentials. Callers without that role receive `403` if `target_user` is set.
 
 ```http
 GET /realms/{realm}/protocol/openid-connect/issued-credential-status
+Authorization: Bearer <user-access-token>
+Accept: application/json
+```
+
+```http
+GET /realms/{realm}/protocol/openid-connect/issued-credential-status?target_user=<holder-username>
 Authorization: Bearer <user-access-token>
 Accept: application/json
 ```
@@ -210,7 +221,9 @@ The response wraps the entries in a `credentials` array:
       "expiresAt": 1785752400000,
       "clientId": "wallet-app",
       "revision": "1",
-      "status": "VALID"
+      "status": "VALID",
+      "userId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "username": "alice"
     }
   ]
 }
@@ -222,9 +235,11 @@ The response wraps the entries in a `credentials` array:
 | `verifiableCredentialId` | string | Verifiable credential identifier                                                            |
 | `issuedAt`               | number | Issuance timestamp as recorded by Keycloak, in Unix epoch milliseconds                      |
 | `expiresAt`              | number | Expiration timestamp as recorded by Keycloak, in Unix epoch milliseconds; `null` if not set |
-| `clientId`               | string | Client that requested the credential                                                        |
-| `revision`               | string | Credential revision                                                                         |
-| `status`                 | string | `VALID`, `INVALID`, `SUSPENDED`, or `UNKNOWN` when no mapping exists                        |
+| `clientId`               | string | Client that requested the credential                                 |
+| `revision`               | string | Credential revision                                                  |
+| `status`                 | string | `VALID`, `INVALID`, `SUSPENDED`, or `UNKNOWN` when no mapping exists |
+| `userId`                 | string | Keycloak user id of the credential holder                            |
+| `username`               | string | Username of the credential holder                                    |
 
 ## Status List Server API
 
