@@ -5,11 +5,13 @@ import io.github.adorsysgis.keycloakstatuslist.jpa.entity.StatusListQuotaLockEnt
 import io.github.adorsysgis.keycloakstatuslist.model.TokenStatus;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
+import jakarta.persistence.Query;
 import jakarta.persistence.TypedQuery;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -364,6 +366,38 @@ public class StatusListRepository {
 
     private static boolean isBlank(String value) {
         return value == null || value.isBlank();
+    }
+
+    /**
+     * Marks {@code INIT} reservations for a rejected issuance as {@code FAILURE} so they no longer
+     * occupy a quota slot. Returns the number of rows updated.
+     */
+    public int markInitMappingsFailed(String realmId, String tokenId) {
+        if (isBlank(realmId) || isBlank(tokenId)) {
+            return 0;
+        }
+
+        AtomicInteger updated = new AtomicInteger();
+        withEntityManagerInTransaction(em -> updated.set(markInitMappingsFailed(em, realmId, tokenId)));
+        return updated.get();
+    }
+
+    /**
+     * Marks {@code INIT} reservations failed. Must run inside an open transaction.
+     */
+    public int markInitMappingsFailed(EntityManager em, String realmId, String tokenId) {
+        Query query = em.createQuery("""
+                UPDATE StatusListMappingEntity m
+                SET m.status = :failure
+                WHERE m.realmId = :realmId
+                  AND m.tokenId = :tokenId
+                  AND m.status = :init
+                """);
+        query.setParameter("failure", StatusListMappingEntity.MappingStatus.FAILURE);
+        query.setParameter("realmId", realmId);
+        query.setParameter("tokenId", tokenId);
+        query.setParameter("init", StatusListMappingEntity.MappingStatus.INIT);
+        return query.executeUpdate();
     }
 
     /**

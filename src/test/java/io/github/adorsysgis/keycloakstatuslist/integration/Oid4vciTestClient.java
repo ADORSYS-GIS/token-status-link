@@ -222,7 +222,7 @@ final class Oid4vciTestClient {
         return WalletProofFactory.jwt(clientId, realmEndpoint(""), nonce);
     }
 
-    private String issuedCredentialId(String credentialAccessToken) throws IOException {
+    String issuedCredentialId(String credentialAccessToken) throws IOException {
         JsonNode tokenPayload = decodeJwtPayload(credentialAccessToken);
         for (JsonNode authorizationDetail : tokenPayload.path("authorization_details")) {
             if (OPENID_CREDENTIAL.equals(authorizationDetail.path("type").asText())) {

@@ -18,6 +18,7 @@ import io.github.adorsysgis.keycloakstatuslist.service.CredentialIssuanceQuotaSe
 import io.github.adorsysgis.keycloakstatuslist.service.CryptoIdentityService;
 import io.github.adorsysgis.keycloakstatuslist.service.CustomHttpClient;
 import io.github.adorsysgis.keycloakstatuslist.service.IssuedCredentialIdResolver;
+import io.github.adorsysgis.keycloakstatuslist.service.RejectedIssuanceCleanup;
 import io.github.adorsysgis.keycloakstatuslist.service.StatusListService;
 import jakarta.persistence.EntityManager;
 import java.io.IOException;
@@ -59,6 +60,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
     private final StatusListRepository statusListRepository;
     private final IssuedCredentialIdResolver issuedCredentialIdResolver;
     private final CredentialIssuanceQuotaService credentialIssuanceQuotaService;
+    private final RejectedIssuanceCleanup rejectedIssuanceCleanup;
 
     public StatusListProtocolMapper() {
         // An empty mapper constructor is required by Keycloak
@@ -67,6 +69,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         this.statusListRepository = null;
         this.issuedCredentialIdResolver = null;
         this.credentialIssuanceQuotaService = null;
+        this.rejectedIssuanceCleanup = null;
     }
 
     public StatusListProtocolMapper(KeycloakSession session) {
@@ -81,6 +84,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
                 config.isEnabled() && isValidHttpUrl(config.getServerUrl()) ? createStatusListService(session) : null;
         this.issuedCredentialIdResolver = new IssuedCredentialIdResolver(session);
         this.credentialIssuanceQuotaService = new CredentialIssuanceQuotaService(statusListRepository);
+        this.rejectedIssuanceCleanup = new RejectedIssuanceCleanup(session, statusListRepository);
     }
 
     /**
@@ -186,24 +190,34 @@ public class StatusListProtocolMapper extends OID4VCMapper {
             return;
         }
 
-        String tokenId = resolveTokenId(claims);
+        String issuedCredentialId = issuedCredentialIdResolver.resolve().orElse(null);
+        String tokenId = resolveTokenId(claims, issuedCredentialId);
         String userId = resolveHolderUserId(userSessionModel);
         String credentialConfigurationId = resolveCredentialConfigurationId();
-        int maxCredentialsPerUser = credentialIssuanceQuotaService.resolveMax(
-                mapperModel, session.getContext().getRealm());
-        credentialIssuanceQuotaService.requireHolderAndTypeWhenLimited(
-                userId, credentialConfigurationId, maxCredentialsPerUser);
+        Status status;
+        try {
+            int maxCredentialsPerUser = credentialIssuanceQuotaService.resolveMax(
+                    mapperModel, session.getContext().getRealm());
+            credentialIssuanceQuotaService.requireHolderAndTypeWhenLimited(
+                    userId, credentialConfigurationId, maxCredentialsPerUser);
 
-        // Build URI for status list
-        String listId = statusListRepository.getNextStatusListId(realmId, config.getStatusListMaxEntries());
-        StatusListEndpointUriResolver resolver = new StatusListEndpointUriResolver(serverUrl);
-        URI uri = URI.create(resolver.statusListUrl(listId));
-        logger.debugf("Configuration: listId=%s, uri=%s", listId, uri);
+            // Build URI for status list
+            String listId = statusListRepository.getNextStatusListId(realmId, config.getStatusListMaxEntries());
+            StatusListEndpointUriResolver resolver = new StatusListEndpointUriResolver(serverUrl);
+            URI uri = URI.create(resolver.statusListUrl(listId));
+            logger.debugf("Configuration: listId=%s, uri=%s", listId, uri);
 
-        Status status = sendStatusAndStoreIndexMapping(
-                listId, uri.toString(), userId, tokenId, credentialConfigurationId, maxCredentialsPerUser);
+            status = sendStatusAndStoreIndexMapping(
+                    listId, uri.toString(), userId, tokenId, credentialConfigurationId, maxCredentialsPerUser);
+        } catch (RuntimeException e) {
+            discardRejectedIssuance(realmId, issuedCredentialId);
+            throw e;
+        }
 
         if (status == null) {
+            if (config.isMandatory()) {
+                discardRejectedIssuance(realmId, issuedCredentialId);
+            }
             failIssuanceIfMandatory(config);
             return;
         }
@@ -236,7 +250,20 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         }
     }
 
-    private String resolveTokenId(Map<String, Object> claims) {
+    /**
+     * Drops the Keycloak issued-credential row when this mapper rejects issuance, and marks any
+     * {@code INIT} reservation for that id as {@code FAILURE}. The row is created at token time,
+     * before mappers run, and has no failed status to mark.
+     */
+    private void discardRejectedIssuance(String realmId, String issuedCredentialId) {
+        if (rejectedIssuanceCleanup == null) {
+            logger.error("Cannot delete orphan issued credential: cleanup is not available");
+            return;
+        }
+        rejectedIssuanceCleanup.discard(realmId, issuedCredentialId);
+    }
+
+    private String resolveTokenId(Map<String, Object> claims, String issuedCredentialId) {
         /*
          * Keycloak records the IssuedVerifiableCredentialModel id in the
          * authenticated OID4VCI access token authorization details before protocol
@@ -244,9 +271,8 @@ public class StatusListProtocolMapper extends OID4VCMapper {
          * revocation endpoint still enforces ownership from Keycloak's issued
          * credential store.
          */
-        Optional<String> issuedCredentialId = issuedCredentialIdResolver.resolve();
-        if (issuedCredentialId.isPresent()) {
-            return issuedCredentialId.get();
+        if (StringUtil.isNotBlank(issuedCredentialId)) {
+            return issuedCredentialId;
         }
 
         if (claims.get(Constants.ID_CLAIM_KEY) instanceof String id && StringUtil.isNotBlank(id)) {
