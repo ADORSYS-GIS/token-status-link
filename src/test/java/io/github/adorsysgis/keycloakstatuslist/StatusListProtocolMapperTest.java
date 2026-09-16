@@ -18,7 +18,9 @@ import static org.keycloak.OID4VCConstants.OPENID_CREDENTIAL;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.anyString;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -26,6 +28,7 @@ import static org.mockito.Mockito.when;
 
 import io.github.adorsysgis.keycloakstatuslist.config.StatusListConfig;
 import io.github.adorsysgis.keycloakstatuslist.config.StatusListEndpointUriResolver;
+import io.github.adorsysgis.keycloakstatuslist.exception.CredentialIssuanceQuotaException;
 import io.github.adorsysgis.keycloakstatuslist.exception.StatusListException;
 import io.github.adorsysgis.keycloakstatuslist.helpers.MockKeycloakTest;
 import io.github.adorsysgis.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
@@ -33,6 +36,8 @@ import io.github.adorsysgis.keycloakstatuslist.jpa.repository.StatusListReposito
 import io.github.adorsysgis.keycloakstatuslist.model.Status;
 import io.github.adorsysgis.keycloakstatuslist.model.StatusListClaim;
 import io.github.adorsysgis.keycloakstatuslist.model.TokenStatus;
+import io.github.adorsysgis.keycloakstatuslist.service.CredentialIssuanceQuotaService;
+import io.github.adorsysgis.keycloakstatuslist.service.RejectedIssuanceCleanup;
 import io.github.adorsysgis.keycloakstatuslist.service.StatusListService;
 import jakarta.persistence.PersistenceException;
 import jakarta.ws.rs.core.HttpHeaders;
@@ -41,11 +46,14 @@ import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 import nl.altindag.log.LogCaptor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.keycloak.models.ProtocolMapperModel;
+import org.keycloak.models.UserModel;
+import org.keycloak.models.UserProvider;
 import org.keycloak.protocol.ProtocolMapper;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
@@ -59,6 +67,12 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
     @Mock
     ProtocolMapperModel mapperModel;
+
+    @Mock
+    UserModel holder;
+
+    @Mock
+    UserProvider userProvider;
 
     @Mock
     StatusListService statusListService;
@@ -84,6 +98,10 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         mockDefaultRealmConfig();
         mockStatusListRepository(0L);
         lenient().when(context.getRequestHeaders()).thenReturn(headers);
+        lenient().when(session.users()).thenReturn(userProvider);
+        lenient()
+                .when(userProvider.removeIssuedVerifiableCredential(anyString()))
+                .thenReturn(true);
     }
 
     @Test
@@ -119,7 +137,10 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         assertEquals("Status List Claim Mapper", mapper.getDisplayType());
         assertTrue(mapper.getHelpText().contains("status list claim"));
         assertFalse(mapper.includeInMetadata());
-        assertTrue(mapper.getIndividualConfigProperties().isEmpty());
+        assertEquals(1, mapper.getIndividualConfigProperties().size());
+        assertEquals(
+                CredentialIssuanceQuotaService.MAX_CREDENTIALS_PER_USER_CONFIG,
+                mapper.getIndividualConfigProperties().get(0).getName());
         mapper.close();
     }
 
@@ -174,6 +195,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         var entityCaptor = ArgumentCaptor.forClass(StatusListMappingEntity.class);
         verify(entityManager).persist(entityCaptor.capture());
         assertEquals("issued-credential-1", entityCaptor.getValue().getTokenId());
+        assertEquals("PidCredential", entityCaptor.getValue().getCredentialConfigurationId());
     }
 
     @Test
@@ -309,6 +331,8 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
     void shouldNotMap_WhenSendingStatusFails() throws Exception {
         mockGetNextIndex();
         when(realm.getAttribute(StatusListConfig.STATUS_LIST_MANDATORY)).thenReturn("false");
+        when(headers.getHeaderString(HttpHeaders.AUTHORIZATION))
+                .thenReturn("Bearer " + accessTokenWithIssuedCredentialId("issued-credential-1"));
         doThrow(new StatusListException("Server not reachable"))
                 .when(statusListService)
                 .publishOrUpdate(any(StatusListService.StatusListPayload.class));
@@ -327,6 +351,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         var entityCaptor = ArgumentCaptor.forClass(StatusListMappingEntity.class);
         verify(statusListRepository).save(entityCaptor.capture());
         assertEquals(MappingStatus.FAILURE, entityCaptor.getValue().getStatus());
+        verify(userProvider, never()).removeIssuedVerifiableCredential(anyString());
     }
 
     @Test
@@ -347,18 +372,24 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
     void shouldFailIssuance_WhenMandatoryAndDbPersistenceFails() {
         mockGetNextIndex();
         when(realm.getAttribute(StatusListConfig.STATUS_LIST_MANDATORY)).thenReturn("true");
+        when(headers.getHeaderString(HttpHeaders.AUTHORIZATION))
+                .thenReturn("Bearer " + accessTokenWithIssuedCredentialId("issued-credential-1"));
         doThrow(new PersistenceException("DB Error")).when(entityManager).persist(any());
 
         assertThrows(RuntimeException.class, () -> mapper.setClaim(claims, userSession));
         assertThat(
                 logCaptor.getErrorLogs(),
                 hasItem(containsString("Status list is mandatory and publication failed; failing issuance")));
+        verify(userProvider).removeIssuedVerifiableCredential("issued-credential-1");
+        verify(statusListRepository).markInitMappingsFailed(TEST_REALM_ID, "issued-credential-1");
     }
 
     @Test
     void shouldFailIssuance_WhenMandatoryAndSendingStatusFails() throws Exception {
         mockGetNextIndex();
         when(realm.getAttribute(StatusListConfig.STATUS_LIST_MANDATORY)).thenReturn("true");
+        when(headers.getHeaderString(HttpHeaders.AUTHORIZATION))
+                .thenReturn("Bearer " + accessTokenWithIssuedCredentialId("issued-credential-1"));
         doThrow(new StatusListException("Server not reachable"))
                 .when(statusListService)
                 .publishOrUpdate(any(StatusListService.StatusListPayload.class));
@@ -367,6 +398,8 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         assertThat(
                 logCaptor.getErrorLogs(),
                 hasItem(containsString("Status list is mandatory and publication failed; failing issuance")));
+        verify(userProvider).removeIssuedVerifiableCredential("issued-credential-1");
+        verify(statusListRepository).markInitMappingsFailed(TEST_REALM_ID, "issued-credential-1");
     }
 
     @Test
@@ -389,6 +422,100 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         assertThat(claims.keySet(), hasItem(Constants.STATUS_CLAIM_KEY));
     }
 
+    @Test
+    void shouldRejectIssuance_WhenHolderIsAtConfiguredMax() {
+        mockGetNextIndex();
+        stubHolder("holder-1");
+        stubMapperMax("1");
+        when(headers.getHeaderString(HttpHeaders.AUTHORIZATION))
+                .thenReturn("Bearer " + accessTokenWithIssuedCredentialId("issued-credential-1"));
+        lenient()
+                .doReturn(1L)
+                .when(statusListRepository)
+                .countOccupyingMappings(any(), eq(TEST_REALM_ID), eq("holder-1"), eq("PidCredential"));
+
+        CredentialIssuanceQuotaException exception =
+                assertThrows(CredentialIssuanceQuotaException.class, () -> mapper.setClaim(claims, userSession));
+
+        assertEquals(CredentialIssuanceQuotaService.LIMIT_REACHED_MESSAGE, exception.getMessage());
+        assertEquals(409, exception.getResponse().getStatus());
+        verify(entityManager, never()).persist(any());
+        verify(userProvider).removeIssuedVerifiableCredential("issued-credential-1");
+        verify(statusListRepository).markInitMappingsFailed(TEST_REALM_ID, "issued-credential-1");
+        assertThat(claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
+    }
+
+    @Test
+    void shouldFailClosed_WhenLimitIsConfiguredAndHolderCannotBeResolved() {
+        mockGetNextIndex();
+        stubMapperMax("1");
+        when(headers.getHeaderString(HttpHeaders.AUTHORIZATION))
+                .thenReturn("Bearer " + accessTokenWithIssuedCredentialId("issued-credential-1"));
+
+        CredentialIssuanceQuotaException exception =
+                assertThrows(CredentialIssuanceQuotaException.class, () -> mapper.setClaim(claims, userSession));
+
+        assertEquals(CredentialIssuanceQuotaService.FAIL_CLOSED_MESSAGE, exception.getMessage());
+        assertEquals(400, exception.getResponse().getStatus());
+        verify(entityManager, never()).persist(any());
+        verify(userProvider).removeIssuedVerifiableCredential("issued-credential-1");
+    }
+
+    @Test
+    void shouldFailClosed_WhenLimitIsConfiguredAndCredentialTypeCannotBeResolved() {
+        mockGetNextIndex();
+        stubHolder("holder-1");
+        stubMapperMax("1");
+        when(headers.getHeaderString(HttpHeaders.AUTHORIZATION))
+                .thenReturn("Bearer " + accessToken("issued-credential-1", null));
+
+        CredentialIssuanceQuotaException exception =
+                assertThrows(CredentialIssuanceQuotaException.class, () -> mapper.setClaim(claims, userSession));
+
+        assertEquals(CredentialIssuanceQuotaService.FAIL_CLOSED_MESSAGE, exception.getMessage());
+        assertEquals(400, exception.getResponse().getStatus());
+        verify(entityManager, never()).persist(any());
+        verify(userProvider).removeIssuedVerifiableCredential("issued-credential-1");
+    }
+
+    @Test
+    void shouldFailClosed_WhenLimitConfigurationIsInvalid() {
+        mockGetNextIndex();
+        stubHolder("holder-1");
+        stubMapperMax("abc");
+        when(headers.getHeaderString(HttpHeaders.AUTHORIZATION))
+                .thenReturn("Bearer " + accessTokenWithIssuedCredentialId("issued-credential-1"));
+
+        IllegalArgumentException exception =
+                assertThrows(IllegalArgumentException.class, () -> mapper.setClaim(claims, userSession));
+
+        assertTrue(exception.getMessage().contains("status-list-max-credentials-per-user"));
+        verify(entityManager, never()).persist(any());
+        verify(userProvider).removeIssuedVerifiableCredential("issued-credential-1");
+    }
+
+    @Test
+    void shouldAllowIssuance_WhenHolderIsBelowConfiguredMax() {
+        mockGetNextIndex();
+        stubHolder("holder-1");
+        stubMapperMax("2");
+        when(headers.getHeaderString(HttpHeaders.AUTHORIZATION))
+                .thenReturn("Bearer " + accessTokenWithIssuedCredentialId("issued-credential-1"));
+        lenient()
+                .doReturn(1L)
+                .when(statusListRepository)
+                .countOccupyingMappings(any(), eq(TEST_REALM_ID), eq("holder-1"), eq("PidCredential"));
+
+        mapper.setClaim(claims, userSession);
+
+        assertThat(claims.keySet(), hasItem(Constants.STATUS_CLAIM_KEY));
+        verify(userProvider, never()).removeIssuedVerifiableCredential(anyString());
+        var entityCaptor = ArgumentCaptor.forClass(StatusListMappingEntity.class);
+        verify(entityManager).persist(entityCaptor.capture());
+        assertEquals("holder-1", entityCaptor.getValue().getUserId());
+        assertEquals("PidCredential", entityCaptor.getValue().getCredentialConfigurationId());
+    }
+
     private void mockDefaultRealmConfig() {
         lenient().when(realm.getAttribute(StatusListConfig.STATUS_LIST_ENABLED)).thenReturn("true");
         lenient()
@@ -400,6 +527,9 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         lenient()
                 .when(realm.getAttribute(StatusListConfig.STATUS_LIST_MAX_ENTRIES))
                 .thenReturn(String.valueOf(StatusListConfig.DEFAULT_MAX_ENTRIES));
+        lenient()
+                .when(realm.getAttribute(StatusListConfig.STATUS_LIST_MAX_CREDENTIALS_PER_USER))
+                .thenReturn(null);
     }
 
     private void mockStatusListRepository(long maxIdx) {
@@ -416,6 +546,27 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
                 .doAnswer(invocation -> invocation.getArgument(0))
                 .when(statusListRepository)
                 .save(any());
+        lenient()
+                .doReturn(0L)
+                .when(statusListRepository)
+                .countOccupyingMappings(any(), anyString(), anyString(), anyString());
+        lenient().doNothing().when(statusListRepository).ensureQuotaLockExists(anyString(), anyString(), anyString());
+        lenient().doNothing().when(statusListRepository).acquireQuotaLock(any(), anyString(), anyString(), anyString());
+        setPrivateField(
+                mapper, "credentialIssuanceQuotaService", new CredentialIssuanceQuotaService(statusListRepository));
+        setPrivateField(mapper, "rejectedIssuanceCleanup", new RejectedIssuanceCleanup(session, statusListRepository));
+        lenient().doReturn(0).when(statusListRepository).markInitMappingsFailed(anyString(), anyString());
+    }
+
+    private void stubHolder(String userId) {
+        lenient().when(userSession.getUser()).thenReturn(holder);
+        lenient().when(holder.getId()).thenReturn(userId);
+    }
+
+    private void stubMapperMax(String max) {
+        lenient()
+                .when(mapperModel.getConfig())
+                .thenReturn(Map.of(CredentialIssuanceQuotaService.MAX_CREDENTIALS_PER_USER_CONFIG, max));
     }
 
     private long mockGetNextIndex() {
@@ -433,19 +584,25 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
     }
 
     private String accessTokenWithIssuedCredentialId(String issuedCredentialId) {
+        return accessToken(issuedCredentialId, "PidCredential");
+    }
+
+    private String accessToken(String issuedCredentialId, String credentialConfigurationId) {
         String issuedCredentialClaim =
                 issuedCredentialId == null ? "" : ",\"issued_credential_id\":\"" + issuedCredentialId + "\"";
+        String configurationClaim = credentialConfigurationId == null
+                ? ""
+                : ",\"credential_configuration_id\":\"" + credentialConfigurationId + "\"";
         String payload = """
                 {
                   "typ": "Bearer",
                   "authorization_details": [
                     {
-                      "type": "%s",
-                      "credential_configuration_id": "PidCredential"%s
+                      "type": "%s"%s%s
                     }
                   ]
                 }
-                """.formatted(OPENID_CREDENTIAL, issuedCredentialClaim);
+                """.formatted(OPENID_CREDENTIAL, configurationClaim, issuedCredentialClaim);
 
         Base64.Encoder encoder = Base64.getUrlEncoder().withoutPadding();
         return encoder.encodeToString("{\"alg\":\"none\"}".getBytes(StandardCharsets.UTF_8))

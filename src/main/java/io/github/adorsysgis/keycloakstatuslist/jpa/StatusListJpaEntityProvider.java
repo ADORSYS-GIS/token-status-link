@@ -1,6 +1,7 @@
 package io.github.adorsysgis.keycloakstatuslist.jpa;
 
 import io.github.adorsysgis.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
+import io.github.adorsysgis.keycloakstatuslist.jpa.entity.StatusListQuotaLockEntity;
 import java.util.List;
 import org.jboss.logging.Logger;
 import org.keycloak.connections.jpa.entityprovider.JpaEntityProvider;
@@ -11,8 +12,8 @@ public class StatusListJpaEntityProvider implements JpaEntityProvider {
 
     @Override
     public List<Class<?>> getEntities() {
-        logger.debug("Registering entities: StatusListMappingEntity");
-        return List.of(StatusListMappingEntity.class);
+        logger.debug("Registering entities: StatusListMappingEntity, StatusListQuotaLockEntity");
+        return List.of(StatusListMappingEntity.class, StatusListQuotaLockEntity.class);
     }
 
     @Override

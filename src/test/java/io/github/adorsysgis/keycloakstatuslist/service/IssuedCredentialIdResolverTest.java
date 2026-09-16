@@ -44,6 +44,15 @@ class IssuedCredentialIdResolverTest extends MockKeycloakTest {
     }
 
     @Test
+    void shouldResolveCredentialConfigurationIdFromBearerAccessToken() {
+        when(headers.getHeaderString(HttpHeaders.AUTHORIZATION))
+                .thenReturn("Bearer " + accessTokenWithIssuedCredentialId("issued-credential-1"));
+
+        assertEquals(
+                "PidCredential", resolver.resolveCredentialConfigurationId().orElseThrow());
+    }
+
+    @Test
     void shouldReturnEmptyWhenAuthorizationHeaderIsMissing() {
         assertTrue(resolver.resolve().isEmpty());
     }
