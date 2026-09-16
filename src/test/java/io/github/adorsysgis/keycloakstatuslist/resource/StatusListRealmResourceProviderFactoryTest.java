@@ -36,8 +36,8 @@ import org.apache.hc.core5.http.io.entity.StringEntity;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.keycloak.common.ClientConnection;
 import org.keycloak.connections.jpa.JpaConnectionProvider;
-import org.keycloak.events.EventBuilder;
 import org.keycloak.jose.jwk.JWK;
 import org.keycloak.models.KeycloakContext;
 import org.keycloak.models.KeycloakSession;
@@ -51,9 +51,9 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.MockedConstruction;
 import org.mockito.MockedStatic;
 
-class CustomOIDCLoginProtocolFactoryTest {
+class StatusListRealmResourceProviderFactoryTest {
 
-    private CustomOIDCLoginProtocolFactory factory;
+    private StatusListRealmResourceProviderFactory factory;
     private KeycloakSessionFactory sessionFactory;
     private KeycloakSession session;
     private KeycloakTransactionManager transactionManager;
@@ -79,7 +79,7 @@ class CustomOIDCLoginProtocolFactoryTest {
                 .when(() -> CircuitBreaker.getInstance(any(StatusListConfig.class)))
                 .thenReturn(mock(CircuitBreaker.class));
 
-        factory = new CustomOIDCLoginProtocolFactory() {
+        factory = new StatusListRealmResourceProviderFactory() {
             @Override
             protected void runAsync(Runnable runnable) {
                 runnable.run();
@@ -88,6 +88,7 @@ class CustomOIDCLoginProtocolFactoryTest {
         sessionFactory = mock(KeycloakSessionFactory.class);
         session = mock(KeycloakSession.class);
         KeycloakContext context1 = mock(KeycloakContext.class);
+        ClientConnection connection = mock(ClientConnection.class);
         transactionManager = mock(KeycloakTransactionManager.class);
         realmProvider = mock(RealmProvider.class);
         realm = mock(RealmModel.class);
@@ -96,6 +97,7 @@ class CustomOIDCLoginProtocolFactoryTest {
 
         when(session.getContext()).thenReturn(context1);
         lenient().when(context1.getRealm()).thenReturn(realm);
+        lenient().when(context1.getConnection()).thenReturn(connection);
 
         when(sessionFactory.create()).thenReturn(session);
         when(session.getKeycloakSessionFactory()).thenReturn(sessionFactory);
@@ -139,10 +141,12 @@ class CustomOIDCLoginProtocolFactoryTest {
     }
 
     @Test
-    void testProtocolEndpointCreation() {
-        Object endpoint = factory.createProtocolEndpoint(session, mock(EventBuilder.class));
-        assertNotNull(endpoint);
-        assertInstanceOf(CustomOIDCLoginProtocolService.class, endpoint);
+    void testRealmResourceCreation() {
+        StatusListRealmResourceProvider provider = (StatusListRealmResourceProvider) factory.create(session);
+        assertNotNull(provider);
+        Object resource = provider.getResource();
+        assertNotNull(resource);
+        assertInstanceOf(StatusListRealmResourceProvider.class, resource);
     }
 
     @Test
@@ -185,9 +189,10 @@ class CustomOIDCLoginProtocolFactoryTest {
     }
 
     @Test
-    void testLazyRegistrationInCreateProtocolEndpoint() {
+    void testLazyRegistrationInResourceAccess() {
         // Ensure not registered initially
-        factory.createProtocolEndpoint(session, mock(EventBuilder.class));
+        StatusListRealmResourceProvider provider = (StatusListRealmResourceProvider) factory.create(session);
+        provider.revoke();
 
         StatusListService lastMock = mockedStatusListServiceConstruction
                 .constructed()
@@ -204,7 +209,10 @@ class CustomOIDCLoginProtocolFactoryTest {
         when(transactionManager.isActive()).thenReturn(true);
         when(realmProvider.getRealmByName("test-realm")).thenThrow(new RuntimeException("realm lookup failed"));
 
-        assertDoesNotThrow(() -> factory.createProtocolEndpoint(session, mock(EventBuilder.class)));
+        assertDoesNotThrow(() -> {
+            StatusListRealmResourceProvider provider = (StatusListRealmResourceProvider) factory.create(session);
+            provider.revoke();
+        });
 
         verify(transactionManager).rollback();
         verify(transactionManager, never()).commit();

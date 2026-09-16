@@ -33,7 +33,7 @@ The status list server should implement the
 
 - Publish token status to an external status list server
 - Support for OAuth Status List token statuses (VALID, INVALID, SUSPENDED)
-- Revocation of issued verifiable credentials through Keycloak's `/revoke` endpoint
+- Revocation of issued verifiable credentials through a dedicated realm endpoint
 - Secure communication with TLS 1.2/1.3; outbound status list API calls are authenticated with a
   realm-signed JWT bearer token
 - Detailed logging with unique request IDs for better traceability
@@ -122,33 +122,31 @@ corresponding to a specific credential's configuration. Below is a sample such c
 ## Performance Considerations
 
 - **Non-Blocking Registration**: Realm registration is performed **asynchronously** in background threads (
-  `status-list-init`). This ensures that Keycloak startup and OIDC request processing are never blocked by status list
+  `status-list-init`). This ensures that Keycloak startup and request processing are never blocked by status list
   server latency.
 - **Retry & Cooldown**: The plugin includes a built-in **retry mechanism** with exponential backoff (1s, 2s, 4s) for
   registration attempts. To prevent resource exhaustion during server failures, a **1-minute cooldown** is enforced
   per-realm between registration attempts.
-- **On-Demand (Lazy) Trigger**: Registration is triggered on-demand when a realm's OIDC endpoints are first accessed,
-  but the trigger itself is non-blocking to the caller's thread.
+- **On-Demand (Lazy) Trigger**: Registration is triggered on-demand when a realm's status list endpoints are first
+  accessed, but the trigger itself is non-blocking to the caller's thread.
 - **Configurable Timeouts**: Timeouts are configurable via `status-list-issuance-timeout` (default: 10s for runtime) and
   `status-list-registration-timeout` (default: 30s for background).
 
 ## HTTP Endpoints
 
-The plugin exposes two inbound endpoints, both realm-scoped under
-`{keycloak-base}/realms/{realm}/protocol/openid-connect`. Both authenticate with a standard Keycloak
-bearer access token. Listing is scoped to the authenticated user. Users with the realm role
-`credential-offer-create` may list another holder with `target_user`. Revocation accepts either the
+The plugin exposes two inbound endpoints, both realm-scoped under `{keycloak-base}/realms/{realm}/status-list`. Both
+authenticate with a standard Keycloak bearer access token. Listing is scoped to the authenticated user. Users with the
+realm role `credential-offer-create` may list another holder with `target_user`. Revocation accepts either the
 credential holder or a user with the realm role `credential-offer-create`.
 
 ### Revoke an issued credential
 
-Revocation is initiated by the client application. The plugin overrides Keycloak's standard
-`/revoke` endpoint and activates only when `mode=issued_credential_revocation` is present in the form payload;
-any other value (or none) falls through to Keycloak's default token revocation behavior, even when the plugin
-is disabled.
+Revocation is initiated by the client application at the plugin's dedicated
+`/revoke` endpoint. It activates only when `mode=issued_credential_revocation` is present in the form payload;
+any other value is rejected.
 
 ```http
-POST /realms/{realm}/protocol/openid-connect/revoke
+POST /realms/{realm}/status-list/revoke
 Authorization: Bearer <user-access-token>
 Content-Type: application/x-www-form-urlencoded
 
@@ -181,12 +179,12 @@ can continue to display it with a revoked status.
 **Errors** use the same shape with `"success": false`, `revoked_at` and `revocation_reason` set to `null`, and
 `message` describing the failure:
 
-| Status | Cause                                                                        |
-|--------|------------------------------------------------------------------------------|
-| `400`  | Invalid input, such as a missing or blank `credential_id`                    |
-| `401`  | Missing, invalid, or expired bearer token                                    |
-| `404`  | Credential not found for this caller, or it has no status list mapping       |
-| `500`  | Service disabled or not configured, or an unexpected error during revocation |
+| Status | Cause                                                                                                            |
+|--------|------------------------------------------------------------------------------------------------------------------|
+| `400`  | Invalid input, such as a missing or blank `credential_id`, or a `mode` other than `issued_credential_revocation` |
+| `401`  | Missing, invalid, or expired bearer token                                                                        |
+| `404`  | Credential not found for this caller, or it has no status list mapping                                           |
+| `500`  | Service disabled or not configured, or an unexpected error during revocation                                     |
 
 ### List issued credentials and their status
 
@@ -198,7 +196,7 @@ Callers receive their own credentials. Users with the realm role `credential-off
 credentials. Callers without that role receive `403` if `target_user` is set.
 
 ```http
-GET /realms/{realm}/protocol/openid-connect/issued-credential-status
+GET /realms/{realm}/status-list/issued-credential-status
 Authorization: Bearer <user-access-token>
 Accept: application/json
 ```
@@ -235,11 +233,11 @@ The response wraps the entries in a `credentials` array:
 | `verifiableCredentialId` | string | Verifiable credential identifier                                                            |
 | `issuedAt`               | number | Issuance timestamp as recorded by Keycloak, in Unix epoch milliseconds                      |
 | `expiresAt`              | number | Expiration timestamp as recorded by Keycloak, in Unix epoch milliseconds; `null` if not set |
-| `clientId`               | string | Client that requested the credential                                 |
-| `revision`               | string | Credential revision                                                  |
-| `status`                 | string | `VALID`, `INVALID`, `SUSPENDED`, or `UNKNOWN` when no mapping exists |
-| `userId`                 | string | Keycloak user id of the credential holder                            |
-| `username`               | string | Username of the credential holder                                    |
+| `clientId`               | string | Client that requested the credential                                                        |
+| `revision`               | string | Credential revision                                                                         |
+| `status`                 | string | `VALID`, `INVALID`, `SUSPENDED`, or `UNKNOWN` when no mapping exists                        |
+| `userId`                 | string | Keycloak user id of the credential holder                                                   |
+| `username`               | string | Username of the credential holder                                                           |
 
 ## Status List Server API
 
