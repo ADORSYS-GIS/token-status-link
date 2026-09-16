@@ -3,7 +3,6 @@ package io.github.adorsysgis.keycloakstatuslist.config;
 import java.util.UUID;
 import org.jboss.logging.Logger;
 import org.keycloak.models.RealmModel;
-import org.keycloak.utils.StringUtil;
 
 /**
  * Configuration holder for the Token Status plugin. This class provides access to the plugin
@@ -52,13 +51,6 @@ public class StatusListConfig {
 
     public StatusListConfig(RealmModel realm) {
         this.realm = realm;
-        // Fail fast when a realm opts in but does not configure the required server URL. Realms that
-        // have not enabled the feature stay constructible (the default), so this never throws for them.
-        if (isEnabled() && StringUtil.isBlank(realm.getAttribute(STATUS_LIST_SERVER_URL))) {
-            throw new IllegalStateException(String.format(
-                    "Status list server URL is not configured or empty for realm %s. Set the '%s' realm attribute.",
-                    realm.getName(), STATUS_LIST_SERVER_URL));
-        }
     }
 
     /**

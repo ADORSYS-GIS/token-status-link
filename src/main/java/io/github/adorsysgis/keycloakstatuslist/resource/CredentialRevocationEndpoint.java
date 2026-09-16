@@ -16,10 +16,10 @@ import jakarta.ws.rs.core.Response;
 import org.jboss.logging.Logger;
 import org.keycloak.events.EventBuilder;
 import org.keycloak.models.KeycloakSession;
-import org.keycloak.models.RealmModel;
 import org.keycloak.protocol.oidc.endpoints.TokenRevocationEndpoint;
 import org.keycloak.services.managers.AppAuthManager;
 import org.keycloak.services.managers.AuthenticationManager.AuthResult;
+import org.keycloak.utils.StringUtil;
 
 public class CredentialRevocationEndpoint extends TokenRevocationEndpoint {
 
@@ -135,12 +135,13 @@ public class CredentialRevocationEndpoint extends TokenRevocationEndpoint {
 
     /**
      * Checks if the credential revocation service is properly configured.
+     * A realm that has not opted in has nothing to configure; a realm that opted in is
+     * misconfigured when it does not provide a server URL.
      */
     private boolean isServiceConfigured() {
         try {
-            RealmModel realm = session.getContext().getRealm();
-            new StatusListConfig(realm);
-            return true;
+            StatusListConfig config = new StatusListConfig(session.getContext().getRealm());
+            return !config.isEnabled() || StringUtil.isNotBlank(config.getServerUrl());
         } catch (Exception e) {
             logger.warn("Error checking service configuration", e);
             return false;

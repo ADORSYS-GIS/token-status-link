@@ -99,7 +99,6 @@ class CryptoIdentityServiceTest extends MockKeycloakTest {
     void getJwtTokenShouldContainExpectedIssuerClaim() throws Exception {
         Mockito.when(realm.getAttribute(StatusListConfig.STATUS_LIST_TOKEN_ISSUER_PREFIX))
                 .thenReturn("issuer-prefix");
-        Mockito.when(realm.getAttribute(StatusListConfig.STATUS_LIST_ENABLED)).thenReturn("false");
         StatusListConfig config = new StatusListConfig(realm);
 
         String token = service.getJwtToken(config);

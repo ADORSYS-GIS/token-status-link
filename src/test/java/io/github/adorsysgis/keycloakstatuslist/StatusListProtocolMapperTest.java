@@ -11,6 +11,7 @@ import static org.hamcrest.Matchers.not;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.keycloak.OID4VCConstants.OPENID_CREDENTIAL;
@@ -20,6 +21,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import io.github.adorsysgis.keycloakstatuslist.config.StatusListConfig;
@@ -216,6 +218,38 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
     }
 
     @Test
+    void shouldDefaultToDisabledAndNullServerUrl_WhenRealmAttributesAreAbsent() {
+        when(realm.getAttribute(StatusListConfig.STATUS_LIST_ENABLED)).thenReturn(null);
+        when(realm.getAttribute(StatusListConfig.STATUS_LIST_SERVER_URL)).thenReturn(null);
+
+        StatusListConfig config = new StatusListConfig(realm);
+
+        assertFalse(config.isEnabled());
+        assertNull(config.getServerUrl());
+    }
+
+    @Test
+    void shouldNotContactStatusListServer_WhenEnabledAttributeIsAbsent() {
+        when(realm.getAttribute(StatusListConfig.STATUS_LIST_ENABLED)).thenReturn(null);
+
+        mapper.setClaim(claims, userSession);
+
+        assertThat("Claims should remain unmapped", claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
+        verifyNoInteractions(statusListService);
+    }
+
+    @Test
+    void shouldNotContactStatusListServer_WhenServerUrlAttributeIsAbsent() {
+        when(realm.getAttribute(StatusListConfig.STATUS_LIST_SERVER_URL)).thenReturn(null);
+
+        mapper.setClaim(claims, userSession);
+
+        assertThat("Claims should remain unmapped", claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
+        assertThat(logCaptor.getErrorLogs(), hasItem(containsString("Invalid status list server URL")));
+        verifyNoInteractions(statusListService);
+    }
+
+    @Test
     void shouldNotMap_IfInvalidStatusServerUrl() {
         when(realm.getAttribute(StatusListConfig.STATUS_LIST_SERVER_URL)).thenReturn("invalid-url");
 
@@ -223,6 +257,17 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
         assertThat("Claims should remain unmapped", claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
         assertThat(logCaptor.getErrorLogs(), hasItem(containsString("Invalid status list server URL")));
+    }
+
+    @Test
+    void shouldFailIssuance_WhenMandatoryAndStatusServerUrlIsInvalid() {
+        when(realm.getAttribute(StatusListConfig.STATUS_LIST_SERVER_URL)).thenReturn(" ");
+        when(realm.getAttribute(StatusListConfig.STATUS_LIST_MANDATORY)).thenReturn("true");
+
+        assertThrows(RuntimeException.class, () -> mapper.setClaim(claims, userSession));
+        assertThat(
+                logCaptor.getErrorLogs(),
+                hasItem(containsString("Status list is mandatory and publication failed; failing issuance")));
     }
 
     @Test
