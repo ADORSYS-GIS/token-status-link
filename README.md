@@ -128,6 +128,8 @@ A positive value caps live holdings of that type: `SUCCESS`/`FAILURE` mappings t
 
 Missing holder or type with a limit set fails closed (`400`, `credential_limit_unresolved`). Limit reached is `409`, `credential_limit_reached`, with an `error_description`. Non-numeric or negative values are rejected. Quota check, list-id choice, and index reservation share one transaction that locks the latest realm mapping, or the Keycloak realm row when none exists yet.
 
+If the mapper rejects issuance (quota, fail-closed, invalid limit config, or mandatory publication failure), the issued-credential row created at token time is deleted in its own transaction. Listing omits it, and revocation of that id returns `404`. Any `INIT` reservation for that id is marked `FAILURE` so it does not occupy a quota slot. A non-mandatory publication failure is not a reject: issuance continues without a status claim, and listing reports `UNKNOWN`.
+
 **Upgrade note (legacy mappings):** The Liquibase change that adds `credential_configuration_id` leaves existing `status_list_mapping` rows as `NULL`. Those pre-migration credentials are intentionally excluded from quota counts and from `limits` metadata, because their credential type cannot be recovered reliably. Quotas therefore apply only to credentials issued after the migration (when the mapper persists `credential_configuration_id`). Enabling a limit after upgrade does not count older active credentials toward that limit; revoke them manually first if you need a hard cap that includes holdings issued before the upgrade.
 
 ## Performance Considerations
@@ -194,7 +196,7 @@ can continue to display it with a revoked status.
 |--------|------------------------------------------------------------------------------------------------------------------|
 | `400`  | Invalid input, such as a missing or blank `credential_id`, or a `mode` other than `issued_credential_revocation` |
 | `401`  | Missing, invalid, or expired bearer token                                                                        |
-| `404`  | Credential not found for this caller, or it has no status list mapping                                           |
+| `404`  | Credential not found for this caller, including one deleted after a mapper reject, or it has no status list mapping |
 | `500`  | Service disabled or not configured, or an unexpected error during revocation                                     |
 
 ### List issued credentials and their status
@@ -261,7 +263,7 @@ for credential types that have a configured maximum:
 | `clientId`               | string | Internal id of the client that requested the credential                                     |
 | `clientName`             | string | Display name of that client, falling back to its public client id                           |
 | `revision`               | string | Credential revision                                                                         |
-| `status`                 | string | `VALID`, `INVALID`, `SUSPENDED`, or `UNKNOWN` when no mapping exists                        |
+| `status`                 | string | `VALID`, `INVALID`, `SUSPENDED`, or `UNKNOWN` when the credential was issued without a successful mapping. A mapper reject is omitted, not listed as failed |
 | `userId`                 | string | Keycloak user id of the credential holder                                                   |
 | `username`               | string | Username of the credential holder                                                           |
 
