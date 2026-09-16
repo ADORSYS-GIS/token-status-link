@@ -15,15 +15,15 @@ The status list server should implement the
 
 - [Features](#features)
 - [Configuration Properties](#configuration-properties)
-  - [Proxy support](#proxy-support)
+    - [Proxy support](#proxy-support)
 - [Compatibility](#compatibility)
 - [Installation](#installation)
-  - [Releases on Maven Central](#releases-on-maven-central)
-  - [Enabling the Status List protocol mapper](#enabling-the-status-list-protocol-mapper)
+    - [Releases on Maven Central](#releases-on-maven-central)
+    - [Enabling the Status List protocol mapper](#enabling-the-status-list-protocol-mapper)
 - [Performance Considerations](#performance-considerations)
 - [HTTP Endpoints](#http-endpoints)
-  - [Revoke an issued credential](#revoke-an-issued-credential)
-  - [List issued credentials and their status](#list-issued-credentials-and-their-status)
+    - [Revoke an issued credential](#revoke-an-issued-credential)
+    - [List issued credentials and their status](#list-issued-credentials-and-their-status)
 - [Status List Server API](#status-list-server-api)
 - [Development and Testing](#development-and-testing)
 - [Integrative demo](#integrative-demo)
@@ -42,35 +42,38 @@ The status list server should implement the
 
 The plugin can be configured at the realm level with the following properties:
 
-| Property                                        | Description                                                                                                               | Default Value                         |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
-| `status-list-enabled`                           | Enables or disables the status list service                                                                               | `true`                                |
-| `status-list-server-url`                        | URL of the status list server                                                                                             | `https://statuslist.eudi-adorsys.com` |
-| `status-list-token-issuer-prefix`               | Prefix for building the Token Issuer ID                                                                                   | `Generated UUID`                      |
-| `status-list-issuance-timeout`                  | Timeout in milliseconds for **issuance** operations (runtime). Non-positive values disable circuit breaker                | `10000`                               |
-| `status-list-registration-timeout`              | Timeout in milliseconds for **background registration** operations                                                        | `30000`                               |
-| `status-list-registration-retries`              | Number of retries for background registration operations                                                                  | `1`                                   |
-| `status-list-registration-cooldown`             | Cooldown period in **milliseconds** between registration attempts for the same realm                                      | `60000`                               |
-| `status-list-circuit-breaker-failure-threshold` | Number of failures/timeouts before opening the circuit breaker                                                            | `5`                                   |
-| `status-list-mandatory`                         | If true, publication failures block issuance; if false, failures are logged and issuance continues without a status claim | `false`                               |
-| `status-list-max-entries`                       | Maximum number of entries to publish under the same status list                                                           | `10000`                               |
-| `status-list-tls-trust-all`                     | Instructs the status-list http-client to trust all TLS certificates. **DO NOT USE IN PRODUCTION**                         | `false`                               |
-| `status-list-tls-ca-cert-path`                  | Path to a PEM-encoded CA certificate to be trusted by the status-list http-client, in addition to the JVM defaults        | `null`                                |
+| Property                                        | Description                                                                                                                                                                                                                      | Default Value    |
+|-------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------|
+| `status-list-enabled`                           | Enables or disables the status list service for the realm (must be explicitly opted in)                                                                                                                                          | `false`          |
+| `status-list-server-url`                        | URL of the status list server (required when the feature is enabled; issuance fails if it is missing or invalid and `status-list-mandatory` is `true`). You may try our public instance at `https://statuslist.eudi-adorsys.com` | *None*           |
+| `status-list-token-issuer-prefix`               | Prefix for building the Token Issuer ID                                                                                                                                                                                          | `Generated UUID` |
+| `status-list-issuance-timeout`                  | Timeout in milliseconds for **issuance** operations (runtime). Non-positive values disable circuit breaker                                                                                                                       | `10000`          |
+| `status-list-registration-timeout`              | Timeout in milliseconds for **background registration** operations                                                                                                                                                               | `30000`          |
+| `status-list-registration-retries`              | Number of retries for background registration operations                                                                                                                                                                         | `1`              |
+| `status-list-registration-cooldown`             | Cooldown period in **milliseconds** between registration attempts for the same realm                                                                                                                                             | `60000`          |
+| `status-list-circuit-breaker-failure-threshold` | Number of failures/timeouts before opening the circuit breaker                                                                                                                                                                   | `5`              |
+| `status-list-mandatory`                         | If true, publication failures block issuance; if false, failures are logged and issuance continues without a status claim                                                                                                        | `false`          |
+| `status-list-max-entries`                       | Maximum number of entries to publish under the same status list                                                                                                                                                                  | `10000`          |
+| `status-list-tls-trust-all`                     | Instructs the status-list http-client to trust all TLS certificates. **DO NOT USE IN PRODUCTION**                                                                                                                                | `false`          |
+| `status-list-tls-ca-cert-path`                  | Path to a PEM-encoded CA certificate to be trusted by the status-list http-client, in addition to the JVM defaults                                                                                                               | `null`           |
 
 ### Proxy support
 
 Usage of HTTP/S proxies for the status-list http-client is supported via the standard environment variables
-(see [Keycloak Outgoing Proxy Config](https://www.keycloak.org/server/outgoinghttp#_proxy_mappings_for_outgoing_http_requests) for format reference):
+(
+see [Keycloak Outgoing Proxy Config](https://www.keycloak.org/server/outgoinghttp#_proxy_mappings_for_outgoing_http_requests)
+for format reference):
 
 - `HTTPS_PROXY` / `HTTP_PROXY` (also lowercase) define the proxy to be used. `HTTPS_PROXY` takes precedence.
-- `NO_PROXY` (also lowercase) defines a comma-separated list of hosts to be reached without the proxy. Matching is case-insensitive; a bare `*` matches all hosts.
+- `NO_PROXY` (also lowercase) defines a comma-separated list of hosts to be reached without the proxy. Matching is
+  case-insensitive; a bare `*` matches all hosts.
 
 ## Compatibility
 
 This plugin has been tested and verified to work with:
 
 | Component | Version |
-| --------- | ------- |
+|-----------|---------|
 | Keycloak  | 26.7.2  |
 
 ## Installation
@@ -92,10 +95,11 @@ This plugin has been tested and verified to work with:
 
 The plugin is published
 to [Maven Central](https://central.sonatype.com/artifact/io.github.adorsys-gis/keycloak-token-status-plugin).
-Releases are automated via GitHub Actions and triggered by pushing a version tag (`vX.Y.Z`). The workflow requires the following repository secrets:
+Releases are automated via GitHub Actions and triggered by pushing a version tag (`vX.Y.Z`). The workflow requires the
+following repository secrets:
 
 | Secret                   | Description                                               |
-| :----------------------- | :-------------------------------------------------------- |
+|:-------------------------|:----------------------------------------------------------|
 | `CENTRAL_TOKEN_USERNAME` | The Maven Central token username.                         |
 | `CENTRAL_TOKEN_PASSWORD` | The Maven Central token password.                         |
 | `GPG_PRIVATE_KEY`        | The ASCII-armored private key used for signing artifacts. |
@@ -117,10 +121,16 @@ corresponding to a specific credential's configuration. Below is a sample such c
 
 ## Performance Considerations
 
-- **Non-Blocking Registration**: Realm registration is performed **asynchronously** in background threads (`status-list-init`). This ensures that Keycloak startup and OIDC request processing are never blocked by status list server latency.
-- **Retry & Cooldown**: The plugin includes a built-in **retry mechanism** with exponential backoff (1s, 2s, 4s) for registration attempts. To prevent resource exhaustion during server failures, a **1-minute cooldown** is enforced per-realm between registration attempts.
-- **On-Demand (Lazy) Trigger**: Registration is triggered on-demand when a realm's OIDC endpoints are first accessed, but the trigger itself is non-blocking to the caller's thread.
-- **Configurable Timeouts**: Timeouts are configurable via `status-list-issuance-timeout` (default: 10s for runtime) and `status-list-registration-timeout` (default: 30s for background).
+- **Non-Blocking Registration**: Realm registration is performed **asynchronously** in background threads (
+  `status-list-init`). This ensures that Keycloak startup and OIDC request processing are never blocked by status list
+  server latency.
+- **Retry & Cooldown**: The plugin includes a built-in **retry mechanism** with exponential backoff (1s, 2s, 4s) for
+  registration attempts. To prevent resource exhaustion during server failures, a **1-minute cooldown** is enforced
+  per-realm between registration attempts.
+- **On-Demand (Lazy) Trigger**: Registration is triggered on-demand when a realm's OIDC endpoints are first accessed,
+  but the trigger itself is non-blocking to the caller's thread.
+- **Configurable Timeouts**: Timeouts are configurable via `status-list-issuance-timeout` (default: 10s for runtime) and
+  `status-list-registration-timeout` (default: 30s for background).
 
 ## HTTP Endpoints
 
@@ -144,11 +154,11 @@ Content-Type: application/x-www-form-urlencoded
 mode=issued_credential_revocation&credential_id=<issued-credential-id>&reason=<optional reason>
 ```
 
-| Parameter       | Required | Description                                                              |
-| --------------- | -------- | ------------------------------------------------------------------------ |
-| `mode`          | yes      | Must be `issued_credential_revocation` to select the plugin's behavior   |
-| `credential_id` | yes      | ID of the Keycloak-issued credential to revoke                           |
-| `reason`        | no       | Free-form reason, echoed back in the response                            |
+| Parameter       | Required | Description                                                            |
+|-----------------|----------|------------------------------------------------------------------------|
+| `mode`          | yes      | Must be `issued_credential_revocation` to select the plugin's behavior |
+| `credential_id` | yes      | ID of the Keycloak-issued credential to revoke                         |
+| `reason`        | no       | Free-form reason, echoed back in the response                          |
 
 The credential is looked up among those issued to the authenticated user. Users with the realm role
 `credential-offer-create` may also revoke a credential issued to another user in the same realm. Callers without
@@ -170,11 +180,11 @@ can continue to display it with a revoked status.
 **Errors** use the same shape with `"success": false`, `revoked_at` and `revocation_reason` set to `null`, and
 `message` describing the failure:
 
-| Status | Cause                                                                       |
-| ------ | --------------------------------------------------------------------------- |
-| `400`  | Invalid input, such as a missing or blank `credential_id`                   |
-| `401`  | Missing, invalid, or expired bearer token                                   |
-| `404`  | Credential not found for this caller, or it has no status list mapping      |
+| Status | Cause                                                                        |
+|--------|------------------------------------------------------------------------------|
+| `400`  | Invalid input, such as a missing or blank `credential_id`                    |
+| `401`  | Missing, invalid, or expired bearer token                                    |
+| `404`  | Credential not found for this caller, or it has no status list mapping       |
 | `500`  | Service disabled or not configured, or an unexpected error during revocation |
 
 ### List issued credentials and their status
@@ -206,15 +216,15 @@ The response wraps the entries in a `credentials` array:
 }
 ```
 
-| Field                    | Type   | Description                                                          |
-| ------------------------ | ------ | -------------------------------------------------------------------- |
-| `credentialId`           | string | Keycloak-issued credential ID                                        |
-| `verifiableCredentialId` | string | Verifiable credential identifier                                     |
-| `issuedAt`               | number | Issuance timestamp as recorded by Keycloak, in Unix epoch milliseconds |
+| Field                    | Type   | Description                                                                                 |
+|--------------------------|--------|---------------------------------------------------------------------------------------------|
+| `credentialId`           | string | Keycloak-issued credential ID                                                               |
+| `verifiableCredentialId` | string | Verifiable credential identifier                                                            |
+| `issuedAt`               | number | Issuance timestamp as recorded by Keycloak, in Unix epoch milliseconds                      |
 | `expiresAt`              | number | Expiration timestamp as recorded by Keycloak, in Unix epoch milliseconds; `null` if not set |
-| `clientId`               | string | Client that requested the credential                                 |
-| `revision`               | string | Credential revision                                                  |
-| `status`                 | string | `VALID`, `INVALID`, `SUSPENDED`, or `UNKNOWN` when no mapping exists |
+| `clientId`               | string | Client that requested the credential                                                        |
+| `revision`               | string | Credential revision                                                                         |
+| `status`                 | string | `VALID`, `INVALID`, `SUSPENDED`, or `UNKNOWN` when no mapping exists                        |
 
 ## Status List Server API
 
@@ -222,7 +232,7 @@ These are the outbound calls the plugin makes to the configured status list serv
 `Authorization: Bearer <jwt>` header signed with the realm's active signing key.
 
 | Operation                             | Endpoint                                                                       |
-| ------------------------------------- | ------------------------------------------------------------------------------ |
+|---------------------------------------|--------------------------------------------------------------------------------|
 | Register issuer credential/public key | `POST /api/v1/credentials`                                                     |
 | Retrieve status list JWT              | `GET /api/v1/status-lists/{list_id}` with `Accept: application/statuslist+jwt` |
 | Publish status entries                | `PUT /api/v1/status-lists/{list_id}/statuses`                                  |
