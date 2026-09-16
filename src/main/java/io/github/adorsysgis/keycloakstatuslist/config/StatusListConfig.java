@@ -29,8 +29,7 @@ public class StatusListConfig {
     public static final String STATUS_LIST_TLS_CA_CERT_PATH = "status-list-tls-ca-cert-path";
 
     // Default values
-    public static final boolean DEFAULT_ENABLED = true;
-    public static final String DEFAULT_SERVER_URL = "https://statuslist.eudi-adorsys.com";
+    public static final boolean DEFAULT_ENABLED = false;
     public static final boolean DEFAULT_MANDATORY = false;
     public static final int DEFAULT_MAX_ENTRIES = 10000;
     public static final boolean DEFAULT_TLS_TRUST_ALL = false;
@@ -88,11 +87,10 @@ public class StatusListConfig {
     /**
      * Gets the URL of the status list server.
      *
-     * @return the status list server URL
+     * @return the status list server URL, or {@code null}/{@code blank} if not configured
      */
     public String getServerUrl() {
-        String value = realm.getAttribute(STATUS_LIST_SERVER_URL);
-        return value != null ? value : DEFAULT_SERVER_URL;
+        return realm.getAttribute(STATUS_LIST_SERVER_URL);
     }
 
     /**

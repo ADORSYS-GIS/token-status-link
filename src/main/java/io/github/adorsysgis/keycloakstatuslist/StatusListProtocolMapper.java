@@ -65,7 +65,13 @@ public class StatusListProtocolMapper extends OID4VCMapper {
     public StatusListProtocolMapper(KeycloakSession session) {
         this.session = session;
         this.statusListRepository = new StatusListRepository(session);
-        this.statusListService = createStatusListService(session);
+        // Only build the status list client when the feature is explicitly opted in for the realm and a
+        // usable server URL is configured. This keeps the mapper constructible for realms where the feature
+        // is disabled (the default) or misconfigured, so it never blocks credential-issuer metadata discovery.
+        // Misconfiguration is instead reported on the issuance path, honoring status-list-mandatory.
+        StatusListConfig config = new StatusListConfig(session.getContext().getRealm());
+        this.statusListService =
+                config.isEnabled() && isValidHttpUrl(config.getServerUrl()) ? createStatusListService(session) : null;
         this.issuedCredentialIdResolver = new IssuedCredentialIdResolver(session);
     }
 
@@ -167,6 +173,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         String serverUrl = config.getServerUrl();
         if (!isValidHttpUrl(serverUrl)) {
             logger.errorf("Invalid status list server URL for realm %s: %s", realmId, serverUrl);
+            failIssuanceIfMandatory(config);
             return;
         }
 
@@ -184,12 +191,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         Status status = sendStatusAndStoreIndexMapping(listId, uri.toString(), userId, tokenId);
 
         if (status == null) {
-            if (config.isMandatory()) {
-                logger.error("Status list is mandatory and publication failed; failing issuance");
-                throw new RuntimeException("Status list publication failed and is mandatory");
-            }
-
-            logger.warn("Status list publication failed; proceeding without status claim");
+            failIssuanceIfMandatory(config);
             return;
         }
 
@@ -197,7 +199,20 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         claims.put(Constants.STATUS_CLAIM_KEY, status);
     }
 
+    private void failIssuanceIfMandatory(StatusListConfig config) {
+        if (config.isMandatory()) {
+            logger.error("Status list is mandatory and publication failed; failing issuance");
+            throw new RuntimeException("Status list publication failed and is mandatory");
+        }
+
+        logger.warn("Status list publication failed; proceeding without status claim");
+    }
+
     private boolean isValidHttpUrl(String url) {
+        if (url == null) {
+            return false;
+        }
+
         try {
             URI uri = new URI(url);
             String scheme = uri.getScheme();
@@ -305,6 +320,10 @@ public class StatusListProtocolMapper extends OID4VCMapper {
     }
 
     private void sendStatusToServer(long idx, String statusListId) throws IOException, StatusListException {
+        if (statusListService == null) {
+            throw new StatusListException("statusListService unexpected null. Cannot send status to server");
+        }
+
         // Prepare payload
         StatusListService.StatusListPayload payload = new StatusListService.StatusListPayload(
                 statusListId, List.of(new StatusListService.StatusListPayload.StatusEntry(idx, TokenStatus.VALID)));
