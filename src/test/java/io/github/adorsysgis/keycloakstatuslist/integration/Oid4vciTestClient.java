@@ -143,7 +143,7 @@ final class Oid4vciTestClient {
             throws IOException, InterruptedException {
         Map<String, String> headers = bearerToken == null ? Map.of() : bearer(bearerToken);
         return postFormResponse(
-                realmEndpoint("/protocol/openid-connect/revoke"),
+                realmEndpoint("/status-list/revoke"),
                 Map.of(
                         "mode", "issued_credential_revocation",
                         "credential_id", credentialId,
@@ -161,8 +161,7 @@ final class Oid4vciTestClient {
 
     HttpResponse<String> issuedCredentialStatusesResponse(String bearerToken, String username)
             throws IOException, InterruptedException {
-        KeycloakUriBuilder uri =
-                KeycloakUriBuilder.fromUri(realmEndpoint("/protocol/openid-connect/issued-credential-status"));
+        KeycloakUriBuilder uri = KeycloakUriBuilder.fromUri(realmEndpoint("/status-list/issued-credential-status"));
         if (username != null && !username.isBlank()) {
             uri.queryParam("target_user", username);
         }

@@ -17,26 +17,26 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import org.jboss.logging.Logger;
-import org.keycloak.events.EventBuilder;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.models.KeycloakTransactionManager;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.utils.KeycloakModelUtils;
 import org.keycloak.models.utils.PostMigrationEvent;
-import org.keycloak.protocol.oidc.OIDCLoginProtocolFactory;
+import org.keycloak.services.resource.RealmResourceProvider;
+import org.keycloak.services.resource.RealmResourceProviderFactory;
 
 /**
- * Overrides the OID4VC protocol factory to inject a custom revocation endpoint into the standard
- * /protocol/openid-connect/revoke path.
+ * Factory for {@link StatusListRealmResourceProvider}.
  *
- * This factory also manages the registration of realms as "Issuers" on the external status list server.
- * Registration is handled in the background to ensure Keycloak startup and OIDC request threads
- * remain responsive.
+ * <p>This factory also manages the registration of realms as "Issuers" on the external status list server.
+ * Registration is handled in the background to ensure Keycloak startup and request threads remain responsive.
  */
-public class CustomOIDCLoginProtocolFactory extends OIDCLoginProtocolFactory {
+public class StatusListRealmResourceProviderFactory implements RealmResourceProviderFactory {
 
-    private static final Logger logger = Logger.getLogger(CustomOIDCLoginProtocolFactory.class);
+    public static final String PROVIDER_ID = "status-list";
+
+    private static final Logger logger = Logger.getLogger(StatusListRealmResourceProviderFactory.class);
 
     private final Set<String> registeredRealms = ConcurrentHashMap.newKeySet();
     private final ConcurrentHashMap<String, Object> registrationLocks = new ConcurrentHashMap<>();
@@ -47,23 +47,10 @@ public class CustomOIDCLoginProtocolFactory extends OIDCLoginProtocolFactory {
 
     private volatile boolean initialized = false;
 
-    /**
-     * defines the option-order in the admin-ui
-     */
     @Override
-    public int order() {
-        return OIDCLoginProtocolFactory.UI_ORDER + 300;
-    }
-
-    @Override
-    public Object createProtocolEndpoint(KeycloakSession session, EventBuilder event) {
-        RealmModel realm = session.getContext().getRealm();
-
-        // Trigger background registration. Non-blocking to keep UI responsive.
-        triggerBackgroundRegistration(session.getKeycloakSessionFactory(), realm.getName());
-
+    public RealmResourceProvider create(KeycloakSession session) {
         CredentialRevocationService revocationService = new CredentialRevocationService(session);
-        return new CustomOIDCLoginProtocolService(session, event, revocationService);
+        return new StatusListRealmResourceProvider(session, revocationService, this);
     }
 
     /**
@@ -73,7 +60,7 @@ public class CustomOIDCLoginProtocolFactory extends OIDCLoginProtocolFactory {
      * @param factory the KeycloakSessionFactory used to create new background sessions
      * @param realmName the name of the realm to register
      */
-    private void triggerBackgroundRegistration(KeycloakSessionFactory factory, String realmName) {
+    public void triggerBackgroundRegistration(KeycloakSessionFactory factory, String realmName) {
         // Fast path for already registered realms
         if (registeredRealms.contains(realmName)) {
             return;
@@ -87,7 +74,7 @@ public class CustomOIDCLoginProtocolFactory extends OIDCLoginProtocolFactory {
 
     private void registerRealmInBackgroundSession(KeycloakSessionFactory factory, String realmName) {
         // Background tasks MUST create their own session because the original request session
-        // from the OIDC endpoint will be closed or detached by the time this thread executes.
+        // from the endpoint will be closed or detached by the time this thread executes.
         try (KeycloakSession bgSession = factory.create()) {
             KeycloakTransactionManager transactionManager = bgSession.getTransactionManager();
             transactionManager.begin();
@@ -121,9 +108,10 @@ public class CustomOIDCLoginProtocolFactory extends OIDCLoginProtocolFactory {
     }
 
     @Override
-    public void postInit(KeycloakSessionFactory factory) {
-        super.postInit(factory);
+    public void init(org.keycloak.Config.Scope config) {}
 
+    @Override
+    public void postInit(KeycloakSessionFactory factory) {
         factory.register(event -> {
             if (event instanceof PostMigrationEvent) {
                 logger.info("Startup/Migration detected. Initializing status list realms.");
@@ -280,8 +268,12 @@ public class CustomOIDCLoginProtocolFactory extends OIDCLoginProtocolFactory {
     }
 
     @Override
+    public String getId() {
+        return PROVIDER_ID;
+    }
+
+    @Override
     public void close() {
-        super.close();
         registeredRealms.clear();
         registrationLocks.clear();
         inFlight.clear();

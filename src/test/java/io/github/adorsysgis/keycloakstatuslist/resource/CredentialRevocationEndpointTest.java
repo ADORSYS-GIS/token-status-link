@@ -24,7 +24,6 @@ import java.time.Instant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.keycloak.events.EventBuilder;
 import org.keycloak.http.HttpRequest;
 import org.keycloak.models.KeycloakContext;
 import org.keycloak.models.KeycloakSession;
@@ -49,9 +48,6 @@ class CredentialRevocationEndpointTest {
     @Mock
     private RealmModel realm;
 
-    @Mock
-    private EventBuilder eventBuilder;
-
     private TestableCredentialRevocationEndpoint endpoint;
     private FakeCredentialRevocationService revocationService;
 
@@ -67,7 +63,7 @@ class CredentialRevocationEndpointTest {
                 .thenReturn("https://status.example.com");
 
         revocationService = new FakeCredentialRevocationService();
-        endpoint = new TestableCredentialRevocationEndpoint(session, eventBuilder, revocationService);
+        endpoint = new TestableCredentialRevocationEndpoint(session, revocationService);
     }
 
     @Test
@@ -232,8 +228,8 @@ class CredentialRevocationEndpointTest {
         private AuthResult authResult;
 
         private TestableCredentialRevocationEndpoint(
-                KeycloakSession session, EventBuilder event, CredentialRevocationService revocationService) {
-            super(session, event, revocationService);
+                KeycloakSession session, CredentialRevocationService revocationService) {
+            super(session, revocationService);
         }
 
         @Override

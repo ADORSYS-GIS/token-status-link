@@ -10,18 +10,19 @@ import io.github.adorsysgis.keycloakstatuslist.exception.StatusListException;
 import io.github.adorsysgis.keycloakstatuslist.model.CredentialRevocationRequest;
 import io.github.adorsysgis.keycloakstatuslist.model.CredentialRevocationResponse;
 import io.github.adorsysgis.keycloakstatuslist.service.CredentialRevocationService;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.MultivaluedMap;
 import jakarta.ws.rs.core.Response;
 import org.jboss.logging.Logger;
-import org.keycloak.events.EventBuilder;
 import org.keycloak.models.KeycloakSession;
-import org.keycloak.protocol.oidc.endpoints.TokenRevocationEndpoint;
 import org.keycloak.services.managers.AppAuthManager;
 import org.keycloak.services.managers.AuthenticationManager.AuthResult;
 import org.keycloak.utils.StringUtil;
 
-public class CredentialRevocationEndpoint extends TokenRevocationEndpoint {
+public class CredentialRevocationEndpoint {
 
     private static final Logger logger = Logger.getLogger(CredentialRevocationEndpoint.class);
 
@@ -32,25 +33,26 @@ public class CredentialRevocationEndpoint extends TokenRevocationEndpoint {
      * Constructor with dependency injection for better testability.
      *
      * @param session           Keycloak session
-     * @param event             EventBuilder for logging
      * @param revocationService Credential revocation service (can be injected for testing)
      */
-    public CredentialRevocationEndpoint(
-            KeycloakSession session, EventBuilder event, CredentialRevocationService revocationService) {
-        super(session, event);
+    public CredentialRevocationEndpoint(KeycloakSession session, CredentialRevocationService revocationService) {
         this.session = session;
         this.revocationService = revocationService;
     }
 
-    @Override
+    @POST
+    @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
+    @Produces(MediaType.APPLICATION_JSON)
     public Response revoke() {
         MultivaluedMap<String, String> form =
                 session.getContext().getHttpRequest().getDecodedFormParameters();
         String revocationMode = form.getFirst(REVOCATION_MODE_KEY);
 
         if (!ISSUED_CREDENTIAL_REVOCATION_MODE.equals(revocationMode)) {
-            logger.debugf("Not in credential revocation mode. Falling back to standard revocation logic.");
-            return super.revoke();
+            logger.debugf("Not in credential revocation mode. Rejecting request.");
+            return createErrorResponse(
+                    Response.Status.BAD_REQUEST,
+                    "Only mode " + ISSUED_CREDENTIAL_REVOCATION_MODE + " is supported on this endpoint");
         }
 
         if (!isServiceConfigured()) {
@@ -61,8 +63,6 @@ public class CredentialRevocationEndpoint extends TokenRevocationEndpoint {
 
         if (!isServiceEnabled()) {
             logger.debug("Will fail because credential revocation service is disabled");
-            // In a RealmResourceProvider, we don't have a super.revoke().
-            // We should return an error or handle it differently.
             return createErrorResponse(
                     Response.Status.INTERNAL_SERVER_ERROR, "Credential revocation service is disabled");
         }
