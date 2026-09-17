@@ -34,18 +34,17 @@ public class StatusListRealmResourceProvider implements RealmResourceProvider {
 
     @Override
     public Object getResource() {
+        triggerBackgroundRegistration();
         return this;
     }
 
     @Path("revoke")
-    public Object revoke() {
-        triggerBackgroundRegistration();
+    public CredentialRevocationEndpoint revoke() {
         return new CredentialRevocationEndpoint(session, revocationService);
     }
 
     @Path("issued-credential-status")
-    public Object issuedCredentialStatus() {
-        triggerBackgroundRegistration();
+    public IssuedCredentialStatusEndpoint issuedCredentialStatus() {
         return new IssuedCredentialStatusEndpoint(session, revocationService);
     }
 

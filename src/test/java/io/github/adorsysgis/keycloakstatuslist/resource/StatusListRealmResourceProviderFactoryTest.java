@@ -192,7 +192,7 @@ class StatusListRealmResourceProviderFactoryTest {
     void testLazyRegistrationInResourceAccess() {
         // Ensure not registered initially
         StatusListRealmResourceProvider provider = (StatusListRealmResourceProvider) factory.create(session);
-        provider.revoke();
+        provider.getResource();
 
         StatusListService lastMock = mockedStatusListServiceConstruction
                 .constructed()
@@ -211,7 +211,7 @@ class StatusListRealmResourceProviderFactoryTest {
 
         assertDoesNotThrow(() -> {
             StatusListRealmResourceProvider provider = (StatusListRealmResourceProvider) factory.create(session);
-            provider.revoke();
+            provider.getResource();
         });
 
         verify(transactionManager).rollback();
