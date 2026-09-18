@@ -25,6 +25,8 @@ public class StatusListConfig {
             "status-list-circuit-breaker-failure-threshold";
     public static final String STATUS_LIST_MANDATORY = "status-list-mandatory";
     public static final String STATUS_LIST_MAX_ENTRIES = "status-list-max-entries";
+    public static final String STATUS_LIST_MAX_CREDENTIALS_PER_USER = "status-list-max-credentials-per-user";
+    public static final String STATUS_LIST_OVERFLOW_POLICY = "status-list-overflow-policy";
     public static final String STATUS_LIST_TLS_TRUST_ALL = "status-list-tls-trust-all";
     public static final String STATUS_LIST_TLS_CA_CERT_PATH = "status-list-tls-ca-cert-path";
 
@@ -32,6 +34,7 @@ public class StatusListConfig {
     public static final boolean DEFAULT_ENABLED = false;
     public static final boolean DEFAULT_MANDATORY = false;
     public static final int DEFAULT_MAX_ENTRIES = 10000;
+    public static final String DEFAULT_OVERFLOW_POLICY = "REJECT";
     public static final boolean DEFAULT_TLS_TRUST_ALL = false;
 
     // Default values for issuance path (runtime)
@@ -179,6 +182,82 @@ public class StatusListConfig {
      */
     public int getCircuitBreakerCooldownSeconds() {
         return DEFAULT_COOLDOWN_SECONDS;
+    }
+
+    /**
+     * Gets the optional realm-wide maximum number of non-revoked credentials per holder and
+     * credential type. Mapper / client-scope config takes precedence when present. Absent or
+     * {@code 0} means unlimited. Invalid or negative values fail closed (see
+     * {@link #parseMaxCredentialsPerUser(String)}).
+     *
+     * @return the maximum number of credentials, or {@code 0} when unlimited
+     */
+    public int getMaxCredentialsPerUser() {
+        return parseMaxCredentialsPerUser(realm.getAttribute(STATUS_LIST_MAX_CREDENTIALS_PER_USER));
+    }
+
+    /**
+     * Parses a max-credentials-per-user setting. Blank means unlimited ({@code 0}). Non-numeric or
+     * negative values are rejected so misconfiguration cannot silently disable the quota.
+     *
+     * @param value the configured value
+     * @return a non-negative maximum, or {@code 0} when unlimited
+     * @throws IllegalArgumentException if the value is non-numeric or negative
+     */
+    public static int parseMaxCredentialsPerUser(String value) {
+        if (value == null || value.isBlank()) {
+            return 0;
+        }
+
+        final int parsed;
+        try {
+            parsed = Integer.parseInt(value.trim());
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(
+                    "Invalid status-list-max-credentials-per-user value '" + value
+                            + "': must be a non-negative integer",
+                    e);
+        }
+
+        if (parsed < 0) {
+            throw new IllegalArgumentException("Invalid status-list-max-credentials-per-user value '" + value
+                    + "': must be a non-negative integer");
+        }
+
+        return parsed;
+    }
+
+    /**
+     * Gets the optional realm-wide overflow policy used when the per-user credential limit is reached.
+     * Mapper / client-scope config takes precedence when present. Defaults to {@code REJECT}.
+     *
+     * @return {@code REJECT} or {@code REVOKE_OLDEST}
+     */
+    public String getOverflowPolicy() {
+        return parseOverflowPolicy(realm.getAttribute(STATUS_LIST_OVERFLOW_POLICY));
+    }
+
+    /**
+     * Parses an overflow-policy setting. Blank or unknown values default to {@code REJECT}.
+     *
+     * @param value the configured value
+     * @return {@code REJECT} or {@code REVOKE_OLDEST}
+     */
+    public static String parseOverflowPolicy(String value) {
+        if (value == null || value.isBlank()) {
+            return DEFAULT_OVERFLOW_POLICY;
+        }
+
+        String normalized = value.trim().toUpperCase();
+        if ("REVOKE_OLDEST".equals(normalized)) {
+            return "REVOKE_OLDEST";
+        }
+        if ("REJECT".equals(normalized)) {
+            return "REJECT";
+        }
+
+        logger.warnf("Invalid overflow policy '%s'. Using default: %s", value, DEFAULT_OVERFLOW_POLICY);
+        return DEFAULT_OVERFLOW_POLICY;
     }
 
     /**

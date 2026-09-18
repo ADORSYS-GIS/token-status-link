@@ -5,8 +5,21 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import io.github.adorsysgis.keycloakstatuslist.config.StatusListConfig;
+import io.github.adorsysgis.keycloakstatuslist.exception.CredentialIssuanceQuotaException;
+import io.github.adorsysgis.keycloakstatuslist.model.IssuedCredentialStatusResponse;
 import io.github.adorsysgis.keycloakstatuslist.model.TokenStatus;
+import io.github.adorsysgis.keycloakstatuslist.service.CredentialIssuanceQuotaService;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
+import org.keycloak.representations.idm.RealmRepresentation;
 
 class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
 
@@ -112,6 +125,201 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
         assertStatusListValue(credential, TokenStatus.VALID.getCode());
     }
 
+    @Test
+    void issuanceIsRejectedWhenHolderReachesConfiguredMaxForCredentialType() throws Exception {
+        setIssuanceQuota("1", null);
+        try {
+            TestUser holder = credentialHolder("quota-holder");
+            TestUser otherHolder = credentialHolder("quota-other");
+
+            IssuedCredentialFixture first = oid4vci.issueCredential(holder.username(), holder.accessToken());
+            assertCredentialStatus(holder.accessToken(), first.id(), TokenStatus.VALID.name());
+            assertLimit(
+                    holder.accessToken(),
+                    CREDENTIAL_CONFIGURATION_ID,
+                    1,
+                    1,
+                    0,
+                    IssuedCredentialStatusResponse.OVERFLOW_POLICY_REJECT);
+
+            var rejected = oid4vci.requestIssuedCredential(holder.username(), holder.accessToken());
+            assertQuotaRejection(rejected);
+
+            IssuedCredentialFixture otherCredential =
+                    oid4vci.issueCredential(otherHolder.username(), otherHolder.accessToken());
+            assertCredentialStatus(otherHolder.accessToken(), otherCredential.id(), TokenStatus.VALID.name());
+
+            var revokeResponse = oid4vci.revokeCredential(holder.accessToken(), first.id(), "free quota slot");
+            assertEquals(200, revokeResponse.statusCode());
+            assertLimit(
+                    holder.accessToken(),
+                    CREDENTIAL_CONFIGURATION_ID,
+                    1,
+                    0,
+                    1,
+                    IssuedCredentialStatusResponse.OVERFLOW_POLICY_REJECT);
+
+            IssuedCredentialFixture reissued = oid4vci.issueCredential(holder.username(), holder.accessToken());
+            assertCredentialStatus(holder.accessToken(), reissued.id(), TokenStatus.VALID.name());
+            assertLimit(
+                    holder.accessToken(),
+                    CREDENTIAL_CONFIGURATION_ID,
+                    1,
+                    1,
+                    0,
+                    IssuedCredentialStatusResponse.OVERFLOW_POLICY_REJECT);
+        } finally {
+            setIssuanceQuota(null, null);
+        }
+    }
+
+    @Test
+    void issuanceRevokesOldestWhenOverflowPolicyIsRevokeOldest() throws Exception {
+        setIssuanceQuota("1", IssuedCredentialStatusResponse.OVERFLOW_POLICY_REVOKE_OLDEST);
+        try {
+            TestUser holder = credentialHolder("quota-revoke-oldest");
+            TestUser otherHolder = credentialHolder("quota-revoke-other");
+
+            IssuedCredentialFixture first = oid4vci.issueCredential(holder.username(), holder.accessToken());
+            assertCredentialStatus(holder.accessToken(), first.id(), TokenStatus.VALID.name());
+            assertStatusListValue(first, TokenStatus.VALID.getCode());
+            assertLimit(
+                    holder.accessToken(),
+                    CREDENTIAL_CONFIGURATION_ID,
+                    1,
+                    1,
+                    0,
+                    IssuedCredentialStatusResponse.OVERFLOW_POLICY_REVOKE_OLDEST);
+
+            IssuedCredentialFixture second = oid4vci.issueCredential(holder.username(), holder.accessToken());
+            assertCredentialStatus(holder.accessToken(), first.id(), TokenStatus.INVALID.name());
+            assertCredentialStatus(holder.accessToken(), second.id(), TokenStatus.VALID.name());
+            assertStatusListValue(first, TokenStatus.INVALID.getCode());
+            assertStatusListValue(second, TokenStatus.VALID.getCode());
+            assertLimit(
+                    holder.accessToken(),
+                    CREDENTIAL_CONFIGURATION_ID,
+                    1,
+                    1,
+                    0,
+                    IssuedCredentialStatusResponse.OVERFLOW_POLICY_REVOKE_OLDEST);
+
+            IssuedCredentialFixture otherCredential =
+                    oid4vci.issueCredential(otherHolder.username(), otherHolder.accessToken());
+            assertCredentialStatus(otherHolder.accessToken(), otherCredential.id(), TokenStatus.VALID.name());
+            assertStatusListValue(otherCredential, TokenStatus.VALID.getCode());
+        } finally {
+            setIssuanceQuota(null, null);
+        }
+    }
+
+    @Test
+    void concurrentIssuanceRespectsConfiguredMaxOfOne() throws Exception {
+        setIssuanceQuota("1", null);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            TestUser holder = credentialHolder("quota-race");
+            CountDownLatch start = new CountDownLatch(1);
+
+            Callable<Oid4vciTestClient.CredentialIssuanceAttempt> attempt = () -> {
+                assertTrue(start.await(30, TimeUnit.SECONDS), "workers should start together");
+                return oid4vci.requestIssuedCredential(holder.username(), holder.accessToken());
+            };
+
+            Future<Oid4vciTestClient.CredentialIssuanceAttempt> first = executor.submit(attempt);
+            Future<Oid4vciTestClient.CredentialIssuanceAttempt> second = executor.submit(attempt);
+            start.countDown();
+
+            List<Oid4vciTestClient.CredentialIssuanceAttempt> attempts = new ArrayList<>();
+            attempts.add(first.get(60, TimeUnit.SECONDS));
+            attempts.add(second.get(60, TimeUnit.SECONDS));
+
+            long successes = attempts.stream()
+                    .filter(a ->
+                            a.response().statusCode() >= 200 && a.response().statusCode() < 300)
+                    .count();
+            long conflicts = attempts.stream()
+                    .filter(a -> a.response().statusCode() == 409)
+                    .count();
+
+            assertEquals(1, successes, "exactly one concurrent issuance should succeed: " + attempts);
+            assertEquals(1, conflicts, "exactly one concurrent issuance should return 409: " + attempts);
+            attempts.stream()
+                    .filter(a -> a.response().statusCode() == 409)
+                    .forEach(KeycloakStatusListFlowIT::assertQuotaRejection);
+            assertLimit(
+                    holder.accessToken(),
+                    CREDENTIAL_CONFIGURATION_ID,
+                    1,
+                    1,
+                    0,
+                    IssuedCredentialStatusResponse.OVERFLOW_POLICY_REJECT);
+        } finally {
+            executor.shutdownNow();
+            setIssuanceQuota(null, null);
+        }
+    }
+
+    private static void assertQuotaRejection(Oid4vciTestClient.CredentialIssuanceAttempt attempt) {
+        assertEquals(
+                409,
+                attempt.response().statusCode(),
+                "quota rejection should be HTTP 409 Conflict, got HTTP "
+                        + attempt.response().statusCode() + ": "
+                        + attempt.response().body());
+        try {
+            var body = oid4vci.readJson(attempt.response());
+            assertEquals(
+                    CredentialIssuanceQuotaException.ERROR_LIMIT_REACHED,
+                    body.path("error").asText(),
+                    "quota rejection body: " + attempt.response().body());
+            assertEquals(
+                    CredentialIssuanceQuotaService.LIMIT_REACHED_MESSAGE,
+                    body.path("error_description").asText(),
+                    "quota rejection body: " + attempt.response().body());
+        } catch (Exception e) {
+            throw new AssertionError(
+                    "Failed to parse quota rejection body: "
+                            + attempt.response().body(),
+                    e);
+        }
+    }
+
+    private static void assertLimit(
+            String accessToken,
+            String credentialConfigurationId,
+            int max,
+            int activeCount,
+            int remaining,
+            String overflowPolicy)
+            throws Exception {
+        JsonNode limits = oid4vci.issuedCredentialStatuses(accessToken).path("limits");
+        for (int i = 0; i < limits.size(); i++) {
+            JsonNode limit = limits.get(i);
+            if (credentialConfigurationId.equals(
+                    limit.path("credentialConfigurationId").asText())) {
+                assertEquals(max, limit.path("max").asInt());
+                assertEquals(activeCount, limit.path("activeCount").asInt());
+                assertEquals(remaining, limit.path("remaining").asInt());
+                assertEquals(overflowPolicy, limit.path("overflowPolicy").asText());
+                return;
+            }
+        }
+        throw new AssertionError("Quota metadata not found for " + credentialConfigurationId + ": " + limits);
+    }
+
+    /**
+     * Uses the realm fallback instead of updating the OID4VC protocol mapper. Mutating that mapper
+     * through the admin API can drop the client scope from credential-configuration lookup and later
+     * issuances then fail with HTTP 409 Duplicate resource.
+     */
+    private static void setIssuanceQuota(String max, String overflowPolicy) {
+        RealmRepresentation realm = realm().toRepresentation();
+        putOrRemoveAttribute(realm, StatusListConfig.STATUS_LIST_MAX_CREDENTIALS_PER_USER, max);
+        putOrRemoveAttribute(realm, StatusListConfig.STATUS_LIST_OVERFLOW_POLICY, overflowPolicy);
+        realm().update(realm);
+    }
+
     private static boolean containsCredential(JsonNode statuses, String credentialId) {
         if (statuses == null || !statuses.isArray()) {
             return false;
@@ -131,5 +339,13 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
             }
         }
         throw new AssertionError("Credential not found: " + credentialId);
+    }
+
+    private static void putOrRemoveAttribute(RealmRepresentation realm, String key, String value) {
+        if (value == null) {
+            realm.getAttributes().remove(key);
+        } else {
+            realm.getAttributes().put(key, value);
+        }
     }
 }

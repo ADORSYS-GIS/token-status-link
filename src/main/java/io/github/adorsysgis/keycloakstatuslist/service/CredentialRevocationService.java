@@ -13,6 +13,7 @@ import io.github.adorsysgis.keycloakstatuslist.jpa.repository.StatusListReposito
 import io.github.adorsysgis.keycloakstatuslist.model.CredentialRevocationRequest;
 import io.github.adorsysgis.keycloakstatuslist.model.CredentialRevocationResponse;
 import io.github.adorsysgis.keycloakstatuslist.model.IssuedCredentialStatusResponse;
+import io.github.adorsysgis.keycloakstatuslist.model.IssuedCredentialStatusResponse.IssuedCredentialLimit;
 import io.github.adorsysgis.keycloakstatuslist.model.IssuedCredentialStatusResponse.IssuedCredentialStatus;
 import io.github.adorsysgis.keycloakstatuslist.model.TokenStatus;
 import java.time.Instant;
@@ -104,12 +105,7 @@ public class CredentialRevocationService {
 
         try {
             StatusListMappingEntity mapping = resolveMappingForRevocation(user, realm, credentialId);
-            StatusEntry statusEntry = new StatusEntry(mapping.getIdx(), TokenStatus.INVALID);
-            StatusListPayload revocationPayload =
-                    new StatusListPayload(mapping.getStatusListId(), List.of(statusEntry));
-            getStatusListService().updateStatusList(revocationPayload, requestId);
-            mapping.setTokenStatus(TokenStatus.INVALID);
-            statusListRepository.save(mapping);
+            revokeMapping(mapping, requestId);
 
             Instant revokedAt = Instant.now();
             logger.infof(
@@ -135,11 +131,36 @@ public class CredentialRevocationService {
     }
 
     /**
+     * Marks a status-list mapping INVALID on the status list server and in the local store.
+     * Used by holder-initiated revocation and by the {@code REVOKE_OLDEST} issuance overflow policy.
+     */
+    public void revokeMapping(StatusListMappingEntity mapping) throws StatusListException {
+        revokeMapping(mapping, UUID.randomUUID().toString());
+    }
+
+    private void revokeMapping(StatusListMappingEntity mapping, String requestId) throws StatusListException {
+        if (mapping == null) {
+            throw new IllegalArgumentException("Status list mapping is required");
+        }
+        if (statusListRepository == null) {
+            throw new StatusListException(
+                    "Status list mapping repository is not available", HttpStatus.SC_INTERNAL_SERVER_ERROR);
+        }
+
+        StatusEntry statusEntry = new StatusEntry(mapping.getIdx(), TokenStatus.INVALID);
+        StatusListPayload revocationPayload = new StatusListPayload(mapping.getStatusListId(), List.of(statusEntry));
+        getStatusListService().updateStatusList(revocationPayload, requestId);
+        mapping.setTokenStatus(TokenStatus.INVALID);
+        statusListRepository.save(mapping);
+    }
+
+    /**
      * Lists issued credentials with status from the plugin mapping table.
      *
      * <p>Callers receive their own credentials unless they hold the realm role
      * {@code credential-offer-create} and pass {@code targetUser}. Callers without that role receive
-     * {@code 403} if {@code target_user} is provided.
+     * {@code 403} if {@code target_user} is provided. {@code limits} describes the resolved holder's
+     * configured quotas; an unknown {@code targetUser} yields an empty response.
      */
     public IssuedCredentialStatusResponse getIssuedCredentialStatuses(AuthResult authResult, String targetUser)
             throws StatusListException {
@@ -147,8 +168,14 @@ public class CredentialRevocationService {
         RealmModel realm = session.getContext().getRealm();
 
         return resolveHolder(caller, realm, targetUser)
-                .map(holder -> new IssuedCredentialStatusResponse(listStatusesForHolder(realm, holder)))
+                .map(holder -> toStatusResponse(realm, holder))
                 .orElseGet(() -> new IssuedCredentialStatusResponse(List.of()));
+    }
+
+    private IssuedCredentialStatusResponse toStatusResponse(RealmModel realm, UserModel holder) {
+        List<IssuedCredentialLimit> limits =
+                new CredentialIssuanceQuotaService(statusListRepository).listLimits(realm, holder.getId());
+        return new IssuedCredentialStatusResponse(listStatusesForHolder(realm, holder), limits);
     }
 
     private Optional<UserModel> resolveHolder(UserModel caller, RealmModel realm, String targetUser)
