@@ -40,6 +40,10 @@ public class StatusListMappingEntity {
     @Column(name = "realm_id")
     private String realmId;
 
+    /** OID4VC credential configuration id; {@code null} on pre-migration rows. */
+    @Column(name = "credential_configuration_id")
+    private String credentialConfigurationId;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
     private MappingStatus status = MappingStatus.INIT;
@@ -50,8 +54,6 @@ public class StatusListMappingEntity {
 
     @Column(name = "created_timestamp", nullable = false, updatable = false)
     private final Long createdTimestamp = Time.currentTimeMillis();
-
-    // --- Getters and Setters ---
 
     public String getId() {
         return id;
@@ -101,6 +103,14 @@ public class StatusListMappingEntity {
         this.realmId = realmId;
     }
 
+    public String getCredentialConfigurationId() {
+        return credentialConfigurationId;
+    }
+
+    public void setCredentialConfigurationId(String credentialConfigurationId) {
+        this.credentialConfigurationId = credentialConfigurationId;
+    }
+
     public MappingStatus getStatus() {
         return status;
     }
@@ -124,31 +134,35 @@ public class StatusListMappingEntity {
 
     @Override
     public boolean equals(Object o) {
-        if (o == null || getClass() != o.getClass()) return false;
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
         StatusListMappingEntity that = (StatusListMappingEntity) o;
-        return Objects.equals(getId(), that.getId())
-                && Objects.equals(getIdx(), that.getIdx())
-                && Objects.equals(getStatusListId(), that.getStatusListId())
-                && Objects.equals(getUserId(), that.getUserId())
-                && Objects.equals(getTokenId(), that.getTokenId())
-                && Objects.equals(getRealmId(), that.getRealmId())
-                && getStatus() == that.getStatus()
-                && getTokenStatus() == that.getTokenStatus()
-                && Objects.equals(getCreatedTimestamp(), that.getCreatedTimestamp());
+        return Objects.equals(id, that.id)
+                && Objects.equals(idx, that.idx)
+                && Objects.equals(statusListId, that.statusListId)
+                && Objects.equals(userId, that.userId)
+                && Objects.equals(tokenId, that.tokenId)
+                && Objects.equals(realmId, that.realmId)
+                && Objects.equals(credentialConfigurationId, that.credentialConfigurationId)
+                && status == that.status
+                && tokenStatus == that.tokenStatus
+                && Objects.equals(createdTimestamp, that.createdTimestamp);
     }
 
     @Override
     public int hashCode() {
         return Objects.hash(
-                getId(),
-                getIdx(),
-                getStatusListId(),
-                getUserId(),
-                getTokenId(),
-                getRealmId(),
-                getStatus(),
-                getTokenStatus(),
-                getCreatedTimestamp());
+                id,
+                idx,
+                statusListId,
+                userId,
+                tokenId,
+                realmId,
+                credentialConfigurationId,
+                status,
+                tokenStatus,
+                createdTimestamp);
     }
 
     public enum MappingStatus {

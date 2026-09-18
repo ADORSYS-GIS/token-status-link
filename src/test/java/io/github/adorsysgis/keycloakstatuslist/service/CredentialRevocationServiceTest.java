@@ -86,6 +86,7 @@ class CredentialRevocationServiceTest {
         lenient()
                 .when(realm.getRole(OID4VCIConstants.CREDENTIAL_OFFER_CREATE.getName()))
                 .thenReturn(null);
+        lenient().when(realm.getClientScopesStream()).thenReturn(Stream.empty());
     }
 
     @Test
@@ -323,6 +324,7 @@ class CredentialRevocationServiceTest {
         assertEquals("alice", response.credentials().get(0).username());
         assertEquals("issued-2", response.credentials().get(1).credentialId());
         assertEquals("INVALID", response.credentials().get(1).status());
+        assertTrue(response.limits().isEmpty());
     }
 
     @Test
