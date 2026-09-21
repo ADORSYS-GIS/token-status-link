@@ -189,8 +189,8 @@ can continue to display it with a revoked status.
 ### List issued credentials and their status
 
 Returns issued credentials together with the status recorded in the plugin's status list mapping
-table, plus the display metadata the account API exposes (`credentialType`, `clientName`). The
-status is read locally and is not fetched from the status list server per request.
+table, plus display metadata (`credentialType`, `clientName`). The status is read locally and is
+not fetched from the status list server per request.
 
 Callers receive their own credentials. Users with the realm role `credential-offer-create` may pass
 `target_user` to list a single holder. Without that query, admins still receive only their own
@@ -234,7 +234,7 @@ The response wraps the entries in a `credentials` array:
 |--------------------------|--------|---------------------------------------------------------------------------------------------|
 | `credentialId`           | string | Keycloak-issued credential ID                                                               |
 | `verifiableCredentialId` | string | Verifiable credential identifier                                                            |
-| `credentialType`         | string | Credential configuration/type (client-scope name), same value as the account endpoint       |
+| `credentialType`         | string | Credential configuration/type (client-scope name)                                           |
 | `issuedAt`               | number | Issuance timestamp as recorded by Keycloak, in Unix epoch milliseconds                      |
 | `expiresAt`              | number | Expiration timestamp as recorded by Keycloak, in Unix epoch milliseconds; `null` if not set |
 | `clientId`               | string | Internal id of the client that requested the credential                                     |

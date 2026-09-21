@@ -292,7 +292,7 @@ public class CredentialRevocationService {
         }
 
         String name = client.getName();
-        return name == null || name.isEmpty() ? client.getClientId() : name;
+        return StringUtil.isBlank(name) ? client.getClientId() : name;
     }
 
     private String resolveTokenStatus(StatusListMappingEntity mapping) {
