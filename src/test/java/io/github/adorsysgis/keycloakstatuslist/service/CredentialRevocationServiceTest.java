@@ -2,6 +2,7 @@ package io.github.adorsysgis.keycloakstatuslist.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -10,6 +11,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -29,6 +31,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.keycloak.constants.OID4VCIConstants;
+import org.keycloak.models.ClientModel;
+import org.keycloak.models.ClientScopeModel;
 import org.keycloak.models.IssuedVerifiableCredentialModel;
 import org.keycloak.models.KeycloakContext;
 import org.keycloak.models.KeycloakSession;
@@ -36,6 +40,7 @@ import org.keycloak.models.RealmModel;
 import org.keycloak.models.RoleModel;
 import org.keycloak.models.UserModel;
 import org.keycloak.models.UserProvider;
+import org.keycloak.models.UserVerifiableCredentialModel;
 import org.keycloak.services.managers.AuthenticationManager.AuthResult;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
@@ -316,13 +321,79 @@ class CredentialRevocationServiceTest {
         IssuedCredentialStatusResponse response = service.getIssuedCredentialStatuses(authResult, null);
 
         assertEquals(2, response.credentials().size());
-        assertEquals("issued-1", response.credentials().get(0).credentialId());
-        assertEquals("PidCredential", response.credentials().get(0).verifiableCredentialId());
-        assertEquals("VALID", response.credentials().get(0).status());
-        assertEquals("user-1", response.credentials().get(0).userId());
-        assertEquals("alice", response.credentials().get(0).username());
+        IssuedCredentialStatusResponse.IssuedCredentialStatus active =
+                response.credentials().get(0);
+        assertEquals("issued-1", active.credentialId());
+        assertEquals("PidCredential", active.verifiableCredentialId());
+        assertEquals(123L, active.issuedAt());
+        assertEquals(456L, active.expiresAt());
+        assertEquals("wallet-client", active.clientId());
+        assertEquals("revision-1", active.revision());
+        assertEquals("VALID", active.status());
+        assertEquals("user-1", active.userId());
+        assertEquals("alice", active.username());
+        assertNull(active.credentialType());
+        assertNull(active.clientName());
         assertEquals("issued-2", response.credentials().get(1).credentialId());
         assertEquals("INVALID", response.credentials().get(1).status());
+    }
+
+    @Test
+    void getIssuedCredentialStatuses_includesAccountEndpointDisplayFields() throws Exception {
+        AuthResult authResult = new AuthResult(user, null, null, null);
+        IssuedVerifiableCredentialModel credential = issuedCredential("issued-1", "vc-1");
+        UserVerifiableCredentialModel verifiableCredential = mock(UserVerifiableCredentialModel.class);
+        ClientScopeModel clientScope = mock(ClientScopeModel.class);
+        ClientModel walletClient = mock(ClientModel.class);
+
+        when(user.getId()).thenReturn("user-1");
+        when(user.getUsername()).thenReturn("alice");
+        when(userProvider.getIssuedVerifiableCredentialsStreamByUser("user-1")).thenReturn(Stream.of(credential));
+        when(statusListRepository.findSuccessfulMappingsByTokenIds("realm-1", "user-1", List.of("issued-1")))
+                .thenReturn(Map.of());
+        when(userProvider.getVerifiableCredentialById("vc-1")).thenReturn(verifiableCredential);
+        when(verifiableCredential.getClientScopeId()).thenReturn("scope-1");
+        when(realm.getClientScopeById("scope-1")).thenReturn(clientScope);
+        when(clientScope.getName()).thenReturn("IdentityCredential");
+        when(realm.getClientById("wallet-client")).thenReturn(walletClient);
+        when(walletClient.getName()).thenReturn("Wallet App");
+
+        IssuedCredentialStatusResponse response = service.getIssuedCredentialStatuses(authResult, null);
+
+        IssuedCredentialStatusResponse.IssuedCredentialStatus status =
+                response.credentials().get(0);
+        assertEquals("issued-1", status.credentialId());
+        assertEquals("vc-1", status.verifiableCredentialId());
+        assertEquals("IdentityCredential", status.credentialType());
+        assertEquals(123L, status.issuedAt());
+        assertEquals(456L, status.expiresAt());
+        assertEquals("wallet-client", status.clientId());
+        assertEquals("Wallet App", status.clientName());
+        assertEquals("revision-1", status.revision());
+        assertEquals("UNKNOWN", status.status());
+        assertEquals("user-1", status.userId());
+        assertEquals("alice", status.username());
+    }
+
+    @Test
+    void getIssuedCredentialStatuses_fallsBackToPublicClientIdWhenClientHasNoName() throws Exception {
+        AuthResult authResult = new AuthResult(user, null, null, null);
+        IssuedVerifiableCredentialModel credential = issuedCredential("issued-1", "vc-1");
+        ClientModel walletClient = mock(ClientModel.class);
+
+        when(user.getId()).thenReturn("user-1");
+        when(user.getUsername()).thenReturn("alice");
+        when(userProvider.getIssuedVerifiableCredentialsStreamByUser("user-1")).thenReturn(Stream.of(credential));
+        when(statusListRepository.findSuccessfulMappingsByTokenIds("realm-1", "user-1", List.of("issued-1")))
+                .thenReturn(Map.of());
+        when(realm.getClientById("wallet-client")).thenReturn(walletClient);
+        when(walletClient.getName()).thenReturn("");
+        when(walletClient.getClientId()).thenReturn("wallet-app");
+
+        IssuedCredentialStatusResponse response = service.getIssuedCredentialStatuses(authResult, null);
+
+        assertEquals("wallet-app", response.credentials().get(0).clientName());
+        assertNull(response.credentials().get(0).credentialType());
     }
 
     @Test

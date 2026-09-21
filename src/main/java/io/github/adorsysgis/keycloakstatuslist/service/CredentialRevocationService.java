@@ -23,11 +23,14 @@ import java.util.UUID;
 import org.apache.hc.core5.http.HttpStatus;
 import org.jboss.logging.Logger;
 import org.keycloak.constants.OID4VCIConstants;
+import org.keycloak.models.ClientModel;
 import org.keycloak.models.IssuedVerifiableCredentialModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.RoleModel;
 import org.keycloak.models.UserModel;
+import org.keycloak.models.utils.ModelToRepresentation;
+import org.keycloak.representations.idm.oid4vc.IssuedVerifiableCredentialRepresentation;
 import org.keycloak.services.managers.AuthenticationManager.AuthResult;
 import org.keycloak.utils.StringUtil;
 
@@ -178,7 +181,8 @@ public class CredentialRevocationService {
                 statusListRepository.findSuccessfulMappingsByTokenIds(realm.getId(), userId, credentialIds);
 
         return issuedCredentials.stream()
-                .map(credential -> toIssuedCredentialStatus(credential, mappings.get(credential.getId()), holder))
+                .map(credential ->
+                        toIssuedCredentialStatus(credential, mappings.get(credential.getId()), holder, realm))
                 .toList();
     }
 
@@ -254,17 +258,41 @@ public class CredentialRevocationService {
     }
 
     private IssuedCredentialStatus toIssuedCredentialStatus(
-            IssuedVerifiableCredentialModel credential, StatusListMappingEntity mapping, UserModel holder) {
+            IssuedVerifiableCredentialModel credential,
+            StatusListMappingEntity mapping,
+            UserModel holder,
+            RealmModel realm) {
+        IssuedVerifiableCredentialRepresentation representation =
+                ModelToRepresentation.toRepresentation(credential, session, realm);
         return new IssuedCredentialStatus(
                 credential.getId(),
                 credential.getVerifiableCredentialId(),
-                credential.getIssuedAt(),
-                credential.getExpiresAt(),
-                credential.getClientId(),
-                credential.getRevision(),
+                representation.getCredentialType(),
+                representation.getIssuedAt(),
+                representation.getExpiresAt(),
+                representation.getClientId(),
+                resolveClientName(representation.getClientId(), realm),
+                representation.getRevision(),
                 resolveTokenStatus(mapping),
                 holder.getId(),
                 holder.getUsername());
+    }
+
+    /**
+     * Matches Keycloak's account issued-credential enrichment: client.name, else public client id.
+     */
+    private String resolveClientName(String clientUuid, RealmModel realm) {
+        if (clientUuid == null) {
+            return null;
+        }
+
+        ClientModel client = realm.getClientById(clientUuid);
+        if (client == null) {
+            return null;
+        }
+
+        String name = client.getName();
+        return name == null || name.isEmpty() ? client.getClientId() : name;
     }
 
     private String resolveTokenStatus(StatusListMappingEntity mapping) {

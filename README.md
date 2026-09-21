@@ -189,7 +189,8 @@ can continue to display it with a revoked status.
 ### List issued credentials and their status
 
 Returns issued credentials together with the status recorded in the plugin's status list mapping
-table. The status is read locally and is not fetched from the status list server per request.
+table, plus the display metadata the account API exposes (`credentialType`, `clientName`). The
+status is read locally and is not fetched from the status list server per request.
 
 Callers receive their own credentials. Users with the realm role `credential-offer-create` may pass
 `target_user` to list a single holder. Without that query, admins still receive only their own
@@ -202,7 +203,7 @@ Accept: application/json
 ```
 
 ```http
-GET /realms/{realm}/protocol/openid-connect/issued-credential-status?target_user=<holder-username>
+GET /realms/{realm}/status-list/issued-credential-status?target_user=<holder-username>
 Authorization: Bearer <user-access-token>
 Accept: application/json
 ```
@@ -215,9 +216,11 @@ The response wraps the entries in a `credentials` array:
     {
       "credentialId": "8f14e45f-ea8d-4c6b-9f2a-1b7c3d5e9a02",
       "verifiableCredentialId": "urn:uuid:2c8a1f7b-64d3-4a19-9f0e-7d5b3c1a8e46",
+      "credentialType": "IdentityCredential",
       "issuedAt": 1754216400000,
       "expiresAt": 1785752400000,
-      "clientId": "wallet-app",
+      "clientId": "c9f1a2b3-4d5e-6789-abcd-ef0123456789",
+      "clientName": "wallet-app",
       "revision": "1",
       "status": "VALID",
       "userId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
@@ -231,9 +234,11 @@ The response wraps the entries in a `credentials` array:
 |--------------------------|--------|---------------------------------------------------------------------------------------------|
 | `credentialId`           | string | Keycloak-issued credential ID                                                               |
 | `verifiableCredentialId` | string | Verifiable credential identifier                                                            |
+| `credentialType`         | string | Credential configuration/type (client-scope name), same value as the account endpoint       |
 | `issuedAt`               | number | Issuance timestamp as recorded by Keycloak, in Unix epoch milliseconds                      |
 | `expiresAt`              | number | Expiration timestamp as recorded by Keycloak, in Unix epoch milliseconds; `null` if not set |
-| `clientId`               | string | Client that requested the credential                                                        |
+| `clientId`               | string | Internal id of the client that requested the credential                                     |
+| `clientName`             | string | Display name of that client, falling back to its public client id                           |
 | `revision`               | string | Credential revision                                                                         |
 | `status`                 | string | `VALID`, `INVALID`, `SUSPENDED`, or `UNKNOWN` when no mapping exists                        |
 | `userId`                 | string | Keycloak user id of the credential holder                                                   |

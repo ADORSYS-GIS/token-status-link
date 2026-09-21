@@ -47,7 +47,17 @@ class IssuedCredentialStatusEndpointTest {
         AuthResult authResult = new AuthResult(user, null, null, client);
         endpoint.authResult = authResult;
         credentialRevocationService.response = new IssuedCredentialStatusResponse(List.of(new IssuedCredentialStatus(
-                "issued-1", "PidCredential", 123L, 456L, "wallet-client", "revision-1", "VALID", "user-1", "alice")));
+                "issued-1",
+                "PidCredential",
+                "IdentityCredential",
+                123L,
+                456L,
+                "wallet-client",
+                "Wallet App",
+                "revision-1",
+                "VALID",
+                "user-1",
+                "alice")));
 
         Response response = endpoint.getIssuedCredentialStatuses(null);
 
