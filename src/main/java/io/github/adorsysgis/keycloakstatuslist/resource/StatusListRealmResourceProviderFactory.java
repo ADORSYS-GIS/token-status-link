@@ -25,6 +25,8 @@ import org.keycloak.models.utils.KeycloakModelUtils;
 import org.keycloak.models.utils.PostMigrationEvent;
 import org.keycloak.services.resource.RealmResourceProvider;
 import org.keycloak.services.resource.RealmResourceProviderFactory;
+import org.keycloak.timer.ScheduledTask;
+import org.keycloak.timer.TimerProvider;
 
 /**
  * Factory for {@link StatusListRealmResourceProvider}.
@@ -44,6 +46,10 @@ public class StatusListRealmResourceProviderFactory implements RealmResourceProv
 
     private static final ExecutorService executor =
             Executors.newSingleThreadExecutor(r -> new Thread(r, "status-list-init"));
+
+    private static final String REGISTRATION_RECONCILIATION_TASK_NAME = "status-list-realm-registration-reconciliation";
+    private static final long REGISTRATION_RECONCILIATION_INITIAL_DELAY_MS = 1_000L;
+    private static final long REGISTRATION_RECONCILIATION_INTERVAL_MS = 30_000L;
 
     private volatile boolean initialized = false;
 
@@ -133,6 +139,7 @@ public class StatusListRealmResourceProviderFactory implements RealmResourceProv
             logger.info("Checking existing realms for status list registration");
             try {
                 scheduleExistingRealmRegistrations(factory);
+                scheduleRegistrationReconciliation(factory);
                 initialized = true;
                 logger.info("Successfully scheduled registration checks for all existing realms.");
             } catch (Exception e) {
@@ -147,8 +154,46 @@ public class StatusListRealmResourceProviderFactory implements RealmResourceProv
                 factory,
                 s -> s.realms().getRealmsStream().map(RealmModel::getName).toList());
 
+        scheduleRealmRegistrations(factory, realmNames);
+    }
+
+    private void scheduleExistingRealmRegistrations(KeycloakSession session) {
+        List<String> realmNames =
+                session.realms().getRealmsStream().map(RealmModel::getName).toList();
+        scheduleRealmRegistrations(session.getKeycloakSessionFactory(), realmNames);
+    }
+
+    private void scheduleRealmRegistrations(KeycloakSessionFactory factory, List<String> realmNames) {
         for (String realmName : realmNames) {
             triggerBackgroundRegistration(factory, realmName);
+        }
+    }
+
+    private void scheduleRegistrationReconciliation(KeycloakSessionFactory factory) {
+        try (KeycloakSession session = factory.create()) {
+            TimerProvider timerProvider = session.getProvider(TimerProvider.class);
+            if (timerProvider == null) {
+                logger.warn("Keycloak timer provider is unavailable; relying on lazy realm registration.");
+                return;
+            }
+
+            timerProvider.scheduleTask(
+                    new ScheduledTask() {
+                        @Override
+                        public void run(KeycloakSession taskSession) {
+                            scheduleExistingRealmRegistrations(taskSession);
+                        }
+
+                        @Override
+                        public String getTaskName() {
+                            return REGISTRATION_RECONCILIATION_TASK_NAME;
+                        }
+                    },
+                    REGISTRATION_RECONCILIATION_INITIAL_DELAY_MS,
+                    REGISTRATION_RECONCILIATION_INTERVAL_MS,
+                    REGISTRATION_RECONCILIATION_TASK_NAME);
+        } catch (Exception e) {
+            logger.error("Failed to schedule status list realm registration reconciliation", e);
         }
     }
 

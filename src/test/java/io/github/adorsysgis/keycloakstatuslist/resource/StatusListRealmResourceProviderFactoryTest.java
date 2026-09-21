@@ -47,6 +47,8 @@ import org.keycloak.models.RealmModel;
 import org.keycloak.models.RealmProvider;
 import org.keycloak.models.utils.PostMigrationEvent;
 import org.keycloak.provider.ProviderEventListener;
+import org.keycloak.timer.ScheduledTask;
+import org.keycloak.timer.TimerProvider;
 import org.mockito.ArgumentCaptor;
 import org.mockito.MockedConstruction;
 import org.mockito.MockedStatic;
@@ -298,6 +300,33 @@ class StatusListRealmResourceProviderFactoryTest {
         }
 
         assertDoesNotThrow(this::triggerInitialization);
+    }
+
+    @Test
+    void testRegistrationReconciliationRetriesRealmConfiguredAfterStartup() throws Exception {
+        setupSuccessfulHealthCheck();
+
+        TimerProvider timerProvider = mock(TimerProvider.class);
+        when(session.getProvider(TimerProvider.class)).thenReturn(timerProvider);
+        when(realm.getAttribute("status-list-enabled")).thenReturn("false", "true");
+
+        triggerInitialization();
+
+        ArgumentCaptor<ScheduledTask> taskCaptor = ArgumentCaptor.forClass(ScheduledTask.class);
+        verify(timerProvider)
+                .scheduleTask(
+                        taskCaptor.capture(),
+                        eq(1_000L),
+                        eq(30_000L),
+                        eq("status-list-realm-registration-reconciliation"));
+
+        assertEquals(0, mockedStatusListServiceConstruction.constructed().size());
+
+        taskCaptor.getValue().run(session);
+
+        StatusListService mockService =
+                mockedStatusListServiceConstruction.constructed().get(0);
+        verify(mockService).registerIssuer(argThat(arg -> arg.endsWith("::test-realm")), any());
     }
 
     private void triggerInitialization() {
