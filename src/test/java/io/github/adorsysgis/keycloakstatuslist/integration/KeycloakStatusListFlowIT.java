@@ -82,7 +82,9 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
                 .path("credentials");
         assertTrue(containsCredential(filtered, ownerCredential.id()));
         assertFalse(containsCredential(filtered, otherCredential.id()));
-        assertEquals(owner.username(), usernameFor(filtered, ownerCredential.id()));
+        assertEquals(owner.username(), fieldFor(filtered, ownerCredential.id(), "username"));
+        assertEquals(CREDENTIAL_CONFIGURATION_ID, fieldFor(filtered, ownerCredential.id(), "credentialType"));
+        assertEquals(CLIENT_ID, fieldFor(filtered, ownerCredential.id(), "clientName"));
 
         var otherStatuses =
                 oid4vci.issuedCredentialStatuses(other.accessToken()).path("credentials");
@@ -124,10 +126,10 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
         return false;
     }
 
-    private static String usernameFor(JsonNode statuses, String credentialId) {
+    private static String fieldFor(JsonNode statuses, String credentialId, String field) {
         for (JsonNode credential : statuses) {
             if (credentialId.equals(credential.path("credentialId").asText())) {
-                return credential.path("username").asText();
+                return credential.path(field).asText();
             }
         }
         throw new AssertionError("Credential not found: " + credentialId);
