@@ -44,12 +44,14 @@ class IssuedCredentialIdResolverTest extends MockKeycloakTest {
     }
 
     @Test
-    void shouldResolveCredentialConfigurationIdFromBearerAccessToken() {
+    void shouldResolveIssuedCredentialIdAndConfigurationIdFromOneParse() {
         when(headers.getHeaderString(HttpHeaders.AUTHORIZATION))
                 .thenReturn("Bearer " + accessTokenWithIssuedCredentialId("issued-credential-1"));
 
-        assertEquals(
-                "PidCredential", resolver.resolveCredentialConfigurationId().orElseThrow());
+        var authorization = resolver.resolveOpenidCredential();
+
+        assertEquals("issued-credential-1", authorization.issuedCredentialId().orElseThrow());
+        assertEquals("PidCredential", authorization.credentialConfigurationId().orElseThrow());
     }
 
     @Test
@@ -77,6 +79,14 @@ class IssuedCredentialIdResolverTest extends MockKeycloakTest {
         when(headers.getHeaderString(HttpHeaders.AUTHORIZATION)).thenReturn("Bearer " + accessTokenWithoutIssuedId());
 
         assertTrue(resolver.resolve().isEmpty());
+    }
+
+    @Test
+    void shouldResolveCredentialConfigurationIdFromCustomDataWhenIssuedIdIsMissing() {
+        when(headers.getHeaderString(HttpHeaders.AUTHORIZATION)).thenReturn("Bearer " + accessTokenWithoutIssuedId());
+
+        assertEquals(
+                "PidCredential", resolver.resolveCredentialConfigurationId().orElseThrow());
     }
 
     private String accessTokenWithIssuedCredentialId(String issuedCredentialId) {

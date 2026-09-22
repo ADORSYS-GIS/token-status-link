@@ -122,7 +122,11 @@ corresponding to a specific credential's configuration. Below is a sample such c
 }
 ```
 
-`status-list-max-credentials-per-user` is optional. Leave it out or blank to inherit the realm fallback. Set it to `0` to leave this credential type unlimited even when the realm has a fallback. When a positive maximum is set, the plugin rejects a new issuance of that type once the holder already has that many successful mappings whose status is not `INVALID`. `SUSPENDED` credentials still occupy a slot. Revoking a credential frees a slot. If a limit is configured and the holder or credential type cannot be resolved, issuance fails closed with HTTP `400` and `error=credential_limit_unresolved`. When the limit is reached, the credential endpoint responds with HTTP `409 Conflict`, `error=credential_limit_reached`, and an `error_description` explaining the rejection. Non-numeric or negative values are rejected rather than treated as unlimited. The quota check and status-list index reservation share one database transaction under a per-holder/type lock so concurrent issuance cannot exceed the configured maximum.
+`status-list-max-credentials-per-user` is optional. Omit or blank to inherit the realm fallback; `0` leaves this type unlimited.
+
+A positive value caps live holdings of that type: `SUCCESS`/`FAILURE` mappings that still have an issued credential and are not `INVALID`. `FAILURE` counts because issuance continues when status-list is not mandatory. `SUSPENDED` still occupies a slot; revoke frees one. `limits.activeCount` is that same count. In-flight `INIT` rows count only during reservation (not in `activeCount`) so concurrent requests cannot overshoot.
+
+Missing holder or type with a limit set fails closed (`400`, `credential_limit_unresolved`). Limit reached is `409`, `credential_limit_reached`, with an `error_description`. Non-numeric or negative values are rejected. Quota check, list-id choice, and index reservation share one transaction that locks the latest realm mapping, or the Keycloak realm row when none exists yet.
 
 **Upgrade note (legacy mappings):** The Liquibase change that adds `credential_configuration_id` leaves existing `status_list_mapping` rows as `NULL`. Those pre-migration credentials are intentionally excluded from quota counts and from `limits` metadata, because their credential type cannot be recovered reliably. Quotas therefore apply only to credentials issued after the migration (when the mapper persists `credential_configuration_id`). Enabling a limit after upgrade does not count older active credentials toward that limit; revoke them manually first if you need a hard cap that includes holdings issued before the upgrade.
 
@@ -237,7 +241,7 @@ for credential types that have a configured maximum:
   ],
   "limits": [
     {
-      "credentialConfigurationId": "DatevCompanyCredential",
+      "credentialConfigurationId": "IdentityCredential",
       "max": 3,
       "activeCount": 3,
       "remaining": 0,
@@ -267,7 +271,7 @@ Each `limits` entry describes the holder's quota for one credential type:
 | -------------------------- | ------ | -------------------------------------------------------------------- |
 | `credentialConfigurationId`| string | Credential type the cap applies to                                   |
 | `max`                      | number | Configured maximum of non-revoked credentials of this type           |
-| `activeCount`              | number | Successful mappings whose status is not `INVALID`                    |
+| `activeCount`              | number | `SUCCESS`/`FAILURE` mappings that still have an issued credential (not `INVALID`). In-flight `INIT` rows are not included |
 | `remaining`                | number | Slots left before issuance of this type is rejected                  |
 | `overflowPolicy`           | string | Currently always `REJECT`                                            |
 

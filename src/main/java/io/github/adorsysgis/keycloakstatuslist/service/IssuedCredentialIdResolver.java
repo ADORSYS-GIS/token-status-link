@@ -27,20 +27,26 @@ public class IssuedCredentialIdResolver {
         this.session = session;
     }
 
-    public Optional<String> resolve() {
+    public record OpenidCredentialAuthorization(
+            Optional<String> issuedCredentialId, Optional<String> credentialConfigurationId) {
+        static OpenidCredentialAuthorization empty() {
+            return new OpenidCredentialAuthorization(Optional.empty(), Optional.empty());
+        }
+    }
+
+    public OpenidCredentialAuthorization resolveOpenidCredential() {
         return openidCredentialDetails()
-                .map(detail -> detail.getCustomData().get(OID4VCAuthorizationDetail.ISSUED_CREDENTIAL_ID))
-                .filter(String.class::isInstance)
-                .map(String.class::cast)
-                .filter(StringUtil::isNotBlank)
-                .findFirst();
+                .findFirst()
+                .map(this::toAuthorization)
+                .orElseGet(OpenidCredentialAuthorization::empty);
+    }
+
+    public Optional<String> resolve() {
+        return resolveOpenidCredential().issuedCredentialId();
     }
 
     public Optional<String> resolveCredentialConfigurationId() {
-        return openidCredentialDetails()
-                .map(this::readCredentialConfigurationId)
-                .filter(StringUtil::isNotBlank)
-                .findFirst();
+        return resolveOpenidCredential().credentialConfigurationId();
     }
 
     private Optional<String> getAccessTokenFromAuthorizationHeader() {
@@ -82,26 +88,30 @@ public class IssuedCredentialIdResolver {
     }
 
     private Stream<AuthorizationDetailsJSONRepresentation> openidCredentialDetails() {
-        return getAccessTokenFromAuthorizationHeader()
-                .flatMap(this::readAccessToken)
-                .map(AccessToken::getAuthorizationDetails)
-                .stream()
+        Optional<String> encodedToken = getAccessTokenFromAuthorizationHeader();
+        if (encodedToken.isEmpty()) {
+            return Stream.empty();
+        }
+
+        return readAccessToken(encodedToken.get()).map(AccessToken::getAuthorizationDetails).stream()
                 .flatMap(details -> details == null ? Stream.empty() : details.stream())
                 .filter(detail -> OPENID_CREDENTIAL.equals(detail.getType()));
     }
 
-    private String readCredentialConfigurationId(AuthorizationDetailsJSONRepresentation detail) {
-        Object custom =
-                detail.getCustomData() == null ? null : detail.getCustomData().get(CREDENTIAL_CONFIGURATION_ID);
-        if (custom instanceof String value) {
-            return value;
-        }
+    private OpenidCredentialAuthorization toAuthorization(AuthorizationDetailsJSONRepresentation detail) {
+        return new OpenidCredentialAuthorization(
+                customString(detail, OID4VCAuthorizationDetail.ISSUED_CREDENTIAL_ID),
+                customString(detail, CREDENTIAL_CONFIGURATION_ID));
+    }
 
-        try {
-            return detail.asSubtype(OID4VCAuthorizationDetail.class).getCredentialConfigurationId();
-        } catch (RuntimeException e) {
-            logger.debug("Could not read credential_configuration_id from authorization details", e);
-            return null;
+    private static Optional<String> customString(AuthorizationDetailsJSONRepresentation detail, String key) {
+        if (detail.getCustomData() == null) {
+            return Optional.empty();
         }
+        Object value = detail.getCustomData().get(key);
+        if (value instanceof String s && StringUtil.isNotBlank(s)) {
+            return Optional.of(s);
+        }
+        return Optional.empty();
     }
 }

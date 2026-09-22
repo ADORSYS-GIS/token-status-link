@@ -157,9 +157,23 @@ public class CredentialRevocationService {
     }
 
     private IssuedCredentialStatusResponse toStatusResponse(RealmModel realm, UserModel holder) {
-        List<IssuedCredentialLimit> limits =
-                new CredentialIssuanceQuotaService(statusListRepository).listLimits(realm, holder.getId());
-        return new IssuedCredentialStatusResponse(listStatusesForHolder(realm, holder), limits);
+        String userId = holder.getId();
+        List<IssuedVerifiableCredentialModel> issuedCredentials = session.users()
+                .getIssuedVerifiableCredentialsStreamByUser(userId)
+                .toList();
+        List<String> credentialIds = issuedCredentials.stream()
+                .map(IssuedVerifiableCredentialModel::getId)
+                .filter(StringUtil::isNotBlank)
+                .toList();
+        List<IssuedCredentialLimit> limits = new CredentialIssuanceQuotaService(session, statusListRepository)
+                .listLimits(realm, userId, credentialIds);
+        Map<String, StatusListMappingEntity> mappings =
+                statusListRepository.findSuccessfulMappingsByTokenIds(realm.getId(), userId, credentialIds);
+        List<IssuedCredentialStatus> credentials = issuedCredentials.stream()
+                .map(credential ->
+                        toIssuedCredentialStatus(credential, mappings.get(credential.getId()), holder, realm))
+                .toList();
+        return new IssuedCredentialStatusResponse(credentials, limits);
     }
 
     private Optional<UserModel> resolveHolder(UserModel caller, RealmModel realm, String targetUser)
@@ -173,25 +187,6 @@ public class CredentialRevocationService {
         }
 
         return Optional.ofNullable(session.users().getUserByUsername(realm, targetUser.trim()));
-    }
-
-    private List<IssuedCredentialStatus> listStatusesForHolder(RealmModel realm, UserModel holder) {
-        String userId = holder.getId();
-        List<IssuedVerifiableCredentialModel> issuedCredentials = session.users()
-                .getIssuedVerifiableCredentialsStreamByUser(userId)
-                .toList();
-
-        List<String> credentialIds = issuedCredentials.stream()
-                .map(IssuedVerifiableCredentialModel::getId)
-                .filter(StringUtil::isNotBlank)
-                .toList();
-        Map<String, StatusListMappingEntity> mappings =
-                statusListRepository.findSuccessfulMappingsByTokenIds(realm.getId(), userId, credentialIds);
-
-        return issuedCredentials.stream()
-                .map(credential ->
-                        toIssuedCredentialStatus(credential, mappings.get(credential.getId()), holder, realm))
-                .toList();
     }
 
     private UserModel getAuthenticatedUser(AuthResult authResult) {

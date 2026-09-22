@@ -412,7 +412,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         lenient()
                 .doReturn(1L)
                 .when(statusListRepository)
-                .countOccupyingMappings(any(), eq(TEST_REALM_ID), eq("holder-1"), eq("PidCredential"));
+                .countInFlightMappings(any(), eq(TEST_REALM_ID), eq("holder-1"), eq("PidCredential"));
 
         CredentialIssuanceQuotaException exception =
                 assertThrows(CredentialIssuanceQuotaException.class, () -> mapper.setClaim(claims, userSession));
@@ -477,7 +477,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         lenient()
                 .doReturn(1L)
                 .when(statusListRepository)
-                .countOccupyingMappings(any(), eq(TEST_REALM_ID), eq("holder-1"), eq("PidCredential"));
+                .countInFlightMappings(any(), eq(TEST_REALM_ID), eq("holder-1"), eq("PidCredential"));
 
         mapper.setClaim(claims, userSession);
 
@@ -513,19 +513,23 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         mapping.setStatusListId(TEST_LIST_ID);
         mapping.setIdx(maxIdx);
 
-        lenient().doReturn(mapping).when(statusListRepository).getLatestMapping(anyString());
+        lenient().doReturn(mapping).when(statusListRepository).lockLatestMapping(any(), anyString());
         lenient()
                 .doAnswer(invocation -> invocation.getArgument(0))
                 .when(statusListRepository)
                 .save(any());
         lenient()
+                .doReturn(List.of())
+                .when(statusListRepository)
+                .findNonRevokedMappings(any(), anyString(), any(), any());
+        lenient()
                 .doReturn(0L)
                 .when(statusListRepository)
-                .countOccupyingMappings(any(), anyString(), anyString(), anyString());
-        lenient().doNothing().when(statusListRepository).ensureQuotaLockExists(anyString(), anyString(), anyString());
-        lenient().doNothing().when(statusListRepository).acquireQuotaLock(any(), anyString(), anyString(), anyString());
+                .countInFlightMappings(any(), anyString(), anyString(), anyString());
         setPrivateField(
-                mapper, "credentialIssuanceQuotaService", new CredentialIssuanceQuotaService(statusListRepository));
+                mapper,
+                "credentialIssuanceQuotaService",
+                new CredentialIssuanceQuotaService(session, statusListRepository));
     }
 
     private void stubHolder(String userId) {

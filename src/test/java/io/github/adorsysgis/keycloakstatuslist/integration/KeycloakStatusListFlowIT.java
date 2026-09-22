@@ -7,13 +7,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.github.adorsysgis.keycloakstatuslist.config.StatusListConfig;
 import io.github.adorsysgis.keycloakstatuslist.exception.CredentialIssuanceQuotaException;
-import io.github.adorsysgis.keycloakstatuslist.model.IssuedCredentialStatusResponse;
 import io.github.adorsysgis.keycloakstatuslist.model.TokenStatus;
 import io.github.adorsysgis.keycloakstatuslist.service.CredentialIssuanceQuotaService;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
-import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -138,7 +137,7 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
             assertCredentialStatus(holder.accessToken(), first.id(), TokenStatus.VALID.name());
             assertLimit(holder.accessToken(), CREDENTIAL_CONFIGURATION_ID, 1, 1, 0);
 
-            var rejected = oid4vci.requestIssuedCredential(holder.username(), holder.accessToken());
+            var rejected = oid4vci.tryIssueCredential(holder.username(), holder.accessToken());
             assertQuotaRejection(rejected);
 
             IssuedCredentialFixture otherCredential =
@@ -163,16 +162,17 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
         ExecutorService executor = Executors.newFixedThreadPool(2);
         try {
             TestUser holder = credentialHolder("quota-race");
-            CountDownLatch start = new CountDownLatch(1);
+            // Start gate: both workers block until two parties arrive, then run together.
+            // The timeout fires only if a worker never reaches the barrier; it is not a sleep.
+            CyclicBarrier start = new CyclicBarrier(2);
 
             Callable<Oid4vciTestClient.CredentialIssuanceAttempt> attempt = () -> {
-                assertTrue(start.await(30, TimeUnit.SECONDS), "workers should start together");
-                return oid4vci.requestIssuedCredential(holder.username(), holder.accessToken());
+                start.await(5, TimeUnit.SECONDS);
+                return oid4vci.tryIssueCredential(holder.username(), holder.accessToken());
             };
 
             Future<Oid4vciTestClient.CredentialIssuanceAttempt> first = executor.submit(attempt);
             Future<Oid4vciTestClient.CredentialIssuanceAttempt> second = executor.submit(attempt);
-            start.countDown();
 
             List<Oid4vciTestClient.CredentialIssuanceAttempt> attempts = new ArrayList<>();
             attempts.add(first.get(60, TimeUnit.SECONDS));
@@ -227,19 +227,19 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
             String accessToken, String credentialConfigurationId, int max, int activeCount, int remaining)
             throws Exception {
         var limits = oid4vci.issuedCredentialStatuses(accessToken).path("limits");
-        for (var limit : limits) {
-            if (credentialConfigurationId.equals(
-                    limit.path("credentialConfigurationId").asText())) {
-                assertEquals(max, limit.path("max").asInt());
-                assertEquals(activeCount, limit.path("activeCount").asInt());
-                assertEquals(remaining, limit.path("remaining").asInt());
-                assertEquals(
-                        IssuedCredentialStatusResponse.OVERFLOW_POLICY_REJECT,
-                        limit.path("overflowPolicy").asText());
-                return;
-            }
-        }
-        throw new AssertionError("Quota metadata not found for " + credentialConfigurationId + ": " + limits);
+        assertTrue(limits.isArray(), "limits must be an array: " + limits);
+        assertEquals(1, limits.size(), "expected one limits entry: " + limits);
+
+        var limit = limits.get(0);
+        assertEquals(
+                credentialConfigurationId,
+                limit.path("credentialConfigurationId").asText());
+        assertEquals(max, limit.path("max").asInt());
+        assertEquals(activeCount, limit.path("activeCount").asInt());
+        assertEquals(remaining, limit.path("remaining").asInt());
+        assertEquals(
+                CredentialIssuanceQuotaService.OVERFLOW_POLICY_REJECT,
+                limit.path("overflowPolicy").asText());
     }
 
     /**

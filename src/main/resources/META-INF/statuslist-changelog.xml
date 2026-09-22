@@ -82,21 +82,4 @@
         </createIndex>
     </changeSet>
 
-    <changeSet id="create-status-list-quota-lock" author="adorsys">
-        <createTable tableName="status_list_quota_lock">
-            <column name="realm_id" type="varchar(255)">
-                <constraints nullable="false" />
-            </column>
-            <column name="user_id" type="varchar(255)">
-                <constraints nullable="false" />
-            </column>
-            <column name="credential_configuration_id" type="varchar(255)">
-                <constraints nullable="false" />
-            </column>
-        </createTable>
-        <addPrimaryKey tableName="status_list_quota_lock"
-                       columnNames="realm_id,user_id,credential_configuration_id"
-                       constraintName="pk_status_list_quota_lock" />
-    </changeSet>
-
 </databaseChangeLog>

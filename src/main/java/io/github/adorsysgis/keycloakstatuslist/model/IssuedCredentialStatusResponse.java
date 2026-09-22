@@ -5,8 +5,6 @@ import java.util.List;
 public record IssuedCredentialStatusResponse(
         List<IssuedCredentialStatus> credentials, List<IssuedCredentialLimit> limits) {
 
-    public static final String OVERFLOW_POLICY_REJECT = "REJECT";
-
     public IssuedCredentialStatusResponse {
         credentials = credentials == null ? List.of() : List.copyOf(credentials);
         limits = limits == null ? List.of() : List.copyOf(limits);

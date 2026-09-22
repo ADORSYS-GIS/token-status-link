@@ -3,8 +3,7 @@ package io.github.adorsysgis.keycloakstatuslist.exception;
 import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
-import java.util.LinkedHashMap;
-import java.util.Map;
+import org.keycloak.representations.idm.OAuth2ErrorRepresentation;
 
 /**
  * Client-facing failure when credential issuance quota rules block issuance.
@@ -40,12 +39,9 @@ public class CredentialIssuanceQuotaException extends WebApplicationException {
     }
 
     private static Response response(String error, String errorDescription, Response.Status status) {
-        Map<String, String> body = new LinkedHashMap<>();
-        body.put("error", error);
-        body.put("error_description", errorDescription);
         return Response.status(status)
                 .type(MediaType.APPLICATION_JSON_TYPE)
-                .entity(body)
+                .entity(new OAuth2ErrorRepresentation(error, errorDescription))
                 .build();
     }
 }

@@ -211,18 +211,19 @@ public class StatusListConfig {
         try {
             parsed = Integer.parseInt(value.trim());
         } catch (NumberFormatException e) {
-            throw new IllegalArgumentException(
-                    "Invalid status-list-max-credentials-per-user value '" + value
-                            + "': must be a non-negative integer",
-                    e);
+            throw new IllegalArgumentException(invalidMaxCredentialsPerUserMessage(value), e);
         }
 
         if (parsed < 0) {
-            throw new IllegalArgumentException("Invalid status-list-max-credentials-per-user value '" + value
-                    + "': must be a non-negative integer");
+            throw new IllegalArgumentException(invalidMaxCredentialsPerUserMessage(value));
         }
 
         return parsed;
+    }
+
+    private static String invalidMaxCredentialsPerUserMessage(String value) {
+        return "Invalid status-list-max-credentials-per-user value '" + value
+                + "': must be a non-negative integer. Remove the config or use 0 for no realm-wide limit";
     }
 
     /**

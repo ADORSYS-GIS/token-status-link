@@ -45,6 +45,7 @@ class StatusListConfigTest {
                 assertThrows(IllegalArgumentException.class, () -> StatusListConfig.parseMaxCredentialsPerUser("-1"));
 
         assertTrue(exception.getMessage().contains("non-negative"));
+        assertTrue(exception.getMessage().contains("Remove the config or use 0 for no realm-wide limit"));
     }
 
     @Test

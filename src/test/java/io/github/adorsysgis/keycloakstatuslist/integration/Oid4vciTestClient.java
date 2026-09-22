@@ -94,7 +94,7 @@ final class Oid4vciTestClient {
     }
 
     IssuedCredentialFixture issueCredential(String username, String userAccessToken) throws Exception {
-        CredentialIssuanceAttempt attempt = requestIssuedCredential(username, userAccessToken);
+        CredentialIssuanceAttempt attempt = tryIssueCredential(username, userAccessToken);
         assertTrue(
                 attempt.response().statusCode() >= 200 && attempt.response().statusCode() < 300,
                 "credential endpoint must succeed, got HTTP "
@@ -116,7 +116,7 @@ final class Oid4vciTestClient {
                 attempt.credentialAccessToken());
     }
 
-    CredentialIssuanceAttempt requestIssuedCredential(String username, String userAccessToken) throws Exception {
+    CredentialIssuanceAttempt tryIssueCredential(String username, String userAccessToken) throws Exception {
         CredentialsOffer credentialOffer = fetchCredentialOffer(username, userAccessToken);
         String preAuthorizedCode = credentialOffer.getPreAuthorizedCode();
         assertNotNull(preAuthorizedCode, "credential offer must include a pre-authorized code");
