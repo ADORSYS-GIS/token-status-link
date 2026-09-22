@@ -61,6 +61,7 @@ class StatusListRealmResourceProviderFactoryTest {
     private KeycloakTransactionManager transactionManager;
     private RealmProvider realmProvider;
     private RealmModel realm;
+    private TimerProvider timerProvider;
     private JpaConnectionProvider jpaConnectionProvider;
     private EntityManager entityManager;
 
@@ -94,6 +95,7 @@ class StatusListRealmResourceProviderFactoryTest {
         transactionManager = mock(KeycloakTransactionManager.class);
         realmProvider = mock(RealmProvider.class);
         realm = mock(RealmModel.class);
+        timerProvider = mock(TimerProvider.class);
         jpaConnectionProvider = mock(JpaConnectionProvider.class);
         entityManager = mock(EntityManager.class);
 
@@ -105,6 +107,7 @@ class StatusListRealmResourceProviderFactoryTest {
         when(session.getKeycloakSessionFactory()).thenReturn(sessionFactory);
         when(session.getTransactionManager()).thenReturn(transactionManager);
         when(session.realms()).thenReturn(realmProvider);
+        when(session.getProvider(TimerProvider.class)).thenReturn(timerProvider);
         when(session.getProvider(eq(JpaConnectionProvider.class))).thenReturn(jpaConnectionProvider);
         when(jpaConnectionProvider.getEntityManager()).thenReturn(entityManager);
         when(realmProvider.getRealmsStream()).thenAnswer(i -> Stream.of(realm));
@@ -175,6 +178,7 @@ class StatusListRealmResourceProviderFactoryTest {
         verify(sessionFactory, atLeastOnce()).register(listenerCaptor.capture());
 
         listenerCaptor.getValue().onEvent(new PostMigrationEvent(sessionFactory));
+        runReconciliation();
 
         verify(transactionManager, atLeastOnce()).begin();
         verify(transactionManager).commit();
@@ -225,6 +229,7 @@ class StatusListRealmResourceProviderFactoryTest {
         when(realm.getAttribute("status-list-enabled")).thenReturn("false");
 
         triggerInitialization();
+        runReconciliation();
 
         assertEquals(0, mockedStatusListServiceConstruction.constructed().size());
         mockedHttpClient.verify(() -> CustomHttpClient.getRegistrationHttpClient(any(StatusListConfig.class)), never());
@@ -239,6 +244,7 @@ class StatusListRealmResourceProviderFactoryTest {
                         .thenReturn(false));
 
         triggerInitialization();
+        runReconciliation();
 
         // Service is constructed but registration is skipped
         assertEquals(1, mockedStatusListServiceConstruction.constructed().size());
@@ -261,6 +267,7 @@ class StatusListRealmResourceProviderFactoryTest {
                 .thenThrow(new StatusListException("Key not found"));
 
         triggerInitialization();
+        runReconciliation();
 
         assertEquals(0, mockedStatusListServiceConstruction.constructed().size());
     }
@@ -274,9 +281,11 @@ class StatusListRealmResourceProviderFactoryTest {
                 .thenReturn(keyData);
 
         triggerInitialization();
+        runReconciliation();
         assertEquals(1, mockedStatusListServiceConstruction.constructed().size());
 
         triggerInitialization();
+        runReconciliation();
         assertEquals(1, mockedStatusListServiceConstruction.constructed().size());
     }
 
@@ -284,31 +293,31 @@ class StatusListRealmResourceProviderFactoryTest {
     void testInitializeRealms_GracefulFailureOnServiceException() {
         setupSuccessfulHealthCheck();
 
+        mockedStatusListServiceConstruction.close();
+        mockedStatusListServiceConstruction = mockConstruction(StatusListService.class, (mock, context) -> {
+            when(mock.checkServerHealth()).thenReturn(true);
+            try {
+                doThrow(new RuntimeException("API Error")).when(mock).registerIssuer(any(), any());
+            } catch (StatusListException e) {
+                fail("Should not throw while configuring the mock");
+            }
+        });
+
         CryptoIdentityService.KeyData keyData = new CryptoIdentityService.KeyData(mock(JWK.class), "RS256");
         mockedRevocationService
                 .when(() -> CryptoIdentityService.getRealmKeyData(session, realm))
                 .thenReturn(keyData);
 
         triggerInitialization();
-
-        StatusListService mockService =
-                mockedStatusListServiceConstruction.constructed().get(0);
-        try {
-            doThrow(new RuntimeException("API Error")).when(mockService).registerIssuer(any(), any());
-        } catch (StatusListException e) {
-            fail("Should not throw exception during setup");
-        }
-
-        assertDoesNotThrow(this::triggerInitialization);
+        assertDoesNotThrow(this::runReconciliation);
     }
 
     @Test
     void testRegistrationReconciliationRetriesRealmConfiguredAfterStartup() throws Exception {
         setupSuccessfulHealthCheck();
 
-        TimerProvider timerProvider = mock(TimerProvider.class);
         when(session.getProvider(TimerProvider.class)).thenReturn(timerProvider);
-        when(realm.getAttribute("status-list-enabled")).thenReturn("false", "true");
+        when(realm.getAttribute("status-list-enabled")).thenReturn("false");
 
         triggerInitialization();
 
@@ -322,11 +331,44 @@ class StatusListRealmResourceProviderFactoryTest {
 
         assertEquals(0, mockedStatusListServiceConstruction.constructed().size());
 
+        when(realm.getAttribute("status-list-enabled")).thenReturn("true");
         taskCaptor.getValue().run(session);
 
         StatusListService mockService =
                 mockedStatusListServiceConstruction.constructed().get(0);
         verify(mockService).registerIssuer(argThat(arg -> arg.endsWith("::test-realm")), any());
+    }
+
+    @Test
+    void testRegistrationReconciliationStopsAfterFiveAttempts() throws Exception {
+        setupSuccessfulHealthCheck();
+
+        mockedStatusListServiceConstruction.close();
+        mockedStatusListServiceConstruction = mockConstruction(StatusListService.class, (mock, context) -> {
+            when(mock.checkServerHealth()).thenReturn(true);
+            try {
+                doThrow(new StatusListException("registration failed"))
+                        .when(mock)
+                        .registerIssuer(any(), any());
+            } catch (StatusListException e) {
+                fail("Should not throw while configuring the mock");
+            }
+        });
+
+        triggerInitialization();
+        ArgumentCaptor<ScheduledTask> taskCaptor = ArgumentCaptor.forClass(ScheduledTask.class);
+        verify(timerProvider)
+                .scheduleTask(
+                        taskCaptor.capture(),
+                        eq(1_000L),
+                        eq(30_000L),
+                        eq("status-list-realm-registration-reconciliation"));
+
+        for (int attempt = 0; attempt < 6; attempt++) {
+            taskCaptor.getValue().run(session);
+        }
+
+        assertEquals(5, mockedStatusListServiceConstruction.constructed().size());
     }
 
     private void triggerInitialization() {
@@ -336,6 +378,17 @@ class StatusListRealmResourceProviderFactoryTest {
         verify(sessionFactory, atLeastOnce()).register(listenerCaptor.capture());
 
         listenerCaptor.getValue().onEvent(new PostMigrationEvent(sessionFactory));
+    }
+
+    private void runReconciliation() {
+        ArgumentCaptor<ScheduledTask> taskCaptor = ArgumentCaptor.forClass(ScheduledTask.class);
+        verify(timerProvider)
+                .scheduleTask(
+                        taskCaptor.capture(),
+                        eq(1_000L),
+                        eq(30_000L),
+                        eq("status-list-realm-registration-reconciliation"));
+        taskCaptor.getValue().run(session);
     }
 
     private void setupSuccessfulHealthCheck() {

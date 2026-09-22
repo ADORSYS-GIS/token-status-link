@@ -21,7 +21,6 @@ import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.models.KeycloakTransactionManager;
 import org.keycloak.models.RealmModel;
-import org.keycloak.models.utils.KeycloakModelUtils;
 import org.keycloak.models.utils.PostMigrationEvent;
 import org.keycloak.services.resource.RealmResourceProvider;
 import org.keycloak.services.resource.RealmResourceProviderFactory;
@@ -41,15 +40,16 @@ public class StatusListRealmResourceProviderFactory implements RealmResourceProv
     private static final Logger logger = Logger.getLogger(StatusListRealmResourceProviderFactory.class);
 
     private final Set<String> registeredRealms = ConcurrentHashMap.newKeySet();
-    private final ConcurrentHashMap<String, Object> registrationLocks = new ConcurrentHashMap<>();
     private final Set<String> inFlight = ConcurrentHashMap.newKeySet();
+    private final ConcurrentHashMap<String, Integer> reconciliationAttempts = new ConcurrentHashMap<>();
 
     private static final ExecutorService executor =
-            Executors.newSingleThreadExecutor(r -> new Thread(r, "status-list-init"));
+            Executors.newSingleThreadExecutor(r -> new Thread(r, "status-list-registration"));
 
     private static final String REGISTRATION_RECONCILIATION_TASK_NAME = "status-list-realm-registration-reconciliation";
     private static final long REGISTRATION_RECONCILIATION_INITIAL_DELAY_MS = 1_000L;
     private static final long REGISTRATION_RECONCILIATION_INTERVAL_MS = 30_000L;
+    private static final int MAX_RECONCILIATION_ATTEMPTS = 5;
 
     private volatile boolean initialized = false;
 
@@ -67,12 +67,10 @@ public class StatusListRealmResourceProviderFactory implements RealmResourceProv
      * @param realmName the name of the realm to register
      */
     public void triggerBackgroundRegistration(KeycloakSessionFactory factory, String realmName) {
-        // Fast path for already registered realms
         if (registeredRealms.contains(realmName)) {
             return;
         }
 
-        // Atomic check to prevent redundant task scheduling in the executor
         if (inFlight.add(realmName)) {
             runAsync(() -> registerRealmInBackgroundSession(factory, realmName));
         }
@@ -135,38 +133,8 @@ public class StatusListRealmResourceProviderFactory implements RealmResourceProv
             return;
         }
 
-        runAsync(() -> {
-            logger.info("Checking existing realms for status list registration");
-            try {
-                scheduleExistingRealmRegistrations(factory);
-                scheduleRegistrationReconciliation(factory);
-                initialized = true;
-                logger.info("Successfully scheduled registration checks for all existing realms.");
-            } catch (Exception e) {
-                logger.error("Error during background realm initialization", e);
-            }
-        });
-    }
-
-    private void scheduleExistingRealmRegistrations(KeycloakSessionFactory factory) {
-        // Only read realm names from DB to minimize session footprint
-        List<String> realmNames = KeycloakModelUtils.runJobInTransactionWithResult(
-                factory,
-                s -> s.realms().getRealmsStream().map(RealmModel::getName).toList());
-
-        scheduleRealmRegistrations(factory, realmNames);
-    }
-
-    private void scheduleExistingRealmRegistrations(KeycloakSession session) {
-        List<String> realmNames =
-                session.realms().getRealmsStream().map(RealmModel::getName).toList();
-        scheduleRealmRegistrations(session.getKeycloakSessionFactory(), realmNames);
-    }
-
-    private void scheduleRealmRegistrations(KeycloakSessionFactory factory, List<String> realmNames) {
-        for (String realmName : realmNames) {
-            triggerBackgroundRegistration(factory, realmName);
-        }
+        initialized = true;
+        scheduleRegistrationReconciliation(factory);
     }
 
     private void scheduleRegistrationReconciliation(KeycloakSessionFactory factory) {
@@ -181,7 +149,7 @@ public class StatusListRealmResourceProviderFactory implements RealmResourceProv
                     new ScheduledTask() {
                         @Override
                         public void run(KeycloakSession taskSession) {
-                            scheduleExistingRealmRegistrations(taskSession);
+                            reconcileRealmRegistrations(taskSession);
                         }
 
                         @Override
@@ -194,6 +162,34 @@ public class StatusListRealmResourceProviderFactory implements RealmResourceProv
                     REGISTRATION_RECONCILIATION_TASK_NAME);
         } catch (Exception e) {
             logger.error("Failed to schedule status list realm registration reconciliation", e);
+        }
+    }
+
+    private void reconcileRealmRegistrations(KeycloakSession session) {
+        List<String> realmNames =
+                session.realms().getRealmsStream().map(RealmModel::getName).toList();
+        for (String realmName : realmNames) {
+            RealmModel realm = session.realms().getRealmByName(realmName);
+            if (realm == null) {
+                continue;
+            }
+
+            if (registeredRealms.contains(realmName) || !new StatusListConfig(realm).isEnabled()) {
+                reconciliationAttempts.remove(realmName);
+                continue;
+            }
+
+            int attempt = reconciliationAttempts.merge(realmName, 1, Integer::sum);
+            if (attempt > MAX_RECONCILIATION_ATTEMPTS) {
+                continue;
+            }
+
+            if (attempt == MAX_RECONCILIATION_ATTEMPTS) {
+                logger.warnf(
+                        "Status list registration for realm %s reached the maximum of %d reconciliation attempts",
+                        realmName, MAX_RECONCILIATION_ATTEMPTS);
+            }
+            triggerBackgroundRegistration(session.getKeycloakSessionFactory(), realmName);
         }
     }
 
@@ -219,40 +215,25 @@ public class StatusListRealmResourceProviderFactory implements RealmResourceProv
             return true;
         }
 
-        // Per-realm lock ensures consistency if the execution policy ever changes
-        // or if synchronous calls are mixed in.
-        Object lock = registrationLocks.computeIfAbsent(realmName, k -> new Object());
+        StatusListConfig config = new StatusListConfig(realm);
+        if (!config.isEnabled()) {
+            return true;
+        }
 
-        synchronized (lock) {
-            if (registeredRealms.contains(realmName)) {
+        CircuitBreaker cb = CircuitBreaker.getInstance(
+                "RegCooldown-" + realm.getId(), 1, 300, (int) (config.getRegistrationCooldownMs() / 1000));
+
+        try {
+            cb.checkState();
+            if (registerRealmAsIssuer(session, realm)) {
+                cb.recordSuccess();
                 return true;
             }
-
-            StatusListConfig config = new StatusListConfig(realm);
-            if (!config.isEnabled()) {
-                return true;
-            }
-
-            // Integrate with project's CircuitBreaker for failure cooldown.
-            CircuitBreaker cb = CircuitBreaker.getInstance(
-                    "RegCooldown-" + realm.getId(),
-                    1, // failureThreshold
-                    300, // 5 minute window
-                    (int) (config.getRegistrationCooldownMs() / 1000));
-
-            try {
-                cb.checkState();
-                if (registerRealmAsIssuer(session, realm)) {
-                    cb.recordSuccess();
-                    return true;
-                } else {
-                    cb.recordFailure();
-                    return false;
-                }
-            } catch (CircuitBreaker.CircuitBreakerOpenException e) {
-                logger.debugf("Registration for realm %s skipped due to cooldown.", realmName);
-                return false;
-            }
+            cb.recordFailure();
+            return false;
+        } catch (CircuitBreaker.CircuitBreakerOpenException e) {
+            logger.debugf("Registration for realm %s skipped due to cooldown.", realmName);
+            return false;
         }
     }
 
@@ -290,10 +271,8 @@ public class StatusListRealmResourceProviderFactory implements RealmResourceProv
                     config.getTokenIssuerId(), keyData.get().jwk());
 
             registeredRealms.add(realmName);
+            reconciliationAttempts.remove(realmName);
             logger.info("Successfully registered realm as issuer: " + realmName);
-
-            // Once registered, we no longer need the lock for this realm.
-            registrationLocks.remove(realmName);
 
             return true;
         } catch (StatusListServerException | StatusListException e) {
@@ -320,8 +299,8 @@ public class StatusListRealmResourceProviderFactory implements RealmResourceProv
     @Override
     public void close() {
         registeredRealms.clear();
-        registrationLocks.clear();
         inFlight.clear();
+        reconciliationAttempts.clear();
         initialized = false;
     }
 }
