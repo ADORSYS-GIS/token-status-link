@@ -5,9 +5,6 @@ Token Status List specification defines a robust mechanism for revoking issued c
 credential is revoked, it cannot be used for future presentations. This guide documents the setup and configuration of
 the components we developed to demonstrate credential revocation in practice.
 
-Revocation in this demo is **client-driven**. The demo app calls Keycloak's issued-credential revocation endpoint. The
-wallet is used to receive and present the credential; it does not own the revoke action.
-
 ## Contents
 
 - [User journey](#user-journey)
@@ -28,13 +25,11 @@ A demo application delegates user authentication to Keycloak. The app allows use
 
 The user journey is as follows:
 
-1. The user logs in to the demo app (via Keycloak) using a username and password.
-2. On the **Credential Offer** tab, the user scans the QR code with their wallet and stores the Identity VC.
-3. The user opens the **Credentials** tab and confirms the issued credential is listed as valid.
-4. The user logs out, then logs back in to the app by presenting the VC.
-5. The user opens **Credentials**, clicks **Revoke**, and submits a revocation reason.
-6. The credential remains visible in the app with status **Revoked**.
-7. The user can no longer log in to the app by presenting the revoked VC.
+- The user logs in to the demo app (via Keycloak) using a username and password.
+- The user retrieves an Identity VC to their wallet and logs out.
+- The user logs back in to the app (via Keycloak) by presenting the VC, then logs out again.
+- The user requests revocation of the VC from the demo app.
+- The user is no longer able to log in to the app using the now-revoked VC.
 
 ![Credential revocation demo](assets/keycloak-oid4vp-auth%2Brevocation.webm)
 
@@ -49,15 +44,12 @@ credential revocation demo for the above user journey:
 
 The environment comprises the following main components:
 
-- **Demo app**: An application that uses Keycloak for authentication, displays a credential-offer QR code, lists issued
-  credentials, and initiates revocation.
+- **Demo app**: An application that leverages Keycloak for user authentication.
 - **Wallet**: Allows users to receive, store, and present verifiable credentials.
 - **Keycloak**: Configured for credential issuance and extended with custom plugins to support both credential
   revocation and OpenID4VP authentication.
-    - Token Status plugin: Connects to the Status List Server, embeds a status claim at issuance, and handles
-      client-initiated revocation.
-    - OpenID4VP plugin: Facilitates user authentication through verifiable credential presentation and rejects
-      revoked credentials.
+    - Token Status plugin: Connects to the Status List Server to enable revocation functionality.
+    - OpenID4VP plugin: Facilitates user authentication through verifiable credential presentation.
 - **Status List Server**: Maintains and serves status lists for checking the validity of credentials.
 
 ## Configuration of components
@@ -76,48 +68,26 @@ newer than the last tagged release. Copy the resulting JAR into Keycloak's `prov
 
 ### Demo app
 
-A suitable demo app is one that uses Keycloak for authentication, can initiate the OpenID4VCI flow to display a
-credential offer QR code, lists issued credentials, and revokes them through Keycloak. Our
-[Mock FE](https://github.com/ADORSYS-GIS/keycloak-oid4vc-mock-fe) application satisfies these requirements.
-Latest tested commit: https://github.com/ADORSYS-GIS/keycloak-oid4vc-mock-fe/tree/0614025c178609c05245fb132aa9fcdc65297c1e.
+A suitable demo app is one that uses Keycloak for authentication and that can initiate the OpenID4VCI flow to display a
+credential offer QR code. Our [Mock FE](https://github.com/ADORSYS-GIS/keycloak-oid4vc-mock-fe) application satisfies
+these requirements and also lists issued credentials and revokes them through Keycloak. Latest tested
+commit: https://github.com/ADORSYS-GIS/keycloak-oid4vc-mock-fe/tree/0614025c178609c05245fb132aa9fcdc65297c1e.
 
-The dashboard has two tabs:
-
-- **Credential Offer**: one QR code at a time. **By reference** is the default; **By value** embeds the full offer.
-- **Credentials**: lists issued credentials for the signed-in user and exposes **Revoke**.
-
-Check the Mock FE README and create a `.env` file with the appropriate configuration to connect the app to your
-Keycloak instance. Here is a sample configuration for a local OID4VCI harness on HTTPS:
+Check the README and create a `.env` file with the appropriate configuration to connect the app to your Keycloak
+instance. Here is a sample configuration for reference:
 
 ```env
-VITE_KEYCLOAK_URL=https://localhost:8443
+VITE_KEYCLOAK_URL=http://localhost:8080
 VITE_KEYCLOAK_REALM=oid4vc-vci
 VITE_KEYCLOAK_CLIENT_ID=oid4vc-demo-public
 VITE_OID4VC_DEFAULT_CREDENTIAL_CONFIGURATION_ID=IdentityCredential
 VITE_OID4VC_PRE_AUTHORIZED=true
 ```
 
-The Vite dev server listens on port **4200**.
-
-Mock FE talks to Keycloak as follows:
-
-| Action | Endpoint |
-|--------|----------|
-| Create credential offer (Keycloak 26.6+) | `GET /realms/{realm}/protocol/oid4vc/create-credential-offer` |
-| List issued credentials | `GET /realms/{realm}/account/issued-verifiable-credentials` |
-| Revoke an issued credential | `POST /realms/{realm}/status-list/revoke` with `mode=issued_credential_revocation` |
-
-The revoke call is the Token Status plugin's `/status-list/revoke` endpoint. After a successful response, Mock FE
-keeps the credential visible with status **Revoked**. That local status is for the UI; the source of truth for later
-presentation is the Status List Server.
-
-The client-driven flow is also documented in the Mock FE
-[issuance and revocation guide](https://github.com/ADORSYS-GIS/keycloak-oid4vc-mock-fe/blob/main/docs/credential-issuance-and-revocation-flow.md).
+Revocation uses `POST /realms/{realm}/status-list/revoke` with `mode=issued_credential_revocation`. After a successful
+response, Mock FE keeps the credential visible with status **Revoked**.
 
 ![Screenshot of our MOCK FE demo app](assets/demo-app-mock-fe.png)
-
-The screenshot above shows the credential-offer QR after login. Current Mock FE also has the **Credentials** tab used
-for listing and revocation.
 
 ### Wallet
 
@@ -146,14 +116,14 @@ updates the status list entry for the issued credential.
 Keycloak natively supports OpenID4VCI for credential issuance. All standard documentation on how to configure OpenID4VCI
 in Keycloak applies. The OAuth SIG maintains an OpenID4VCI deployment project that you may find useful:
 https://github.com/keycloak/keycloak-oauth-sig/tree/3083725392aa04e4d569bbe90d67d9f9466e41f3/oid4vci-deployment.
-The link points to a Keycloak 26.7.2-era commit that already injects JARs from `oid4vci-deployment/providers/`.
+The link directly points to the latest tested commit.
 
 On Keycloak **26.7**, OID4VCI stays experimental and two features used by this demo are gated:
 
 - `oid4vc-vci-preauth-code` for pre-authorized issuance
 - `oid4vc-vci-rest-credential-offer` for `GET /protocol/oid4vc/create-credential-offer`
 
-Issuance also requires an explicit per-user verifiable-credential grant for each credential scope (for example
+Before a user can obtain a VC, Keycloak must grant that credential type to the user (for example
 `IdentityCredential`). On Keycloak 26.7+, `keycloak-ssi config` grants the enabled credentials to the demo user
 automatically. See
 [Migrating oid4vci-deployment to Keycloak 26.7.0](https://github.com/keycloak/keycloak-oauth-sig/blob/3083725392aa04e4d569bbe90d67d9f9466e41f3/oid4vci-deployment/docs/MIGRATION_26.7.md).
@@ -193,12 +163,6 @@ Minimal commands to start, then configure Keycloak with the OpenID4VCI deploymen
 
 We explicitly recommend using a persistent database because a restart is required after the configuration command.
 
-Then confirm `KC_FEATURES` includes:
-
-```text
-oid4vc-vci,oid4vc-vci-preauth-code,oid4vc-vci-rest-credential-offer
-```
-
 #### Token Status plugin
 
 Enable the plugin at the realm level. The status list server URL must be reachable over HTTPS.
@@ -210,10 +174,10 @@ Enable the plugin at the realm level. The status list server URL must be reachab
 }
 ```
 
-The current `oid4vci-deployment` realm attributes already set these values when you run `keycloak-ssi config`.
+`keycloak-ssi config` applies `realm-attributes.json` to the realm. Add these attributes there first so the plugin is enabled and pointed at the status list server.
 
-Additionally, revocable credential types must include the `status` claim among visible SD-JWT claims and attach the
-Status List protocol mapper. The IdentityCredential client scope in the harness already looks like this:
+Additionally, revocable credential types must explicitly configure the mapping of a status claim. Add the `status` claim
+to the list of visible claims and configure the Status List protocol mapper as shown below:
 
 ```json
 {
@@ -244,8 +208,10 @@ Content-Type: application/x-www-form-urlencoded
 mode=issued_credential_revocation&credential_id=<issued-credential-id>&reason=<required by Mock FE>
 ```
 
-The plugin activates only when `mode=issued_credential_revocation` is present. On success the status list entry is set
-to `INVALID` and the issued credential record is kept, so clients can still display it as revoked.
+The plugin activates only when `mode=issued_credential_revocation` is present. The credential holder can revoke their
+own credential. Users with the realm role `credential-offer-create` can also revoke another user's credential in the
+same realm. On success the status list entry is set to `INVALID` and the issued credential record is kept, so clients
+can still display it as revoked.
 
 #### OpenID4VP plugin
 
