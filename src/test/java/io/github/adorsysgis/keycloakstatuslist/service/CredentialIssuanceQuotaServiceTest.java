@@ -73,8 +73,7 @@ class CredentialIssuanceQuotaServiceTest {
 
     @Test
     void resolveMax_usesMapperConfigOverRealmFallback() {
-        when(mapperModel.getConfig())
-                .thenReturn(Map.of(StatusListConfig.STATUS_LIST_MAX_CREDENTIALS_PER_USER, "2"));
+        when(mapperModel.getConfig()).thenReturn(Map.of(StatusListConfig.STATUS_LIST_MAX_CREDENTIALS_PER_USER, "2"));
         lenient()
                 .when(realm.getAttribute(StatusListConfig.STATUS_LIST_MAX_CREDENTIALS_PER_USER))
                 .thenReturn("9");
@@ -84,8 +83,7 @@ class CredentialIssuanceQuotaServiceTest {
 
     @Test
     void resolveMax_mapperZeroMeansUnlimitedEvenIfRealmHasAFallback() {
-        when(mapperModel.getConfig())
-                .thenReturn(Map.of(StatusListConfig.STATUS_LIST_MAX_CREDENTIALS_PER_USER, "0"));
+        when(mapperModel.getConfig()).thenReturn(Map.of(StatusListConfig.STATUS_LIST_MAX_CREDENTIALS_PER_USER, "0"));
         lenient()
                 .when(realm.getAttribute(StatusListConfig.STATUS_LIST_MAX_CREDENTIALS_PER_USER))
                 .thenReturn("3");
@@ -104,8 +102,7 @@ class CredentialIssuanceQuotaServiceTest {
 
     @Test
     void resolveMax_blankMapperConfigFallsBackToRealm() {
-        when(mapperModel.getConfig())
-                .thenReturn(Map.of(StatusListConfig.STATUS_LIST_MAX_CREDENTIALS_PER_USER, "  "));
+        when(mapperModel.getConfig()).thenReturn(Map.of(StatusListConfig.STATUS_LIST_MAX_CREDENTIALS_PER_USER, "  "));
         when(realm.getAttribute(StatusListConfig.STATUS_LIST_MAX_CREDENTIALS_PER_USER))
                 .thenReturn("3");
 
@@ -114,8 +111,7 @@ class CredentialIssuanceQuotaServiceTest {
 
     @Test
     void resolveMax_rejectsInvalidMapperConfig() {
-        when(mapperModel.getConfig())
-                .thenReturn(Map.of(StatusListConfig.STATUS_LIST_MAX_CREDENTIALS_PER_USER, "abc"));
+        when(mapperModel.getConfig()).thenReturn(Map.of(StatusListConfig.STATUS_LIST_MAX_CREDENTIALS_PER_USER, "abc"));
 
         IllegalArgumentException exception =
                 assertThrows(IllegalArgumentException.class, () -> service.resolveMax(mapperModel, realm));
@@ -125,8 +121,7 @@ class CredentialIssuanceQuotaServiceTest {
 
     @Test
     void resolveMax_rejectsNegativeMapperConfig() {
-        when(mapperModel.getConfig())
-                .thenReturn(Map.of(StatusListConfig.STATUS_LIST_MAX_CREDENTIALS_PER_USER, "-1"));
+        when(mapperModel.getConfig()).thenReturn(Map.of(StatusListConfig.STATUS_LIST_MAX_CREDENTIALS_PER_USER, "-1"));
 
         assertThrows(IllegalArgumentException.class, () -> service.resolveMax(mapperModel, realm));
     }
@@ -177,8 +172,7 @@ class CredentialIssuanceQuotaServiceTest {
     @Test
     void enforceWithinReservationTransaction_rejectsWhenIssuedCredentialsReachMax() {
         stubIssuedCredentials("issued-1", "issued-2", "issued-3");
-        when(statusListRepository.findNonRevokedMappings(
-                        entityManager, "realm-1", "user-1", "IdentityCredential"))
+        when(statusListRepository.findNonRevokedMappings(entityManager, "realm-1", "user-1", "IdentityCredential"))
                 .thenReturn(List.of(
                         successfulMapping("issued-1"), successfulMapping("issued-2"), successfulMapping("issued-3")));
         when(statusListRepository.countInFlightMappings(entityManager, "realm-1", "user-1", "IdentityCredential"))
@@ -197,8 +191,7 @@ class CredentialIssuanceQuotaServiceTest {
     @Test
     void enforceWithinReservationTransaction_ignoresOrphanMappingsWithoutIssuedCredential() {
         stubIssuedCredentials();
-        when(statusListRepository.findNonRevokedMappings(
-                        entityManager, "realm-1", "user-1", "IdentityCredential"))
+        when(statusListRepository.findNonRevokedMappings(entityManager, "realm-1", "user-1", "IdentityCredential"))
                 .thenReturn(List.of(successfulMapping("orphan")));
         when(statusListRepository.countInFlightMappings(entityManager, "realm-1", "user-1", "IdentityCredential"))
                 .thenReturn(0L);
@@ -209,8 +202,7 @@ class CredentialIssuanceQuotaServiceTest {
     @Test
     void enforceWithinReservationTransaction_allowsIssuanceBelowMax() {
         stubIssuedCredentials("issued-1", "issued-2");
-        when(statusListRepository.findNonRevokedMappings(
-                        entityManager, "realm-1", "user-1", "IdentityCredential"))
+        when(statusListRepository.findNonRevokedMappings(entityManager, "realm-1", "user-1", "IdentityCredential"))
                 .thenReturn(List.of(successfulMapping("issued-1"), successfulMapping("issued-2")));
         when(statusListRepository.countInFlightMappings(entityManager, "realm-1", "user-1", "IdentityCredential"))
                 .thenReturn(0L);
@@ -221,8 +213,7 @@ class CredentialIssuanceQuotaServiceTest {
     @Test
     void enforceWithinReservationTransaction_countsFailureMappingWhenIssuedCredentialExists() {
         stubIssuedCredentials("issued-1");
-        when(statusListRepository.findNonRevokedMappings(
-                        entityManager, "realm-1", "user-1", "IdentityCredential"))
+        when(statusListRepository.findNonRevokedMappings(entityManager, "realm-1", "user-1", "IdentityCredential"))
                 .thenReturn(List.of(failureMapping("issued-1")));
         when(statusListRepository.countInFlightMappings(entityManager, "realm-1", "user-1", "IdentityCredential"))
                 .thenReturn(0L);
@@ -238,8 +229,7 @@ class CredentialIssuanceQuotaServiceTest {
     @Test
     void enforceWithinReservationTransaction_ignoresFailureMappingWithoutIssuedCredential() {
         stubIssuedCredentials();
-        when(statusListRepository.findNonRevokedMappings(
-                        entityManager, "realm-1", "user-1", "IdentityCredential"))
+        when(statusListRepository.findNonRevokedMappings(entityManager, "realm-1", "user-1", "IdentityCredential"))
                 .thenReturn(List.of(failureMapping("orphan")));
         when(statusListRepository.countInFlightMappings(entityManager, "realm-1", "user-1", "IdentityCredential"))
                 .thenReturn(0L);
@@ -250,8 +240,7 @@ class CredentialIssuanceQuotaServiceTest {
     @Test
     void enforceWithinReservationTransaction_countsInFlightInitTowardLimit() {
         stubIssuedCredentials();
-        when(statusListRepository.findNonRevokedMappings(
-                        entityManager, "realm-1", "user-1", "IdentityCredential"))
+        when(statusListRepository.findNonRevokedMappings(entityManager, "realm-1", "user-1", "IdentityCredential"))
                 .thenReturn(List.of());
         when(statusListRepository.countInFlightMappings(entityManager, "realm-1", "user-1", "IdentityCredential"))
                 .thenReturn(1L);
@@ -333,8 +322,7 @@ class CredentialIssuanceQuotaServiceTest {
         when(credentialScope.getProtocol()).thenReturn(OID4VCLoginProtocolFactory.PROTOCOL_ID);
         when(credentialScope.getProtocolMappersStream()).thenAnswer(invocation -> Stream.of(mapperModel));
         when(mapperModel.getProtocolMapper()).thenReturn(StatusListProtocolMapper.Constants.MAPPER_ID);
-        when(mapperModel.getConfig())
-                .thenReturn(Map.of(StatusListConfig.STATUS_LIST_MAX_CREDENTIALS_PER_USER, max));
+        when(mapperModel.getConfig()).thenReturn(Map.of(StatusListConfig.STATUS_LIST_MAX_CREDENTIALS_PER_USER, max));
         lenient()
                 .when(credentialScope.getAttribute("vc.credential_configuration_id"))
                 .thenReturn(credentialConfigurationId);
