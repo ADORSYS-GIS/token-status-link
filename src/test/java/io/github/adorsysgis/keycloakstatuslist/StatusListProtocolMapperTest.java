@@ -130,7 +130,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         assertFalse(mapper.includeInMetadata());
         assertEquals(1, mapper.getIndividualConfigProperties().size());
         assertEquals(
-                CredentialIssuanceQuotaService.MAX_CREDENTIALS_PER_USER_CONFIG,
+                StatusListConfig.STATUS_LIST_MAX_CREDENTIALS_PER_USER,
                 mapper.getIndividualConfigProperties().get(0).getName());
         mapper.close();
     }
@@ -540,7 +540,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
     private void stubMapperMax(String max) {
         lenient()
                 .when(mapperModel.getConfig())
-                .thenReturn(Map.of(CredentialIssuanceQuotaService.MAX_CREDENTIALS_PER_USER_CONFIG, max));
+                .thenReturn(Map.of(StatusListConfig.STATUS_LIST_MAX_CREDENTIALS_PER_USER, max));
     }
 
     private long mockGetNextIndex() {

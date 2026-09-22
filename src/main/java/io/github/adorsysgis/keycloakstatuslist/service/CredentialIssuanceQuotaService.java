@@ -1,5 +1,7 @@
 package io.github.adorsysgis.keycloakstatuslist.service;
 
+import static io.github.adorsysgis.keycloakstatuslist.config.StatusListConfig.STATUS_LIST_MAX_CREDENTIALS_PER_USER;
+
 import io.github.adorsysgis.keycloakstatuslist.StatusListProtocolMapper;
 import io.github.adorsysgis.keycloakstatuslist.config.StatusListConfig;
 import io.github.adorsysgis.keycloakstatuslist.exception.CredentialIssuanceQuotaException;
@@ -34,8 +36,6 @@ public class CredentialIssuanceQuotaService {
 
     private static final Logger logger = Logger.getLogger(CredentialIssuanceQuotaService.class);
 
-    public static final String MAX_CREDENTIALS_PER_USER_CONFIG = StatusListConfig.STATUS_LIST_MAX_CREDENTIALS_PER_USER;
-
     public static final String LIMIT_REACHED_MESSAGE =
             "Issued credential limit reached for this user and credential type";
     public static final String FAIL_CLOSED_MESSAGE =
@@ -55,7 +55,7 @@ public class CredentialIssuanceQuotaService {
      * {@code 0} for unlimited). Blank or missing mapper values inherit the optional realm fallback.
      */
     public int resolveMax(ProtocolMapperModel mapperModel, RealmModel realm) {
-        Optional<String> mapperValue = mapperConfigValue(mapperModel, MAX_CREDENTIALS_PER_USER_CONFIG);
+        Optional<String> mapperValue = mapperConfigValue(mapperModel, STATUS_LIST_MAX_CREDENTIALS_PER_USER);
         if (mapperValue.isPresent()) {
             return StatusListConfig.parseMaxCredentialsPerUser(mapperValue.get());
         }

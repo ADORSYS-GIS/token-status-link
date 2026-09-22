@@ -55,7 +55,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
 
     static {
         ProviderConfigProperty maxCredentialsPerUser = new ProviderConfigProperty();
-        maxCredentialsPerUser.setName(CredentialIssuanceQuotaService.MAX_CREDENTIALS_PER_USER_CONFIG);
+        maxCredentialsPerUser.setName(StatusListConfig.STATUS_LIST_MAX_CREDENTIALS_PER_USER);
         maxCredentialsPerUser.setLabel("Max credentials per user");
         maxCredentialsPerUser.setHelpText(
                 "Maximum number of non-revoked credentials of this type a holder may have. Leave empty or set to 0 for unlimited.");

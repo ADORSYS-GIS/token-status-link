@@ -74,7 +74,7 @@ class CredentialIssuanceQuotaServiceTest {
     @Test
     void resolveMax_usesMapperConfigOverRealmFallback() {
         when(mapperModel.getConfig())
-                .thenReturn(Map.of(CredentialIssuanceQuotaService.MAX_CREDENTIALS_PER_USER_CONFIG, "2"));
+                .thenReturn(Map.of(StatusListConfig.STATUS_LIST_MAX_CREDENTIALS_PER_USER, "2"));
         lenient()
                 .when(realm.getAttribute(StatusListConfig.STATUS_LIST_MAX_CREDENTIALS_PER_USER))
                 .thenReturn("9");
@@ -85,7 +85,7 @@ class CredentialIssuanceQuotaServiceTest {
     @Test
     void resolveMax_mapperZeroMeansUnlimitedEvenIfRealmHasAFallback() {
         when(mapperModel.getConfig())
-                .thenReturn(Map.of(CredentialIssuanceQuotaService.MAX_CREDENTIALS_PER_USER_CONFIG, "0"));
+                .thenReturn(Map.of(StatusListConfig.STATUS_LIST_MAX_CREDENTIALS_PER_USER, "0"));
         lenient()
                 .when(realm.getAttribute(StatusListConfig.STATUS_LIST_MAX_CREDENTIALS_PER_USER))
                 .thenReturn("3");
@@ -105,7 +105,7 @@ class CredentialIssuanceQuotaServiceTest {
     @Test
     void resolveMax_blankMapperConfigFallsBackToRealm() {
         when(mapperModel.getConfig())
-                .thenReturn(Map.of(CredentialIssuanceQuotaService.MAX_CREDENTIALS_PER_USER_CONFIG, "  "));
+                .thenReturn(Map.of(StatusListConfig.STATUS_LIST_MAX_CREDENTIALS_PER_USER, "  "));
         when(realm.getAttribute(StatusListConfig.STATUS_LIST_MAX_CREDENTIALS_PER_USER))
                 .thenReturn("3");
 
@@ -115,7 +115,7 @@ class CredentialIssuanceQuotaServiceTest {
     @Test
     void resolveMax_rejectsInvalidMapperConfig() {
         when(mapperModel.getConfig())
-                .thenReturn(Map.of(CredentialIssuanceQuotaService.MAX_CREDENTIALS_PER_USER_CONFIG, "abc"));
+                .thenReturn(Map.of(StatusListConfig.STATUS_LIST_MAX_CREDENTIALS_PER_USER, "abc"));
 
         IllegalArgumentException exception =
                 assertThrows(IllegalArgumentException.class, () -> service.resolveMax(mapperModel, realm));
@@ -126,7 +126,7 @@ class CredentialIssuanceQuotaServiceTest {
     @Test
     void resolveMax_rejectsNegativeMapperConfig() {
         when(mapperModel.getConfig())
-                .thenReturn(Map.of(CredentialIssuanceQuotaService.MAX_CREDENTIALS_PER_USER_CONFIG, "-1"));
+                .thenReturn(Map.of(StatusListConfig.STATUS_LIST_MAX_CREDENTIALS_PER_USER, "-1"));
 
         assertThrows(IllegalArgumentException.class, () -> service.resolveMax(mapperModel, realm));
     }
@@ -334,7 +334,7 @@ class CredentialIssuanceQuotaServiceTest {
         when(credentialScope.getProtocolMappersStream()).thenAnswer(invocation -> Stream.of(mapperModel));
         when(mapperModel.getProtocolMapper()).thenReturn(StatusListProtocolMapper.Constants.MAPPER_ID);
         when(mapperModel.getConfig())
-                .thenReturn(Map.of(CredentialIssuanceQuotaService.MAX_CREDENTIALS_PER_USER_CONFIG, max));
+                .thenReturn(Map.of(StatusListConfig.STATUS_LIST_MAX_CREDENTIALS_PER_USER, max));
         lenient()
                 .when(credentialScope.getAttribute("vc.credential_configuration_id"))
                 .thenReturn(credentialConfigurationId);
