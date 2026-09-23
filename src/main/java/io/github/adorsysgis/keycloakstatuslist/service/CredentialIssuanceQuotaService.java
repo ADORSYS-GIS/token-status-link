@@ -174,12 +174,11 @@ public class CredentialIssuanceQuotaService {
             throw CredentialIssuanceQuotaException.failClosed(REVOKE_OLDEST_UNAVAILABLE_MESSAGE);
         }
 
-        StatusListMappingEntity oldest = statusListRepository
-                .findNonRevokedMappings(em, realmId, userId, credentialConfigurationId)
-                .stream()
-                .filter(mapping -> occupiesIssuedSlot(mapping, issuedIds))
-                .min(OLDEST_OCCUPYING_MAPPING)
-                .orElse(null);
+        StatusListMappingEntity oldest =
+                statusListRepository.findNonRevokedMappings(em, realmId, userId, credentialConfigurationId).stream()
+                        .filter(mapping -> occupiesIssuedSlot(mapping, issuedIds))
+                        .min(OLDEST_OCCUPYING_MAPPING)
+                        .orElse(null);
         if (oldest == null) {
             logger.warnf(
                     "No oldest mapping found to revoke despite countTowardLimit=%d: userId=%s, credentialConfigurationId=%s",
