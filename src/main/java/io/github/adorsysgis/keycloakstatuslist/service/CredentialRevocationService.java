@@ -13,6 +13,7 @@ import io.github.adorsysgis.keycloakstatuslist.jpa.repository.StatusListReposito
 import io.github.adorsysgis.keycloakstatuslist.model.CredentialRevocationRequest;
 import io.github.adorsysgis.keycloakstatuslist.model.CredentialRevocationResponse;
 import io.github.adorsysgis.keycloakstatuslist.model.IssuedCredentialStatusResponse;
+import io.github.adorsysgis.keycloakstatuslist.model.IssuedCredentialStatusResponse.IssuedCredentialLimit;
 import io.github.adorsysgis.keycloakstatuslist.model.IssuedCredentialStatusResponse.IssuedCredentialStatus;
 import io.github.adorsysgis.keycloakstatuslist.model.TokenStatus;
 import java.time.Instant;
@@ -142,7 +143,8 @@ public class CredentialRevocationService {
      *
      * <p>Callers receive their own credentials unless they hold the realm role
      * {@code credential-offer-create} and pass {@code targetUser}. Callers without that role receive
-     * {@code 403} if {@code target_user} is provided.
+     * {@code 403} if {@code target_user} is provided. {@code limits} describes the resolved holder's
+     * configured quotas; an unknown {@code targetUser} yields an empty response.
      */
     public IssuedCredentialStatusResponse getIssuedCredentialStatuses(AuthResult authResult, String targetUser)
             throws StatusListException {
@@ -150,8 +152,28 @@ public class CredentialRevocationService {
         RealmModel realm = session.getContext().getRealm();
 
         return resolveHolder(caller, realm, targetUser)
-                .map(holder -> new IssuedCredentialStatusResponse(listStatusesForHolder(realm, holder)))
+                .map(holder -> toStatusResponse(realm, holder))
                 .orElseGet(() -> new IssuedCredentialStatusResponse(List.of()));
+    }
+
+    private IssuedCredentialStatusResponse toStatusResponse(RealmModel realm, UserModel holder) {
+        String userId = holder.getId();
+        List<IssuedVerifiableCredentialModel> issuedCredentials = session.users()
+                .getIssuedVerifiableCredentialsStreamByUser(userId)
+                .toList();
+        List<String> credentialIds = issuedCredentials.stream()
+                .map(IssuedVerifiableCredentialModel::getId)
+                .filter(StringUtil::isNotBlank)
+                .toList();
+        List<IssuedCredentialLimit> limits = new CredentialIssuanceQuotaService(session, statusListRepository)
+                .listLimits(realm, userId, credentialIds);
+        Map<String, StatusListMappingEntity> mappings =
+                statusListRepository.findSuccessfulMappingsByTokenIds(realm.getId(), userId, credentialIds);
+        List<IssuedCredentialStatus> credentials = issuedCredentials.stream()
+                .map(credential ->
+                        toIssuedCredentialStatus(credential, mappings.get(credential.getId()), holder, realm))
+                .toList();
+        return new IssuedCredentialStatusResponse(credentials, limits);
     }
 
     private Optional<UserModel> resolveHolder(UserModel caller, RealmModel realm, String targetUser)
@@ -165,25 +187,6 @@ public class CredentialRevocationService {
         }
 
         return Optional.ofNullable(session.users().getUserByUsername(realm, targetUser.trim()));
-    }
-
-    private List<IssuedCredentialStatus> listStatusesForHolder(RealmModel realm, UserModel holder) {
-        String userId = holder.getId();
-        List<IssuedVerifiableCredentialModel> issuedCredentials = session.users()
-                .getIssuedVerifiableCredentialsStreamByUser(userId)
-                .toList();
-
-        List<String> credentialIds = issuedCredentials.stream()
-                .map(IssuedVerifiableCredentialModel::getId)
-                .filter(StringUtil::isNotBlank)
-                .toList();
-        Map<String, StatusListMappingEntity> mappings =
-                statusListRepository.findSuccessfulMappingsByTokenIds(realm.getId(), userId, credentialIds);
-
-        return issuedCredentials.stream()
-                .map(credential ->
-                        toIssuedCredentialStatus(credential, mappings.get(credential.getId()), holder, realm))
-                .toList();
     }
 
     private UserModel getAuthenticatedUser(AuthResult authResult) {

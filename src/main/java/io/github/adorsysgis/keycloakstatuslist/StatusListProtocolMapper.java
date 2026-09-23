@@ -6,6 +6,7 @@ import io.github.adorsysgis.keycloakstatuslist.client.ApacheHttpStatusListClient
 import io.github.adorsysgis.keycloakstatuslist.client.StatusListHttpClient;
 import io.github.adorsysgis.keycloakstatuslist.config.StatusListConfig;
 import io.github.adorsysgis.keycloakstatuslist.config.StatusListEndpointUriResolver;
+import io.github.adorsysgis.keycloakstatuslist.exception.CredentialIssuanceQuotaException;
 import io.github.adorsysgis.keycloakstatuslist.exception.StatusListException;
 import io.github.adorsysgis.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
 import io.github.adorsysgis.keycloakstatuslist.jpa.repository.StatusListRepository;
@@ -13,9 +14,11 @@ import io.github.adorsysgis.keycloakstatuslist.model.Status;
 import io.github.adorsysgis.keycloakstatuslist.model.StatusListClaim;
 import io.github.adorsysgis.keycloakstatuslist.model.TokenStatus;
 import io.github.adorsysgis.keycloakstatuslist.service.CircuitBreaker;
+import io.github.adorsysgis.keycloakstatuslist.service.CredentialIssuanceQuotaService;
 import io.github.adorsysgis.keycloakstatuslist.service.CryptoIdentityService;
 import io.github.adorsysgis.keycloakstatuslist.service.CustomHttpClient;
 import io.github.adorsysgis.keycloakstatuslist.service.IssuedCredentialIdResolver;
+import io.github.adorsysgis.keycloakstatuslist.service.IssuedCredentialIdResolver.OpenidCredentialAuthorization;
 import io.github.adorsysgis.keycloakstatuslist.service.StatusListService;
 import jakarta.persistence.EntityManager;
 import java.io.IOException;
@@ -30,6 +33,7 @@ import org.apache.hc.core5.http.URIScheme;
 import org.jboss.logging.Logger;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
+import org.keycloak.models.UserModel;
 import org.keycloak.models.UserSessionModel;
 import org.keycloak.protocol.ProtocolMapper;
 import org.keycloak.protocol.oid4vc.issuance.mappers.OID4VCMapper;
@@ -49,10 +53,22 @@ public class StatusListProtocolMapper extends OID4VCMapper {
     private static final Logger logger = Logger.getLogger(StatusListProtocolMapper.class);
     private static final List<ProviderConfigProperty> CONFIG_PROPERTIES = new ArrayList<>();
 
+    static {
+        ProviderConfigProperty maxCredentialsPerUser = new ProviderConfigProperty();
+        maxCredentialsPerUser.setName(StatusListConfig.STATUS_LIST_MAX_CREDENTIALS_PER_USER);
+        maxCredentialsPerUser.setLabel("Max credentials per user");
+        maxCredentialsPerUser.setHelpText(
+                "Maximum number of non-revoked credentials of this type a holder may have. Leave empty or set to 0 for unlimited.");
+        maxCredentialsPerUser.setType(ProviderConfigProperty.STRING_TYPE);
+        maxCredentialsPerUser.setDefaultValue("0");
+        CONFIG_PROPERTIES.add(maxCredentialsPerUser);
+    }
+
     private final KeycloakSession session;
     private final StatusListService statusListService;
     private final StatusListRepository statusListRepository;
     private final IssuedCredentialIdResolver issuedCredentialIdResolver;
+    private final CredentialIssuanceQuotaService credentialIssuanceQuotaService;
 
     public StatusListProtocolMapper() {
         // An empty mapper constructor is required by Keycloak
@@ -60,6 +76,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         this.statusListService = null;
         this.statusListRepository = null;
         this.issuedCredentialIdResolver = null;
+        this.credentialIssuanceQuotaService = null;
     }
 
     public StatusListProtocolMapper(KeycloakSession session) {
@@ -73,6 +90,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         this.statusListService =
                 config.isEnabled() && isValidHttpUrl(config.getServerUrl()) ? createStatusListService(session) : null;
         this.issuedCredentialIdResolver = new IssuedCredentialIdResolver(session);
+        this.credentialIssuanceQuotaService = new CredentialIssuanceQuotaService(session, statusListRepository);
     }
 
     /**
@@ -122,6 +140,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         return """
                 Adds a status list claim to issued verifiable credentials.
                 The status list server URL is configured at the realm level.
+                Optionally limits how many non-revoked credentials of this type a holder may have.
                 """;
     }
 
@@ -177,18 +196,23 @@ public class StatusListProtocolMapper extends OID4VCMapper {
             return;
         }
 
-        // Build URI for status list
-        String listId = statusListRepository.getNextStatusListId(realmId, config.getStatusListMaxEntries());
-        StatusListEndpointUriResolver resolver = new StatusListEndpointUriResolver(serverUrl);
-        URI uri = URI.create(resolver.statusListUrl(listId));
-        logger.debugf("Configuration: listId=%s, uri=%s", listId, uri);
+        OpenidCredentialAuthorization authorization = issuedCredentialIdResolver.resolveOpenidCredential();
+        String tokenId = resolveTokenId(claims, authorization.issuedCredentialId());
+        String userId = resolveHolderUserId(userSessionModel);
+        String credentialConfigurationId =
+                authorization.credentialConfigurationId().orElse(null);
+        int maxCredentialsPerUser = credentialIssuanceQuotaService.resolveMax(
+                mapperModel, session.getContext().getRealm());
+        credentialIssuanceQuotaService.requireHolderAndTypeWhenLimited(
+                userId, credentialConfigurationId, maxCredentialsPerUser);
 
-        String tokenId = resolveTokenId(claims);
-
-        UserSessionModel userSession = session.getContext().getUserSession();
-        String userId = userSession != null ? userSession.getUser().getId() : null;
-
-        Status status = sendStatusAndStoreIndexMapping(listId, uri.toString(), userId, tokenId);
+        Status status = sendStatusAndStoreIndexMapping(
+                serverUrl,
+                userId,
+                tokenId,
+                credentialConfigurationId,
+                maxCredentialsPerUser,
+                config.getStatusListMaxEntries());
 
         if (status == null) {
             failIssuanceIfMandatory(config);
@@ -223,7 +247,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         }
     }
 
-    private String resolveTokenId(Map<String, Object> claims) {
+    private String resolveTokenId(Map<String, Object> claims, Optional<String> issuedCredentialId) {
         /*
          * Keycloak records the IssuedVerifiableCredentialModel id in the
          * authenticated OID4VCI access token authorization details before protocol
@@ -231,8 +255,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
          * revocation endpoint still enforces ownership from Keycloak's issued
          * credential store.
          */
-        Optional<String> issuedCredentialId = issuedCredentialIdResolver.resolve();
-        if (issuedCredentialId.isPresent()) {
+        if (issuedCredentialId != null && issuedCredentialId.isPresent()) {
             return issuedCredentialId.get();
         }
 
@@ -243,15 +266,42 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         return null;
     }
 
-    /**
-     * Send status to server to create status list entry and store index mapping in database.
-     */
-    public Status sendStatusAndStoreIndexMapping(String statusListId, String uri, String userId, String tokenId) {
-        StatusListMappingEntity mapping = createInitialMapping(statusListId, userId, tokenId);
-        if (!reserveIndex(mapping)) {
+    private String resolveHolderUserId(UserSessionModel userSessionModel) {
+        UserModel holder = userFrom(userSessionModel);
+        if (holder == null) {
+            holder = userFrom(session.getContext().getUserSession());
+        }
+        if (holder == null) {
             return null;
         }
 
+        String userId = holder.getId();
+        return StringUtil.isBlank(userId) ? null : userId;
+    }
+
+    private static UserModel userFrom(UserSessionModel userSession) {
+        return userSession == null ? null : userSession.getUser();
+    }
+
+    /**
+     * Send status to server to create status list entry and store index mapping in database.
+     * List-id choice, quota check, and {@code INIT} reservation share one transaction that locks the
+     * latest mapping for the realm, or the Keycloak realm row when no mapping exists yet.
+     */
+    public Status sendStatusAndStoreIndexMapping(
+            String serverUrl,
+            String userId,
+            String tokenId,
+            String credentialConfigurationId,
+            int maxCredentialsPerUser,
+            int maxEntries) {
+        StatusListMappingEntity mapping = createInitialMapping(userId, tokenId, credentialConfigurationId);
+        if (!reserveIndex(mapping, maxCredentialsPerUser, maxEntries)) {
+            return null;
+        }
+
+        String uri = new StatusListEndpointUriResolver(serverUrl).statusListUrl(mapping.getStatusListId());
+        logger.debugf("Configuration: listId=%s, uri=%s", mapping.getStatusListId(), uri);
         Status status = publishInitialStatus(mapping, uri);
         if (!persistCompletionStatus(mapping)) {
             return null;
@@ -260,25 +310,38 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         return status;
     }
 
-    private StatusListMappingEntity createInitialMapping(String statusListId, String userId, String tokenId) {
+    private StatusListMappingEntity createInitialMapping(
+            String userId, String tokenId, String credentialConfigurationId) {
         StatusListMappingEntity mapping = new StatusListMappingEntity();
-        mapping.setStatusListId(statusListId);
         mapping.setUserId(userId);
         mapping.setTokenId(tokenId);
+        mapping.setCredentialConfigurationId(credentialConfigurationId);
         mapping.setRealmId(session.getContext().getRealm().getId());
         mapping.setTokenStatus(TokenStatus.VALID);
         return mapping;
     }
 
-    private boolean reserveIndex(StatusListMappingEntity mapping) {
-        logger.debugf(
-                "Booking next index for status list mapping: status_list_id=%s, userId=%s, tokenId=%s",
-                mapping.getStatusListId(), mapping.getUserId(), mapping.getTokenId());
-
+    private boolean reserveIndex(StatusListMappingEntity mapping, int maxCredentialsPerUser, int maxEntries) {
         try {
-            statusListRepository.withEntityManagerInTransaction(em -> persistInitialMapping(em, mapping));
+            statusListRepository.withEntityManagerInTransaction(em -> {
+                StatusListMappingEntity latest = statusListRepository.lockLatestMapping(em, mapping.getRealmId());
+                mapping.setStatusListId(statusListRepository.getNextStatusListId(latest, maxEntries));
+                logger.debugf(
+                        "Booking next index for status list mapping: status_list_id=%s, userId=%s, tokenId=%s",
+                        mapping.getStatusListId(), mapping.getUserId(), mapping.getTokenId());
+                credentialIssuanceQuotaService.enforceWithinReservationTransaction(
+                        em,
+                        mapping.getRealmId(),
+                        mapping.getUserId(),
+                        mapping.getCredentialConfigurationId(),
+                        maxCredentialsPerUser);
+                persistInitialMapping(em, mapping);
+            });
             return true;
         } catch (RuntimeException e) {
+            if (e instanceof CredentialIssuanceQuotaException) {
+                throw e;
+            }
             logger.error("Failed to initiate index mapping", e);
             return false;
         }

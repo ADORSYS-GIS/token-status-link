@@ -94,6 +94,29 @@ final class Oid4vciTestClient {
     }
 
     IssuedCredentialFixture issueCredential(String username, String userAccessToken) throws Exception {
+        CredentialIssuanceAttempt attempt = tryIssueCredential(username, userAccessToken);
+        assertTrue(
+                attempt.response().statusCode() >= 200 && attempt.response().statusCode() < 300,
+                "credential endpoint must succeed, got HTTP "
+                        + attempt.response().statusCode() + ": "
+                        + attempt.response().body());
+
+        JsonNode credentialResponse = readJson(attempt.response());
+        String credential = extractCredential(credentialResponse);
+        assertNotNull(credential, "credential endpoint must return a credential: " + credentialResponse);
+
+        JsonNode credentialPayload = decodeJwtPayload(credential.split("~", 2)[0]);
+        JsonNode statusClaim = credentialPayload.path("status");
+        assertFalse(statusClaim.isMissingNode(), "issued credential must embed status claim");
+
+        return new IssuedCredentialFixture(
+                issuedCredentialId(attempt.credentialAccessToken()),
+                credential,
+                statusClaim,
+                attempt.credentialAccessToken());
+    }
+
+    CredentialIssuanceAttempt tryIssueCredential(String username, String userAccessToken) throws Exception {
         CredentialsOffer credentialOffer = fetchCredentialOffer(username, userAccessToken);
         String preAuthorizedCode = credentialOffer.getPreAuthorizedCode();
         assertNotNull(preAuthorizedCode, "credential offer must include a pre-authorized code");
@@ -124,20 +147,15 @@ final class Oid4vciTestClient {
                 .setCredentialIdentifier(credentialIdentifier)
                 .setProofs(Proofs.create(ProofType.JWT, walletProofJwt(credentialAccessToken)));
 
-        JsonNode credentialResponse = postJson(
-                realmEndpoint("/protocol/oid4vc/credential"),
-                JsonSerialization.mapper.writeValueAsString(request),
-                bearer(credentialAccessToken));
-        String credential = extractCredential(credentialResponse);
-        assertNotNull(credential, "credential endpoint must return a credential: " + credentialResponse);
-
-        JsonNode credentialPayload = decodeJwtPayload(credential.split("~", 2)[0]);
-        JsonNode statusClaim = credentialPayload.path("status");
-        assertFalse(statusClaim.isMissingNode(), "issued credential must embed status claim");
-
-        return new IssuedCredentialFixture(
-                issuedCredentialId(credentialAccessToken), credential, statusClaim, credentialAccessToken);
+        HttpResponse<String> response = send(HttpRequest.newBuilder()
+                .uri(URI.create(realmEndpoint("/protocol/oid4vc/credential")))
+                .headers(headers(bearer(credentialAccessToken), "Content-Type", "application/json"))
+                .POST(HttpRequest.BodyPublishers.ofString(JsonSerialization.mapper.writeValueAsString(request)))
+                .build());
+        return new CredentialIssuanceAttempt(credentialAccessToken, response);
     }
+
+    record CredentialIssuanceAttempt(String credentialAccessToken, HttpResponse<String> response) {}
 
     HttpResponse<String> revokeCredential(String bearerToken, String credentialId, String reason)
             throws IOException, InterruptedException {
