@@ -85,13 +85,14 @@ VITE_OID4VC_PRE_AUTHORIZED=true
 ```
 
 Revocation uses `POST /realms/{realm}/status-list/revoke` with `mode=issued_credential_revocation`. After a successful
-response, Mock FE keeps the credential visible with status **Revoked**.
+response, the demo app keeps the credential visible with status **Revoked**.
 
 ![Screenshot of our MOCK FE demo app](assets/demo-app-mock-fe.png)
 
 ### Wallet
 
-We developed a [wallet](https://github.com/adorsys/eudiw-app) for testing issuance and presentation. An online instance
+The national wallet is preferred and supports authorization-code issuance. We also developed a
+[wallet](https://github.com/adorsys/eudiw-app) for testing issuance and presentation. An online instance
 is available at https://adorsys.github.io/eudiw-app. That hosted build cannot reach a Keycloak instance running on
 localhost because a proxy handles its HTTP calls. With a local Keycloak, start the wallet locally as well.
 Latest tested commit (default `develop` branch): https://github.com/adorsys/eudiw-app/tree/86d4ad50301fd57cbce455a0bab8487b4ec22e5d.
@@ -107,9 +108,6 @@ If you happen to run into CORS issues, consider starting your browser with CORS 
 ```sh
 google-chrome --disable-web-security
 ```
-
-The wallet may still expose its own revocation UI. **Do not use it for this demo.** Revoke from Mock FE so Keycloak
-updates the status list entry for the issued credential.
 
 ### Keycloak
 
@@ -198,7 +196,7 @@ to the list of visible claims and configure the Status List protocol mapper as s
 The above configuration is sufficient to enable using the plugin. For additional options and advanced settings, refer to
 the [plugin documentation](https://github.com/ADORSYS-GIS/token-status-link).
 
-Revocation from Mock FE uses:
+Revocation from the demo app uses:
 
 ```http
 POST /realms/{realm}/status-list/revoke
@@ -225,8 +223,8 @@ types and to reject revoked credentials.
 
 ![Configure SD-JWT authenticator](assets/configure-sdjwt-authenticator.png)
 
-Turn **Reject revoked credentials (Token Status List)** on. That is what closes the demo: after Mock FE revokes the
-credential, a presentation login must fail.
+Turn **Reject revoked credentials (Token Status List)** on. That is what closes the demo: after the demo app revokes
+the credential, a presentation login must fail.
 
 For additional details, refer to
 the [plugin documentation](https://github.com/ADORSYS-GIS/keycloak-oid4vp-plugin?tab=readme-ov-file#documentation-site-antora).
