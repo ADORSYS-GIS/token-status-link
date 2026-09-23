@@ -133,7 +133,8 @@ class CredentialIssuanceQuotaServiceTest {
     @Test
     void resolveOverflowPolicy_usesMapperConfigOverRealmFallback() {
         when(mapperModel.getConfig())
-                .thenReturn(Map.of(CredentialIssuanceQuotaService.OVERFLOW_POLICY_CONFIG, OVERFLOW_POLICY_REVOKE_OLDEST));
+                .thenReturn(
+                        Map.of(CredentialIssuanceQuotaService.OVERFLOW_POLICY_CONFIG, OVERFLOW_POLICY_REVOKE_OLDEST));
         lenient()
                 .when(realm.getAttribute(StatusListConfig.STATUS_LIST_OVERFLOW_POLICY))
                 .thenReturn(OVERFLOW_POLICY_REJECT);
@@ -414,7 +415,8 @@ class CredentialIssuanceQuotaServiceTest {
         when(credentialScope.getProtocolMappersStream()).thenAnswer(invocation -> Stream.of(mapperModel));
         when(mapperModel.getProtocolMapper()).thenReturn(StatusListProtocolMapper.Constants.MAPPER_ID);
         if (overflowPolicy == null) {
-            when(mapperModel.getConfig()).thenReturn(Map.of(StatusListConfig.STATUS_LIST_MAX_CREDENTIALS_PER_USER, max));
+            when(mapperModel.getConfig())
+                    .thenReturn(Map.of(StatusListConfig.STATUS_LIST_MAX_CREDENTIALS_PER_USER, max));
         } else {
             when(mapperModel.getConfig())
                     .thenReturn(Map.of(
