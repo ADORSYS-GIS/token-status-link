@@ -16,6 +16,7 @@ import io.github.adorsysgis.keycloakstatuslist.model.IssuedCredentialStatusRespo
 import io.github.adorsysgis.keycloakstatuslist.model.IssuedCredentialStatusResponse.IssuedCredentialLimit;
 import io.github.adorsysgis.keycloakstatuslist.model.IssuedCredentialStatusResponse.IssuedCredentialStatus;
 import io.github.adorsysgis.keycloakstatuslist.model.TokenStatus;
+import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -108,7 +109,8 @@ public class CredentialRevocationService {
 
         try {
             StatusListMappingEntity mapping = resolveMappingForRevocation(user, realm, credentialId);
-            revokeMapping(mapping, requestId);
+            publishRevocation(mapping, requestId);
+            statusListRepository.save(mapping);
 
             Instant revokedAt = Instant.now();
             logger.infof(
@@ -135,13 +137,30 @@ public class CredentialRevocationService {
 
     /**
      * Marks a status-list mapping INVALID on the status list server and in the local store.
-     * Used by holder-initiated revocation and by the {@code REVOKE_OLDEST} issuance overflow policy.
+     * Used by holder-initiated revocation, which is not inside the issuance reservation transaction.
      */
     public void revokeMapping(StatusListMappingEntity mapping) throws StatusListException {
-        revokeMapping(mapping, UUID.randomUUID().toString());
+        publishRevocation(mapping, UUID.randomUUID().toString());
+        statusListRepository.save(mapping);
     }
 
-    private void revokeMapping(StatusListMappingEntity mapping, String requestId) throws StatusListException {
+    /**
+     * Marks a status-list mapping INVALID on the status list server and on the current reservation
+     * {@code EntityManager}. {@code REVOKE_OLDEST} runs while that transaction already holds
+     * {@code PESSIMISTIC_WRITE} on the latest mapping; {@link StatusListRepository#save} would open a
+     * second transaction and wait on that lock.
+     */
+    public void revokeMapping(EntityManager em, StatusListMappingEntity mapping) throws StatusListException {
+        if (em == null) {
+            throw new IllegalArgumentException("EntityManager is required to revoke inside a reservation transaction");
+        }
+        publishRevocation(mapping, UUID.randomUUID().toString());
+        if (!em.contains(mapping)) {
+            em.merge(mapping);
+        }
+    }
+
+    private void publishRevocation(StatusListMappingEntity mapping, String requestId) throws StatusListException {
         if (mapping == null) {
             throw new IllegalArgumentException("Status list mapping is required");
         }
@@ -154,7 +173,6 @@ public class CredentialRevocationService {
         StatusListPayload revocationPayload = new StatusListPayload(mapping.getStatusListId(), List.of(statusEntry));
         getStatusListService().updateStatusList(revocationPayload, requestId);
         mapping.setTokenStatus(TokenStatus.INVALID);
-        statusListRepository.save(mapping);
     }
 
     /**

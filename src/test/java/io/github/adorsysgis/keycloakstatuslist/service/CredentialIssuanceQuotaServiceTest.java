@@ -219,7 +219,7 @@ class CredentialIssuanceQuotaServiceTest {
         assertEquals(CredentialIssuanceQuotaService.LIMIT_REACHED_MESSAGE, exception.getMessage());
         assertEquals(CredentialIssuanceQuotaException.ERROR_LIMIT_REACHED, exception.getError());
         assertEquals(409, exception.getResponse().getStatus());
-        verify(credentialRevocationService, never()).revokeMapping(any());
+        verify(credentialRevocationService, never()).revokeMapping(any(), any());
     }
 
     @Test
@@ -304,7 +304,7 @@ class CredentialIssuanceQuotaServiceTest {
         service.enforceWithinReservationTransaction(
                 entityManager, "realm-1", "user-1", "IdentityCredential", 1, OVERFLOW_POLICY_REVOKE_OLDEST);
 
-        verify(credentialRevocationService).revokeMapping(oldest);
+        verify(credentialRevocationService).revokeMapping(entityManager, oldest);
     }
 
     @Test
@@ -319,7 +319,7 @@ class CredentialIssuanceQuotaServiceTest {
                 .thenReturn(0L);
         doThrow(new StatusListException("status list unavailable"))
                 .when(credentialRevocationService)
-                .revokeMapping(oldest);
+                .revokeMapping(entityManager, oldest);
 
         CredentialIssuanceQuotaException exception = assertThrows(
                 CredentialIssuanceQuotaException.class,

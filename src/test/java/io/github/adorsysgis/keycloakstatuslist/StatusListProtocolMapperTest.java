@@ -542,7 +542,8 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         assertThat(claims.keySet(), hasItem(Constants.STATUS_CLAIM_KEY));
         verify(statusListService).updateStatusList(any(StatusListService.StatusListPayload.class), anyString());
         assertEquals(TokenStatus.INVALID, oldest.getTokenStatus());
-        verify(statusListRepository).save(oldest);
+        verify(entityManager).merge(oldest);
+        verify(statusListRepository, never()).save(oldest);
     }
 
     private void mockDefaultRealmConfig() {

@@ -191,7 +191,7 @@ public class CredentialIssuanceQuotaService {
                 userId, credentialConfigurationId, oldest.getId(), oldest.getTokenId(), countTowardLimit, max);
 
         try {
-            credentialRevocationService.revokeMapping(oldest);
+            credentialRevocationService.revokeMapping(em, oldest);
             issuedIds.remove(oldest.getTokenId());
         } catch (StatusListException | RuntimeException e) {
             logger.errorf(
