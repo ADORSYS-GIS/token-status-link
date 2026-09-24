@@ -215,6 +215,65 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
     }
 
     @Test
+    void issuanceKeepsOldestRevokedWhenLaterPublicationFails() throws Exception {
+        setIssuanceQuota("1", CredentialIssuanceQuotaService.OVERFLOW_POLICY_REVOKE_OLDEST);
+        try {
+            TestUser holder = credentialHolder("quota-revoke-then-fail");
+            IssuedCredentialFixture first = oid4vci.issueCredential(holder.username(), holder.accessToken());
+            assertCredentialStatus(holder.accessToken(), first.id(), TokenStatus.VALID.name());
+
+            statusListServer.failNextPut();
+            var failed = oid4vci.tryIssueCredential(holder.username(), holder.accessToken());
+            assertTrue(
+                    failed.response().statusCode() >= 400,
+                    "issuance should fail after oldest revoke when the replacement cannot be published, got HTTP "
+                            + failed.response().statusCode() + ": "
+                            + failed.response().body());
+            assertCredentialStatus(holder.accessToken(), first.id(), TokenStatus.INVALID.name());
+            assertStatusListValue(first, TokenStatus.INVALID.getCode());
+
+            IssuedCredentialFixture replacement = oid4vci.issueCredential(holder.username(), holder.accessToken());
+            assertCredentialStatus(holder.accessToken(), first.id(), TokenStatus.INVALID.name());
+            assertCredentialStatus(holder.accessToken(), replacement.id(), TokenStatus.VALID.name());
+            assertStatusListValue(first, TokenStatus.INVALID.getCode());
+            assertStatusListValue(replacement, TokenStatus.VALID.getCode());
+        } finally {
+            statusListServer.allowStatusWrites();
+            setIssuanceQuota(null, null);
+        }
+    }
+
+    @Test
+    void issuanceDoesNotContinueWhenOldestRevocationCannotReachStatusServer() throws Exception {
+        setIssuanceQuota("1", CredentialIssuanceQuotaService.OVERFLOW_POLICY_REVOKE_OLDEST);
+        try {
+            TestUser holder = credentialHolder("quota-revoke-server-down");
+            IssuedCredentialFixture first = oid4vci.issueCredential(holder.username(), holder.accessToken());
+            assertCredentialStatus(holder.accessToken(), first.id(), TokenStatus.VALID.name());
+            assertStatusListValue(first, TokenStatus.VALID.getCode());
+
+            statusListServer.failNextPatch();
+            var failed = oid4vci.tryIssueCredential(holder.username(), holder.accessToken());
+            assertTrue(
+                    failed.response().statusCode() >= 400,
+                    "issuance should fail closed when oldest revocation cannot reach the status server, got HTTP "
+                            + failed.response().statusCode() + ": "
+                            + failed.response().body());
+            assertCredentialStatus(holder.accessToken(), first.id(), TokenStatus.VALID.name());
+            assertStatusListValue(first, TokenStatus.VALID.getCode());
+
+            IssuedCredentialFixture second = oid4vci.issueCredential(holder.username(), holder.accessToken());
+            assertCredentialStatus(holder.accessToken(), first.id(), TokenStatus.INVALID.name());
+            assertCredentialStatus(holder.accessToken(), second.id(), TokenStatus.VALID.name());
+            assertStatusListValue(first, TokenStatus.INVALID.getCode());
+            assertStatusListValue(second, TokenStatus.VALID.getCode());
+        } finally {
+            statusListServer.allowStatusWrites();
+            setIssuanceQuota(null, null);
+        }
+    }
+
+    @Test
     void concurrentIssuanceRespectsConfiguredMaxOfOne() throws Exception {
         setIssuanceQuota("1", null);
         ExecutorService executor = Executors.newFixedThreadPool(2);

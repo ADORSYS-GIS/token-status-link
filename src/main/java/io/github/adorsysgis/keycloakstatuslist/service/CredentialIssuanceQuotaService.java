@@ -119,7 +119,8 @@ public class CredentialIssuanceQuotaService {
      * {@code INIT} rows already meet {@code max}. {@code INIT} is extra so concurrent reservation
      * cannot overshoot; it is not part of displayed {@code activeCount}. {@code REVOKE_OLDEST} revokes
      * the oldest occupying mapping and continues only if a slot is actually freed; a failed revocation
-     * fails issuance.
+     * fails issuance. Revocation is irreversible: a later issuance failure does not restore the old
+     * credential. The freed slot is what a retry uses.
      */
     public void enforceWithinReservationTransaction(
             EntityManager em,
@@ -161,6 +162,10 @@ public class CredentialIssuanceQuotaService {
         throw CredentialIssuanceQuotaException.limitReached(LIMIT_REACHED_MESSAGE);
     }
 
+    /**
+     * Revokes the oldest occupying mapping and marks it {@code INVALID} on {@code em}. A later
+     * issuance failure does not restore it; a retry uses the freed slot.
+     */
     private void revokeOldestToFreeSlot(
             EntityManager em,
             String realmId,

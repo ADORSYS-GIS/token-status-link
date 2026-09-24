@@ -131,7 +131,7 @@ A positive value caps live holdings of that type: `SUCCESS`/`FAILURE` mappings t
 When the cap is reached the plugin applies `status-list-overflow-policy`. The mapper value is used when present. If the mapper omits the key, the optional realm attribute is used, then `REJECT`. Supported values:
 
 - `REJECT` — fail the new issuance (`409`, `credential_limit_reached`, with an `error_description`).
-- `REVOKE_OLDEST` — revoke the oldest occupying mapping for that holder and type, then continue issuance. If that revocation fails, issuance fails (no silent over-limit).
+- `REVOKE_OLDEST` — revoke the oldest occupying mapping for that holder and type, then continue issuance. Issuance fails if the revoke cannot be completed (no silent over-limit). A completed revoke is kept even when the new credential does not publish; a retry can use the freed slot.
 
 Missing holder or type with a limit set fails closed (`400`, `credential_limit_unresolved`). Non-numeric or negative values are rejected. Quota check, list-id choice, and index reservation share one transaction that locks the latest realm mapping, or the Keycloak realm row when none exists yet.
 

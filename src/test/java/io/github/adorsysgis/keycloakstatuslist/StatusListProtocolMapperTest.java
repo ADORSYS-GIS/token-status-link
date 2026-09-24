@@ -31,6 +31,7 @@ import io.github.adorsysgis.keycloakstatuslist.config.StatusListConfig;
 import io.github.adorsysgis.keycloakstatuslist.config.StatusListEndpointUriResolver;
 import io.github.adorsysgis.keycloakstatuslist.exception.CredentialIssuanceQuotaException;
 import io.github.adorsysgis.keycloakstatuslist.exception.StatusListException;
+import io.github.adorsysgis.keycloakstatuslist.exception.StatusListServerException;
 import io.github.adorsysgis.keycloakstatuslist.helpers.MockKeycloakTest;
 import io.github.adorsysgis.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
 import io.github.adorsysgis.keycloakstatuslist.jpa.repository.StatusListRepository;
@@ -399,6 +400,24 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
     }
 
     @Test
+    void shouldMarkMappingFailure_WhenStatusServerReturnsError() throws Exception {
+        mockGetNextIndex();
+        lenient()
+                .when(realm.getAttribute(StatusListConfig.STATUS_LIST_MANDATORY))
+                .thenReturn("false");
+        doThrow(new StatusListServerException("Failed to publish status list", 500))
+                .when(statusListService)
+                .publishOrUpdate(any(StatusListService.StatusListPayload.class));
+
+        mapper.setClaim(claims, userSession);
+
+        assertThat(claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
+        var entityCaptor = ArgumentCaptor.forClass(StatusListMappingEntity.class);
+        verify(statusListRepository).save(entityCaptor.capture());
+        assertEquals(MappingStatus.FAILURE, entityCaptor.getValue().getStatus());
+    }
+
+    @Test
     void shouldMapStatusEvenWhenIdClaimIsNotString() {
         mockGetNextIndex();
         claims.put(Constants.ID_CLAIM_KEY, 1234L);
@@ -544,6 +563,52 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         assertEquals(TokenStatus.INVALID, oldest.getTokenStatus());
         verify(entityManager).merge(oldest);
         verify(statusListRepository, never()).save(oldest);
+    }
+
+    @Test
+    void shouldKeepOldestRevoked_WhenRevokeOldestSucceedsButNewPublicationFails() throws Exception {
+        mockGetNextIndex();
+        stubHolder("holder-1");
+        stubMapperConfig("1", CredentialIssuanceQuotaService.OVERFLOW_POLICY_REVOKE_OLDEST);
+        when(headers.getHeaderString(HttpHeaders.AUTHORIZATION))
+                .thenReturn("Bearer " + accessTokenWithIssuedCredentialId("issued-credential-2"));
+        lenient()
+                .when(realm.getAttribute(StatusListConfig.STATUS_LIST_MANDATORY))
+                .thenReturn("true");
+
+        StatusListMappingEntity oldest = new StatusListMappingEntity();
+        oldest.setId("oldest-mapping");
+        oldest.setIdx(7L);
+        oldest.setStatusListId(TEST_LIST_ID);
+        oldest.setTokenId("issued-credential-1");
+        oldest.setTokenStatus(TokenStatus.VALID);
+        oldest.setStatus(MappingStatus.SUCCESS);
+        oldest.setCredentialConfigurationId("PidCredential");
+
+        UserProvider users = mock(UserProvider.class);
+        IssuedVerifiableCredentialModel issued = new IssuedVerifiableCredentialModel();
+        issued.setId("issued-credential-1");
+        lenient().when(session.users()).thenReturn(users);
+        lenient()
+                .when(users.getIssuedVerifiableCredentialsStreamByUser("holder-1"))
+                .thenReturn(Stream.of(issued));
+        lenient()
+                .doReturn(List.of(oldest))
+                .when(statusListRepository)
+                .findNonRevokedMappings(any(), eq(TEST_REALM_ID), eq("holder-1"), eq("PidCredential"));
+        lenient()
+                .doReturn(0L)
+                .when(statusListRepository)
+                .countInFlightMappings(any(), eq(TEST_REALM_ID), eq("holder-1"), eq("PidCredential"));
+        doThrow(new StatusListServerException("publish failed", 500))
+                .when(statusListService)
+                .publishOrUpdate(any(StatusListService.StatusListPayload.class));
+
+        assertThrows(RuntimeException.class, () -> mapper.setClaim(claims, userSession));
+        verify(statusListService).updateStatusList(any(StatusListService.StatusListPayload.class), anyString());
+        assertEquals(TokenStatus.INVALID, oldest.getTokenStatus());
+        verify(entityManager).merge(oldest);
+        assertThat(claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
     }
 
     private void mockDefaultRealmConfig() {

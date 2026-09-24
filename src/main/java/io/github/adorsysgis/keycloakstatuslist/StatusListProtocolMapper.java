@@ -9,6 +9,7 @@ import io.github.adorsysgis.keycloakstatuslist.config.StatusListConfig;
 import io.github.adorsysgis.keycloakstatuslist.config.StatusListEndpointUriResolver;
 import io.github.adorsysgis.keycloakstatuslist.exception.CredentialIssuanceQuotaException;
 import io.github.adorsysgis.keycloakstatuslist.exception.StatusListException;
+import io.github.adorsysgis.keycloakstatuslist.exception.StatusListServerException;
 import io.github.adorsysgis.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
 import io.github.adorsysgis.keycloakstatuslist.jpa.repository.StatusListRepository;
 import io.github.adorsysgis.keycloakstatuslist.model.Status;
@@ -385,7 +386,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
             sendStatusToServer(mapping.getIdx(), mapping.getStatusListId());
             mapping.setStatus(MappingStatus.SUCCESS);
             return new Status(new StatusListClaim(mapping.getIdx(), uri));
-        } catch (StatusListException | IOException e) {
+        } catch (StatusListException | StatusListServerException | IOException e) {
             logger.error("Failed to send token status", e);
             mapping.setStatus(MappingStatus.FAILURE);
             return null;
