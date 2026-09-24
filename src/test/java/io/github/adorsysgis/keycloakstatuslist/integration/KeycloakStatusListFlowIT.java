@@ -2,16 +2,15 @@ package io.github.adorsysgis.keycloakstatuslist.integration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import io.github.adorsysgis.keycloakstatuslist.config.StatusListConfig;
 import io.github.adorsysgis.keycloakstatuslist.exception.CredentialIssuanceQuotaException;
+import io.github.adorsysgis.keycloakstatuslist.model.IssuedCredentialStatusResponse;
 import io.github.adorsysgis.keycloakstatuslist.model.TokenStatus;
 import io.github.adorsysgis.keycloakstatuslist.service.CredentialIssuanceQuotaService;
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CyclicBarrier;
@@ -141,7 +140,7 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
 
             var rejected = oid4vci.tryIssueCredential(holder.username(), holder.accessToken());
             assertQuotaRejection(rejected);
-            assertRejectedIssuanceIsNotIssued(holder.accessToken(), rejected.credentialAccessToken());
+            assertRejectedIssuanceIsDangling(holder.accessToken(), rejected.credentialAccessToken(), first.id());
 
             IssuedCredentialFixture otherCredential =
                     oid4vci.issueCredential(otherHolder.username(), otherHolder.accessToken());
@@ -201,26 +200,21 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
         }
     }
 
-    private static void assertRejectedIssuanceIsNotIssued(String holderAccessToken, String credentialAccessToken)
-            throws Exception {
+    private static void assertRejectedIssuanceIsDangling(
+            String holderAccessToken, String credentialAccessToken, String listedCredentialId) throws Exception {
         String rejectedId = oid4vci.issuedCredentialId(credentialAccessToken);
-        JsonNode credentials =
-                oid4vci.issuedCredentialStatuses(holderAccessToken).path("credentials");
-        Iterator<JsonNode> credentialIterator = credentials.elements();
-        while (credentialIterator.hasNext()) {
-            JsonNode credential = credentialIterator.next();
-            assertNotEquals(
-                    rejectedId,
-                    credential.path("credentialId").asText(),
-                    "rejected issuance must not remain listed: " + credentials);
-            assertNotEquals(
-                    "UNKNOWN",
-                    credential.path("status").asText(),
-                    "a listed credential must not be an unmapped reject: " + credentials);
-        }
-
-        var revokeResponse = oid4vci.revokeCredential(holderAccessToken, rejectedId, "rejected issuance");
-        assertEquals(404, revokeResponse.statusCode(), "revoking a rejected issuance should be not found");
+        JsonNode listing = oid4vci.issuedCredentialStatuses(holderAccessToken);
+        JsonNode credentials = listing.path("credentials");
+        assertFalse(
+                containsCredential(credentials, rejectedId), "rejected issuance must not be listed: " + credentials);
+        assertTrue(
+                containsCredential(credentials, listedCredentialId),
+                "completed issuance must remain listed: " + credentials);
+        assertEquals(1, listing.path("dangling").path("count").asInt(), "dangling count: " + listing);
+        assertEquals(
+                IssuedCredentialStatusResponse.DANGLING_NOTICE,
+                listing.path("dangling").path("notice").asText(),
+                "dangling notice: " + listing);
     }
 
     private static void assertQuotaRejection(Oid4vciTestClient.CredentialIssuanceAttempt attempt) {

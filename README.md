@@ -128,7 +128,7 @@ A positive value caps live holdings of that type: `SUCCESS`/`FAILURE` mappings t
 
 Missing holder or type with a limit set fails closed (`400`, `credential_limit_unresolved`). Limit reached is `409`, `credential_limit_reached`, with an `error_description`. Non-numeric or negative values are rejected. Quota check, list-id choice, and index reservation share one transaction that locks the latest realm mapping, or the Keycloak realm row when none exists yet.
 
-If the mapper rejects issuance (quota, fail-closed, invalid limit config, or mandatory publication failure), the issued-credential row created at token time is deleted in its own transaction. Listing omits it, and revocation of that id returns `404`. Any `INIT` reservation for that id is marked `FAILURE` so it does not occupy a quota slot. A non-mandatory publication failure is not a reject: issuance continues without a status claim, and listing reports `UNKNOWN`.
+If issuance leaves a Keycloak issued-credential row with no `SUCCESS` status-list mapping (quota reject, fail-closed, invalid limit, stuck `INIT`, or a publication failure that never reached `SUCCESS`), listing omits that row and reports it in `dangling`. Unmapped and `INIT` rows do not occupy a displayed quota slot. A non-mandatory publication failure that persists a `FAILURE` mapping is also omitted from `credentials` (listing joins only `SUCCESS`), but that `FAILURE` mapping can still count toward quota while the issued-credential row exists.
 
 **Upgrade note (legacy mappings):** The Liquibase change that adds `credential_configuration_id` leaves existing `status_list_mapping` rows as `NULL`. Those pre-migration credentials are intentionally excluded from quota counts and from `limits` metadata, because their credential type cannot be recovered reliably. Quotas therefore apply only to credentials issued after the migration (when the mapper persists `credential_configuration_id`). Enabling a limit after upgrade does not count older active credentials toward that limit; revoke them manually first if you need a hard cap that includes holdings issued before the upgrade.
 
@@ -196,14 +196,14 @@ can continue to display it with a revoked status.
 |--------|------------------------------------------------------------------------------------------------------------------|
 | `400`  | Invalid input, such as a missing or blank `credential_id`, or a `mode` other than `issued_credential_revocation` |
 | `401`  | Missing, invalid, or expired bearer token                                                                        |
-| `404`  | Credential not found for this caller, including one deleted after a mapper reject, or it has no status list mapping |
+| `404`  | Credential not found for this caller, or it has no status list mapping                                           |
 | `500`  | Service disabled or not configured, or an unexpected error during revocation                                     |
 
 ### List issued credentials and their status
 
-Returns issued credentials together with the status recorded in the plugin's status list mapping
-table, plus display metadata (`credentialType`, `clientName`). The status is read locally and is
-not fetched from the status list server per request.
+Returns issued credentials that have a `SUCCESS` status-list mapping, plus display metadata
+(`credentialType`, `clientName`). The status is read locally and is not fetched from the status
+list server per request. Rows without a `SUCCESS` mapping are omitted and reported in `dangling`.
 
 Callers receive their own credentials. Users with the realm role `credential-offer-create` may pass
 `target_user` to list a single holder. Without that query, admins still receive only their own
@@ -221,8 +221,13 @@ Authorization: Bearer <user-access-token>
 Accept: application/json
 ```
 
-The response wraps the entries in a `credentials` array and includes quota metadata in `limits`
-for credential types that have a configured maximum:
+The response wraps entries that have a `SUCCESS` mapping in a `credentials` array and includes quota
+metadata in `limits` for credential types that have a configured maximum. Issued-credential rows with
+no `SUCCESS` mapping are omitted from `credentials` and reported in `dangling`. They may be a leftover
+from a failed issuance, or a valid credential that cannot be revoked through this plugin. Unmapped and
+`INIT` leftovers do not occupy a displayed quota slot. An administrator can remove the Keycloak
+issued-credential entry if it should not remain on that list, or if a `FAILURE` mapping is still
+occupying a slot.
 
 ```json
 {
@@ -249,7 +254,11 @@ for credential types that have a configured maximum:
       "remaining": 0,
       "overflowPolicy": "REJECT"
     }
-  ]
+  ],
+  "dangling": {
+    "count": 0,
+    "notice": null
+  }
 }
 ```
 
@@ -263,7 +272,7 @@ for credential types that have a configured maximum:
 | `clientId`               | string | Internal id of the client that requested the credential                                     |
 | `clientName`             | string | Display name of that client, falling back to its public client id                           |
 | `revision`               | string | Credential revision                                                                         |
-| `status`                 | string | `VALID`, `INVALID`, `SUSPENDED`, or `UNKNOWN` when the credential was issued without a successful mapping. A mapper reject is omitted, not listed as failed |
+| `status`                 | string | `VALID`, `INVALID`, or `SUSPENDED` from a `SUCCESS` mapping. `UNKNOWN` if that mapping has no token status |
 | `userId`                 | string | Keycloak user id of the credential holder                                                   |
 | `username`               | string | Username of the credential holder                                                           |
 
@@ -276,6 +285,13 @@ Each `limits` entry describes the holder's quota for one credential type:
 | `activeCount`              | number | `SUCCESS`/`FAILURE` mappings that still have an issued credential (not `INVALID`). In-flight `INIT` rows are not included |
 | `remaining`                | number | Slots left before issuance of this type is rejected                  |
 | `overflowPolicy`           | string | Currently always `REJECT`                                            |
+
+`dangling` describes issued-credential rows omitted from `credentials`:
+
+| Field    | Type   | Description                                                                 |
+| -------- | ------ | --------------------------------------------------------------------------- |
+| `count`  | number | Issued-credential rows with no `SUCCESS` status-list mapping                |
+| `notice` | string | Present when `count` is greater than `0`; tells the UI why rows were omitted |
 
 ## Status List Server API
 

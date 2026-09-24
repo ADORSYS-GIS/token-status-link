@@ -37,7 +37,6 @@ import io.github.adorsysgis.keycloakstatuslist.model.Status;
 import io.github.adorsysgis.keycloakstatuslist.model.StatusListClaim;
 import io.github.adorsysgis.keycloakstatuslist.model.TokenStatus;
 import io.github.adorsysgis.keycloakstatuslist.service.CredentialIssuanceQuotaService;
-import io.github.adorsysgis.keycloakstatuslist.service.RejectedIssuanceCleanup;
 import io.github.adorsysgis.keycloakstatuslist.service.StatusListService;
 import jakarta.persistence.PersistenceException;
 import jakarta.ws.rs.core.HttpHeaders;
@@ -53,7 +52,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.keycloak.models.ProtocolMapperModel;
 import org.keycloak.models.UserModel;
-import org.keycloak.models.UserProvider;
 import org.keycloak.protocol.ProtocolMapper;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
@@ -70,9 +68,6 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
     @Mock
     UserModel holder;
-
-    @Mock
-    UserProvider userProvider;
 
     @Mock
     StatusListService statusListService;
@@ -98,10 +93,6 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         mockDefaultRealmConfig();
         mockStatusListRepository(0L);
         lenient().when(context.getRequestHeaders()).thenReturn(headers);
-        lenient().when(session.users()).thenReturn(userProvider);
-        lenient()
-                .when(userProvider.removeIssuedVerifiableCredential(anyString()))
-                .thenReturn(true);
     }
 
     @Test
@@ -351,7 +342,6 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         var entityCaptor = ArgumentCaptor.forClass(StatusListMappingEntity.class);
         verify(statusListRepository).save(entityCaptor.capture());
         assertEquals(MappingStatus.FAILURE, entityCaptor.getValue().getStatus());
-        verify(userProvider, never()).removeIssuedVerifiableCredential(anyString());
     }
 
     @Test
@@ -380,8 +370,6 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         assertThat(
                 logCaptor.getErrorLogs(),
                 hasItem(containsString("Status list is mandatory and publication failed; failing issuance")));
-        verify(userProvider).removeIssuedVerifiableCredential("issued-credential-1");
-        verify(statusListRepository).markInitMappingsFailed(TEST_REALM_ID, "issued-credential-1");
     }
 
     @Test
@@ -398,8 +386,6 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         assertThat(
                 logCaptor.getErrorLogs(),
                 hasItem(containsString("Status list is mandatory and publication failed; failing issuance")));
-        verify(userProvider).removeIssuedVerifiableCredential("issued-credential-1");
-        verify(statusListRepository).markInitMappingsFailed(TEST_REALM_ID, "issued-credential-1");
     }
 
     @Test
@@ -440,8 +426,6 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         assertEquals(CredentialIssuanceQuotaService.LIMIT_REACHED_MESSAGE, exception.getMessage());
         assertEquals(409, exception.getResponse().getStatus());
         verify(entityManager, never()).persist(any());
-        verify(userProvider).removeIssuedVerifiableCredential("issued-credential-1");
-        verify(statusListRepository).markInitMappingsFailed(TEST_REALM_ID, "issued-credential-1");
         assertThat(claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
     }
 
@@ -458,7 +442,6 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         assertEquals(CredentialIssuanceQuotaService.FAIL_CLOSED_MESSAGE, exception.getMessage());
         assertEquals(400, exception.getResponse().getStatus());
         verify(entityManager, never()).persist(any());
-        verify(userProvider).removeIssuedVerifiableCredential("issued-credential-1");
     }
 
     @Test
@@ -475,7 +458,6 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         assertEquals(CredentialIssuanceQuotaService.FAIL_CLOSED_MESSAGE, exception.getMessage());
         assertEquals(400, exception.getResponse().getStatus());
         verify(entityManager, never()).persist(any());
-        verify(userProvider).removeIssuedVerifiableCredential("issued-credential-1");
     }
 
     @Test
@@ -491,7 +473,6 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
         assertTrue(exception.getMessage().contains("status-list-max-credentials-per-user"));
         verify(entityManager, never()).persist(any());
-        verify(userProvider).removeIssuedVerifiableCredential("issued-credential-1");
     }
 
     @Test
@@ -509,7 +490,6 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         mapper.setClaim(claims, userSession);
 
         assertThat(claims.keySet(), hasItem(Constants.STATUS_CLAIM_KEY));
-        verify(userProvider, never()).removeIssuedVerifiableCredential(anyString());
         var entityCaptor = ArgumentCaptor.forClass(StatusListMappingEntity.class);
         verify(entityManager).persist(entityCaptor.capture());
         assertEquals("holder-1", entityCaptor.getValue().getUserId());
@@ -558,8 +538,6 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
                 mapper,
                 "credentialIssuanceQuotaService",
                 new CredentialIssuanceQuotaService(session, statusListRepository));
-        setPrivateField(mapper, "rejectedIssuanceCleanup", new RejectedIssuanceCleanup(session, statusListRepository));
-        lenient().doReturn(0).when(statusListRepository).markInitMappingsFailed(anyString(), anyString());
     }
 
     private void stubHolder(String userId) {
