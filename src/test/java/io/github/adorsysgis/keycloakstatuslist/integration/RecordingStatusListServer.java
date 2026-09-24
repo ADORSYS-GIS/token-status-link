@@ -10,12 +10,15 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.keycloak.util.JsonSerialization;
 
 final class RecordingStatusListServer implements AutoCloseable {
 
     private final HttpServer server;
     private final Map<String, Map<Long, Integer>> statuses = new ConcurrentHashMap<>();
+    private final AtomicBoolean failNextPut = new AtomicBoolean();
+    private final AtomicBoolean failNextPatch = new AtomicBoolean();
 
     private RecordingStatusListServer(HttpServer server) {
         this.server = server;
@@ -39,6 +42,28 @@ final class RecordingStatusListServer implements AutoCloseable {
 
     Optional<Integer> statusFor(String statusListId, long index) {
         return Optional.ofNullable(statuses.get(statusListId)).map(statusesByIndex -> statusesByIndex.get(index));
+    }
+
+    /**
+     * Fails the next PUT (new-list publish). PATCH revocation still succeeds, so a
+     * {@code REVOKE_OLDEST} issuance can revoke the oldest credential and then fail to publish the
+     * replacement.
+     */
+    void failNextPut() {
+        failNextPut.set(true);
+    }
+
+    /**
+     * Fails the next PATCH (status update / revocation). Used to prove issuance does not continue
+     * when oldest-credential revocation cannot reach the status-list server.
+     */
+    void failNextPatch() {
+        failNextPatch.set(true);
+    }
+
+    void allowStatusWrites() {
+        failNextPut.set(false);
+        failNextPatch.set(false);
     }
 
     private void handle(HttpExchange exchange) throws IOException {
@@ -65,6 +90,14 @@ final class RecordingStatusListServer implements AutoCloseable {
             if (("PUT".equals(method) || "PATCH".equals(method))
                     && path.startsWith("/api/v1/status-lists/")
                     && path.endsWith("/statuses")) {
+                if ("PUT".equals(method) && failNextPut.compareAndSet(true, false)) {
+                    respond(exchange, 500, "{\"error\":\"injected_publish_failure\"}");
+                    return;
+                }
+                if ("PATCH".equals(method) && failNextPatch.compareAndSet(true, false)) {
+                    respond(exchange, 500, "{\"error\":\"injected_revocation_failure\"}");
+                    return;
+                }
                 String statusListId =
                         path.substring("/api/v1/status-lists/".length(), path.length() - "/statuses".length());
                 if (recordStatuses(statusListId, exchange.getRequestBody().readAllBytes())) {
