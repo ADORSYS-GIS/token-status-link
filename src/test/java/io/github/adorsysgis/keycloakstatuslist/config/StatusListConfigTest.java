@@ -63,4 +63,24 @@ class StatusListConfigTest {
 
         assertThrows(IllegalArgumentException.class, () -> new StatusListConfig(realm).getMaxCredentialsPerUser());
     }
+
+    @Test
+    void parseOverflowPolicy_defaultsToRejectWhenBlankOrUnknown() {
+        assertEquals(StatusListConfig.DEFAULT_OVERFLOW_POLICY, StatusListConfig.parseOverflowPolicy(null));
+        assertEquals(StatusListConfig.DEFAULT_OVERFLOW_POLICY, StatusListConfig.parseOverflowPolicy(""));
+        assertEquals(StatusListConfig.DEFAULT_OVERFLOW_POLICY, StatusListConfig.parseOverflowPolicy("maybe"));
+    }
+
+    @Test
+    void parseOverflowPolicy_acceptsRejectAndRevokeOldest() {
+        assertEquals("REJECT", StatusListConfig.parseOverflowPolicy("reject"));
+        assertEquals("REVOKE_OLDEST", StatusListConfig.parseOverflowPolicy(" revoke_oldest "));
+    }
+
+    @Test
+    void getOverflowPolicy_readsRealmAttribute() {
+        when(realm.getAttribute(StatusListConfig.STATUS_LIST_OVERFLOW_POLICY)).thenReturn("REVOKE_OLDEST");
+
+        assertEquals("REVOKE_OLDEST", new StatusListConfig(realm).getOverflowPolicy());
+    }
 }

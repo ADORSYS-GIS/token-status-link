@@ -308,6 +308,28 @@ class CredentialIssuanceQuotaServiceTest {
     }
 
     @Test
+    void enforceWithinReservationTransaction_revokesStableOldestWhenTimestampsTie() throws Exception {
+        StatusListMappingEntity laterId = successfulMapping("token-z");
+        laterId.setId("mapping-z");
+        StatusListMappingEntity earlierId = successfulMapping("token-a");
+        earlierId.setId("mapping-a");
+        setCreatedTimestamp(laterId, 1_000L);
+        setCreatedTimestamp(earlierId, 1_000L);
+
+        stubIssuedCredentials("token-z", "token-a");
+        when(statusListRepository.findNonRevokedMappings(entityManager, "realm-1", "user-1", "IdentityCredential"))
+                .thenReturn(List.of(laterId, earlierId));
+        when(statusListRepository.countInFlightMappings(entityManager, "realm-1", "user-1", "IdentityCredential"))
+                .thenReturn(0L);
+
+        service.enforceWithinReservationTransaction(
+                entityManager, "realm-1", "user-1", "IdentityCredential", 2, OVERFLOW_POLICY_REVOKE_OLDEST);
+
+        verify(credentialRevocationService).revokeMapping(entityManager, earlierId);
+        verify(credentialRevocationService, never()).revokeMapping(entityManager, laterId);
+    }
+
+    @Test
     void enforceWithinReservationTransaction_failsWhenRevokeOldestCannotRevoke() throws Exception {
         StatusListMappingEntity oldest = successfulMapping("token-oldest");
         oldest.setId("mapping-1");
@@ -429,5 +451,15 @@ class CredentialIssuanceQuotaServiceTest {
                 .when(credentialScope.getAttribute("vc.credential_configuration_id"))
                 .thenReturn(credentialConfigurationId);
         lenient().when(credentialScope.getName()).thenReturn(credentialConfigurationId);
+    }
+
+    private static void setCreatedTimestamp(StatusListMappingEntity mapping, long timestamp) {
+        try {
+            var field = StatusListMappingEntity.class.getDeclaredField("createdTimestamp");
+            field.setAccessible(true);
+            field.set(mapping, timestamp);
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError(e);
+        }
     }
 }
