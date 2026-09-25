@@ -13,10 +13,12 @@ import io.github.adorsysgis.keycloakstatuslist.jpa.repository.StatusListReposito
 import io.github.adorsysgis.keycloakstatuslist.model.CredentialRevocationRequest;
 import io.github.adorsysgis.keycloakstatuslist.model.CredentialRevocationResponse;
 import io.github.adorsysgis.keycloakstatuslist.model.IssuedCredentialStatusResponse;
+import io.github.adorsysgis.keycloakstatuslist.model.IssuedCredentialStatusResponse.DanglingIssuedCredentials;
 import io.github.adorsysgis.keycloakstatuslist.model.IssuedCredentialStatusResponse.IssuedCredentialLimit;
 import io.github.adorsysgis.keycloakstatuslist.model.IssuedCredentialStatusResponse.IssuedCredentialStatus;
 import io.github.adorsysgis.keycloakstatuslist.model.TokenStatus;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -144,7 +146,9 @@ public class CredentialRevocationService {
      * <p>Callers receive their own credentials unless they hold the realm role
      * {@code credential-offer-create} and pass {@code targetUser}. Callers without that role receive
      * {@code 403} if {@code target_user} is provided. {@code limits} describes the resolved holder's
-     * configured quotas; an unknown {@code targetUser} yields an empty response.
+     * configured quotas; an unknown {@code targetUser} yields an empty response. Issued credentials
+     * without a {@code SUCCESS} status-list mapping are omitted from {@code credentials} and counted
+     * in {@code dangling}.
      */
     public IssuedCredentialStatusResponse getIssuedCredentialStatuses(AuthResult authResult, String targetUser)
             throws StatusListException {
@@ -169,11 +173,17 @@ public class CredentialRevocationService {
                 .listLimits(realm, userId, credentialIds);
         Map<String, StatusListMappingEntity> mappings =
                 statusListRepository.findSuccessfulMappingsByTokenIds(realm.getId(), userId, credentialIds);
-        List<IssuedCredentialStatus> credentials = issuedCredentials.stream()
-                .map(credential ->
-                        toIssuedCredentialStatus(credential, mappings.get(credential.getId()), holder, realm))
-                .toList();
-        return new IssuedCredentialStatusResponse(credentials, limits);
+        List<IssuedCredentialStatus> credentials = new ArrayList<>();
+        int danglingCount = 0;
+        for (IssuedVerifiableCredentialModel credential : issuedCredentials) {
+            StatusListMappingEntity mapping = mappings.get(credential.getId());
+            if (mapping == null) {
+                danglingCount++;
+                continue;
+            }
+            credentials.add(toIssuedCredentialStatus(credential, mapping, holder, realm));
+        }
+        return new IssuedCredentialStatusResponse(credentials, limits, DanglingIssuedCredentials.of(danglingCount));
     }
 
     private Optional<UserModel> resolveHolder(UserModel caller, RealmModel realm, String targetUser)

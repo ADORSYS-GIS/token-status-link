@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.github.adorsysgis.keycloakstatuslist.config.StatusListConfig;
 import io.github.adorsysgis.keycloakstatuslist.exception.CredentialIssuanceQuotaException;
+import io.github.adorsysgis.keycloakstatuslist.model.IssuedCredentialStatusResponse;
 import io.github.adorsysgis.keycloakstatuslist.model.TokenStatus;
 import io.github.adorsysgis.keycloakstatuslist.service.CredentialIssuanceQuotaService;
 import java.util.ArrayList;
@@ -138,6 +139,7 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
 
             var rejected = oid4vci.tryIssueCredential(holder.username(), holder.accessToken());
             assertQuotaRejection(rejected);
+            assertRejectedIssuanceIsDangling(holder.accessToken(), rejected.credentialAccessToken(), first.id());
 
             IssuedCredentialFixture otherCredential =
                     oid4vci.issueCredential(otherHolder.username(), otherHolder.accessToken());
@@ -194,6 +196,23 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
             executor.shutdownNow();
             setMaxCredentialsPerUser(null);
         }
+    }
+
+    private static void assertRejectedIssuanceIsDangling(
+            String holderAccessToken, String credentialAccessToken, String listedCredentialId) throws Exception {
+        String rejectedId = oid4vci.issuedCredentialId(credentialAccessToken);
+        JsonNode listing = oid4vci.issuedCredentialStatuses(holderAccessToken);
+        JsonNode credentials = listing.path("credentials");
+        assertFalse(
+                containsCredential(credentials, rejectedId), "rejected issuance must not be listed: " + credentials);
+        assertTrue(
+                containsCredential(credentials, listedCredentialId),
+                "completed issuance must remain listed: " + credentials);
+        assertEquals(1, listing.path("dangling").path("count").asInt(), "dangling count: " + listing);
+        assertEquals(
+                IssuedCredentialStatusResponse.DANGLING_NOTICE,
+                listing.path("dangling").path("notice").asText(),
+                "dangling notice: " + listing);
     }
 
     private static void assertQuotaRejection(Oid4vciTestClient.CredentialIssuanceAttempt attempt) {
