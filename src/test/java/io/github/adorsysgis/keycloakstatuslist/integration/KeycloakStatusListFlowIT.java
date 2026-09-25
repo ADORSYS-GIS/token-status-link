@@ -12,7 +12,6 @@ import io.github.adorsysgis.keycloakstatuslist.service.CredentialIssuanceQuotaSe
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
-import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -157,26 +156,25 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
     }
 
     @Test
-    void concurrentIssuanceRespectsConfiguredMaxOfOne() throws Exception {
-        setMaxCredentialsPerUser("1");
+    void concurrentIssuanceRespectsConfiguredMax() throws Exception {
+        setMaxCredentialsPerUser("2");
         ExecutorService executor = Executors.newFixedThreadPool(2);
         try {
             TestUser holder = credentialHolder("quota-race");
-            // Start gate: both workers block until two parties arrive, then run together.
-            // The timeout fires only if a worker never reaches the barrier; it is not a sleep.
-            CyclicBarrier start = new CyclicBarrier(2);
 
-            Callable<Oid4vciTestClient.CredentialIssuanceAttempt> attempt = () -> {
-                start.await(5, TimeUnit.SECONDS);
-                return oid4vci.tryIssueCredential(holder.username(), holder.accessToken());
-            };
+            // Leave one slot free so the two concurrent requests race for the last slot.
+            oid4vci.issueCredential(holder.username(), holder.accessToken());
+            assertLimit(holder.accessToken(), CREDENTIAL_CONFIGURATION_ID, 2, 1, 1);
 
-            Future<Oid4vciTestClient.CredentialIssuanceAttempt> first = executor.submit(attempt);
-            Future<Oid4vciTestClient.CredentialIssuanceAttempt> second = executor.submit(attempt);
+            Callable<Oid4vciTestClient.CredentialIssuanceAttempt> attempt =
+                    () -> oid4vci.tryIssueCredential(holder.username(), holder.accessToken());
+
+            Future<Oid4vciTestClient.CredentialIssuanceAttempt> firstAttempt = executor.submit(attempt);
+            Future<Oid4vciTestClient.CredentialIssuanceAttempt> secondAttempt = executor.submit(attempt);
 
             List<Oid4vciTestClient.CredentialIssuanceAttempt> attempts = new ArrayList<>();
-            attempts.add(first.get(60, TimeUnit.SECONDS));
-            attempts.add(second.get(60, TimeUnit.SECONDS));
+            attempts.add(firstAttempt.get(60, TimeUnit.SECONDS));
+            attempts.add(secondAttempt.get(60, TimeUnit.SECONDS));
 
             long successes = attempts.stream()
                     .filter(a ->
@@ -186,12 +184,12 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
                     .filter(a -> a.response().statusCode() == 409)
                     .count();
 
-            assertEquals(1, successes, "exactly one concurrent issuance should succeed: " + attempts);
-            assertEquals(1, conflicts, "exactly one concurrent issuance should return 409: " + attempts);
+            assertEquals(1, successes, "exactly one concurrent issuance should win the last slot: " + attempts);
+            assertEquals(1, conflicts, "exactly one concurrent issuance should be rejected with 409: " + attempts);
             attempts.stream()
                     .filter(a -> a.response().statusCode() == 409)
                     .forEach(KeycloakStatusListFlowIT::assertQuotaRejection);
-            assertLimit(holder.accessToken(), CREDENTIAL_CONFIGURATION_ID, 1, 1, 0);
+            assertLimit(holder.accessToken(), CREDENTIAL_CONFIGURATION_ID, 2, 2, 0);
         } finally {
             executor.shutdownNow();
             setMaxCredentialsPerUser(null);
