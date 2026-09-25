@@ -156,17 +156,16 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
     }
 
     @Test
-    void concurrentIssuanceRespectsConfiguredMaxOfOne() throws Exception {
-        setMaxCredentialsPerUser("1");
+    void concurrentIssuanceRespectsConfiguredMax() throws Exception {
+        setMaxCredentialsPerUser("2");
         ExecutorService executor = Executors.newFixedThreadPool(2);
         try {
             TestUser holder = credentialHolder("quota-race");
 
-            // Fill the only slot so the concurrent outcome does not depend on thread timing.
+            // Leave one slot free so the two concurrent requests race for the last slot.
             oid4vci.issueCredential(holder.username(), holder.accessToken());
-            assertLimit(holder.accessToken(), CREDENTIAL_CONFIGURATION_ID, 1, 1, 0);
+            assertLimit(holder.accessToken(), CREDENTIAL_CONFIGURATION_ID, 2, 1, 1);
 
-            // Two workers issue concurrently; with the quota full, both must be rejected.
             Callable<Oid4vciTestClient.CredentialIssuanceAttempt> attempt =
                     () -> oid4vci.tryIssueCredential(holder.username(), holder.accessToken());
 
@@ -185,10 +184,12 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
                     .filter(a -> a.response().statusCode() == 409)
                     .count();
 
-            assertEquals(0, successes, "no concurrent issuance should succeed once the quota is full: " + attempts);
-            assertEquals(2, conflicts, "both concurrent issuances should be rejected with 409: " + attempts);
-            attempts.forEach(KeycloakStatusListFlowIT::assertQuotaRejection);
-            assertLimit(holder.accessToken(), CREDENTIAL_CONFIGURATION_ID, 1, 1, 0);
+            assertEquals(1, successes, "exactly one concurrent issuance should win the last slot: " + attempts);
+            assertEquals(1, conflicts, "exactly one concurrent issuance should be rejected with 409: " + attempts);
+            attempts.stream()
+                    .filter(a -> a.response().statusCode() == 409)
+                    .forEach(KeycloakStatusListFlowIT::assertQuotaRejection);
+            assertLimit(holder.accessToken(), CREDENTIAL_CONFIGURATION_ID, 2, 2, 0);
         } finally {
             executor.shutdownNow();
             setMaxCredentialsPerUser(null);
