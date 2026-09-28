@@ -15,14 +15,19 @@ invalidated for compliance reasons.
 - Supports `VALID`, `INVALID` and `SUSPENDED` statuses
 - Revokes issued verifiable credentials through a dedicated endpoint
 
+## Compatibility
+
+This plugin has been tested and verified to work with:
+
+| Component | Version |
+| --------- | ------- |
+| Keycloak  | 26.7.2  |
+
 ## Getting started
 
-### Requirements
-
-- Keycloak 26.x
-- Java 17
-
 ### Installation
+
+Prerequisite: Java 17 or later.
 
 1. Build the plugin:
 
@@ -46,13 +51,12 @@ Enable the plugin for a realm and point it at your status list server using thes
 | `status-list-enabled`    | Enables the status list service for the realm |
 | `status-list-server-url` | URL of the status list server                 |
 
-Attach the `oid4vc-status-list-claim-mapper` protocol mapper to the client scope of the credential
-configuration you want to publish.
+The full list of configuration properties is documented in the
+[technical reference](./docs/technical-reference.md#configuration-properties).
 
 ### Revoking a credential
 
-A client application can revoke an issued credential through the plugin's `/revoke` endpoint, which
-sets the credential's status to `INVALID` so it can no longer be used.
+A client application can revoke an issued credential through the plugin's `/revoke` endpoint, which sets the credential's status to `INVALID` so it can no longer be used.
 
 ## Demo
 
@@ -69,6 +73,8 @@ revocation demo. A step-by-step setup guide is available in
 ./mvnw spotless:check  # verify formatting
 ./mvnw spotless:apply  # fix formatting
 ```
+
+To test against a local status list server, point `status-list-server-url` at it and enable debug logging to see the request and response details.
 
 ## License
 
