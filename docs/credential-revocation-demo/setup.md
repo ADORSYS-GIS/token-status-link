@@ -54,17 +54,8 @@ The environment comprises the following main components:
 
 ## Configuration of components
 
-The demo app and the wallet do not require any uncommon configuration. The details below are enough to wire them to a
-local Keycloak. Most of the work is enabling the two plugins and the Keycloak 26.7 OID4VCI feature flags.
-
-| Component           | Version | Source                                                                                 |
-|---------------------|---------|----------------------------------------------------------------------------------------|
-| Keycloak            | 26.7.2  | Plugin compatibility target. The OID4VCI harness currently ships 26.7.0 / 26.7.1 images |
-| Token Status plugin | 0.4.0   | https://github.com/ADORSYS-GIS/token-status-link/releases/tag/v0.4.0                   |
-| OpenID4VP plugin    | 1.3.8   | https://github.com/ADORSYS-GIS/keycloak-oid4vp-plugin/releases/tag/v1.3.8               |
-
-Building the Token Status plugin from this repository (`./mvnw clean package`) is also valid when you want a snapshot
-newer than the last tagged release. Copy the resulting JAR into Keycloak's `providers` directory.
+The demo app and the wallet do not require any uncommon configuration. We'll cover them briefly but our main focus will
+be on Keycloak and the Status List Server.
 
 ### Demo app
 
@@ -146,10 +137,18 @@ start_command: "start-dev --log-level=INFO,io.github.adorsysgis.keycloakstatusli
 If you keep the harness HTTPS defaults, use `start` with the generated certificate files instead of `start-dev`, as in
 the project's own override examples.
 
-Keycloak must be started with both plugins. Download the JAR files from the releases in the compatibility table (or
-build them) and place them in the `providers` directory of your Keycloak installation. With `oid4vci-deployment`, that
-directory is `oid4vci-deployment/providers/`; `./keycloak-ssi.sh setup` copies those JARs into the Keycloak providers
-folder.
+Keycloak must be started with two plugins: a Token Status and an OpenID4VP plugin. The plugins require some
+configuration, which is documented below. Download the JAR files from the indicated sources and place them in the
+`providers` directory of your Keycloak installation. With `oid4vci-deployment`, that directory is
+`oid4vci-deployment/providers/`; `./keycloak-ssi.sh setup` copies those JARs into the Keycloak providers folder.
+
+For reference, these versions of Keycloak and the plugins have been successfully tested and confirmed to be compatible:
+
+| Component           | Version | Source                                                                    |
+|---------------------|---------|---------------------------------------------------------------------------|
+| Keycloak            | 26.7.2  | https://www.keycloak.org/archive/downloads-26.7.2.html                    |
+| Token Status plugin | 0.4.0   | https://github.com/ADORSYS-GIS/token-status-link/releases/tag/v0.4.0      |
+| OpenID4VP plugin    | 1.3.8   | https://github.com/ADORSYS-GIS/keycloak-oid4vp-plugin/releases/tag/v1.3.8 |
 
 Minimal commands to start, then configure Keycloak with the OpenID4VCI deployment project:
 
