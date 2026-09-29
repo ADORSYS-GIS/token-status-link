@@ -25,7 +25,7 @@ The plugin can be configured at the realm level with the following properties:
 | `status-list-token-issuer-prefix`               | Prefix for building the Token Issuer ID                                                                                                                                                                                            | `Generated UUID` |
 | `status-list-issuance-timeout`                  | Timeout in milliseconds for **issuance** operations (runtime). Non-positive values disable circuit breaker                                                                                                                         | `10000`          |
 | `status-list-registration-timeout`              | Timeout in milliseconds for **background registration** operations                                                                                                                                                                 | `30000`          |
-| `status-list-registration-retries`              | Number of retries for background registration operations                                                                                                                                                                           | `1`              |
+| `status-list-registration-retries`              | Maximum number of HTTP request retries for background registration operations                                                                                                                                                      | `1`              |
 | `status-list-registration-cooldown`             | Cooldown period in **milliseconds** between registration attempts for the same realm                                                                                                                                               | `60000`          |
 | `status-list-circuit-breaker-failure-threshold` | Number of failures/timeouts before opening the circuit breaker                                                                                                                                                                     | `5`              |
 | `status-list-mandatory`                         | If true, publication failures block issuance; if false, failures are logged and issuance continues without a status claim                                                                                                          | `false`          |
@@ -36,7 +36,7 @@ The plugin can be configured at the realm level with the following properties:
 
 ### Proxy support
 
-Usage of HTTP/S proxies for the status-list http-client is supported via the standard environment variables
+Usage of HTTP/HTTPS proxies for the status list HTTP client is supported via the standard environment variables
 (see [Keycloak Outgoing Proxy Config](https://www.keycloak.org/server/outgoinghttp#_proxy_mappings_for_outgoing_http_requests)
 for format reference):
 
@@ -46,8 +46,7 @@ for format reference):
 
 ## Enabling the Status List protocol mapper
 
-For the Status List protocol mapper to come into effect, you need to explicitly attach it to the client scope
-corresponding to a specific credential's configuration. Below is a sample such configuration:
+To enable the Status List protocol mapper, attach it to the client scope for the relevant credential configuration. Below is a sample configuration:
 
 ```json
 {
@@ -205,22 +204,22 @@ Each `limits` entry describes the holder's quota for one credential type:
 These are the outbound calls the plugin makes to the configured status list server. Each request includes an
 `Authorization: Bearer <jwt>` header signed with the realm's active signing key.
 
-| Operation                             | Endpoint                                                                       |
-| ------------------------------------- | ------------------------------------------------------------------------------ |
-| Register issuer credential/public key | `POST /api/v1/credentials`                                                     |
-| Retrieve status list JWT              | `GET /api/v1/status-lists/{list_id}` with `Accept: application/statuslist+jwt` |
-| Publish status entries                | `PUT /api/v1/status-lists/{list_id}/statuses`                                  |
-| Update status entries                 | `PATCH /api/v1/status-lists/{list_id}/statuses`                                |
-| Health check                          | `GET /health`                                                                  |
+| Operation                                  | Endpoint                                                                       |
+| ------------------------------------------ | ------------------------------------------------------------------------------ |
+| Register issuer credentials and public key | `POST /api/v1/credentials`                                                     |
+| Retrieve status list JWT                   | `GET /api/v1/status-lists/{list_id}` with `Accept: application/statuslist+jwt` |
+| Publish status entries                     | `PUT /api/v1/status-lists/{list_id}/statuses`                                  |
+| Update status entries                      | `PATCH /api/v1/status-lists/{list_id}/statuses`                                |
+| Health check                               | `GET /health`                                                                  |
 
 ## Performance Considerations
 
 - **Non-Blocking Registration**: Realm registration is performed **asynchronously** in background threads (
-  `status-list-init`). This ensures that Keycloak startup and request processing are never blocked by status list
+  `status-list-registration`). This ensures that Keycloak startup and request processing are never blocked by status list
   server latency.
-- **Retry & Cooldown**: The plugin includes a built-in **retry mechanism** with exponential backoff (1s, 2s, 4s) for
-  registration attempts. To prevent resource exhaustion during server failures, a **1-minute cooldown** is enforced
-  per-realm between registration attempts.
+- **Retry & Cooldown**: Unregistered realms are retried by a scheduled reconciliation task at a fixed interval
+  (every 30 seconds), up to a maximum of 5 attempts per realm. A per-realm cooldown (default: 1 minute) is enforced
+  between registration attempts. Outbound HTTP requests additionally use exponential backoff (1s, 2s, 4s).
 - **On-Demand (Lazy) Trigger**: Registration is triggered on-demand when a realm's status list endpoints are first
   accessed, but the trigger itself is non-blocking to the caller's thread.
 - **Configurable Timeouts**: Timeouts are configurable via `status-list-issuance-timeout` (default: 10s for runtime) and

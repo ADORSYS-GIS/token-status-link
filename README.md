@@ -51,12 +51,18 @@ Enable the plugin for a realm and point it at your status list server using thes
 | `status-list-enabled`    | Enables the status list service for the realm |
 | `status-list-server-url` | URL of the status list server                 |
 
+Enabling these attributes alone is not sufficient. The status claim is only emitted after the
+`oid4vc-status-list-claim-mapper` protocol mapper is attached to the client scope of the credential
+configuration you want to publish. See [Enabling the Status List protocol mapper](./docs/technical-reference.md#enabling-the-status-list-protocol-mapper) for details.
+
 The full list of configuration properties is documented in the
 [technical reference](./docs/technical-reference.md#configuration-properties).
 
 ### Revoking a credential
 
-A client application can revoke an issued credential through the plugin's `/revoke` endpoint, which sets the credential's status to `INVALID` so it can no longer be used.
+A client application can revoke an issued credential through the plugin's `/revoke` endpoint, which sets the credential's status to `INVALID` so it can no longer be used. The request requires a bearer access token, `mode=issued_credential_revocation`, and the `credential_id` of the credential to revoke.
+
+See the [technical reference](./docs/technical-reference.md#revoke-an-issued-credential) for the full request and response details.
 
 ## Demo
 
