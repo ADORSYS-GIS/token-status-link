@@ -19,10 +19,10 @@ This plugin has been tested and verified to work with:
 | --------- | ------- |
 | Keycloak  | 26.7.2  |
 
-It works with any status list server implementing the
-[OAuth 2.0 Status List](https://datatracker.ietf.org/doc/draft-ietf-oauth-status-list) specification, such as the
-[status list server](https://github.com/adorsys/status-list-server) project. A public instance is available at
-`https://statuslist.eudi-adorsys.com`.
+It works with any status list server that implements both the
+[OAuth 2.0 Status List](https://datatracker.ietf.org/doc/draft-ietf-oauth-status-list) format and the management API
+used by this plugin, such as the [status list server](https://github.com/adorsys/status-list-server) project. A public
+instance is available at `https://statuslist.eudi-adorsys.com`.
 
 ## Getting started
 

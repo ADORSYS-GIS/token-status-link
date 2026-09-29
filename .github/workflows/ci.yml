@@ -15,7 +15,7 @@ jobs:
           node-version: "20"
 
       - name: Check markdown formatting
-        run: npx --yes prettier@3 --check "**/*.md"
+        run: npx --yes prettier@3.9.9 --check "**/*.md"
 
   build-and-test:
     name: Build and Test

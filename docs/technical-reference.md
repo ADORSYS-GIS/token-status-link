@@ -3,9 +3,9 @@
 This document is the detailed technical reference for the Keycloak Token Status Plugin.
 For a general overview and quick start, see the [README](../README.md).
 
-The plugin works with any status list server implementing the
-[OAuth 2.0 Status List](https://datatracker.ietf.org/doc/draft-ietf-oauth-status-list) specification, such as the
-[status list server](https://github.com/adorsys/status-list-server) project.
+The plugin works with any status list server that implements both the
+[OAuth 2.0 Status List](https://datatracker.ietf.org/doc/draft-ietf-oauth-status-list) format and the management API
+used by this plugin, such as the [status list server](https://github.com/adorsys/status-list-server) project.
 
 ## Table of Contents
 
