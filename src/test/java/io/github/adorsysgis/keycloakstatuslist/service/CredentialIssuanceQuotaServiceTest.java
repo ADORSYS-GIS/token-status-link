@@ -19,6 +19,7 @@ import io.github.adorsysgis.keycloakstatuslist.exception.StatusListException;
 import io.github.adorsysgis.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
 import io.github.adorsysgis.keycloakstatuslist.jpa.repository.StatusListRepository;
 import io.github.adorsysgis.keycloakstatuslist.model.IssuedCredentialStatusResponse.IssuedCredentialLimit;
+import io.github.adorsysgis.keycloakstatuslist.model.TokenStatus;
 import jakarta.persistence.EntityManager;
 import java.util.List;
 import java.util.Map;
@@ -327,6 +328,47 @@ class CredentialIssuanceQuotaServiceTest {
 
         verify(credentialRevocationService).revokeMapping(entityManager, earlierId);
         verify(credentialRevocationService, never()).revokeMapping(entityManager, laterId);
+    }
+
+    @Test
+    void enforceWithinReservationTransaction_prefersSuccessOverFailureWhenRevokingOldest() throws Exception {
+        StatusListMappingEntity olderFailure = failureMapping("token-failure");
+        olderFailure.setId("mapping-failure");
+        StatusListMappingEntity newerSuccess = successfulMapping("token-success");
+        newerSuccess.setId("mapping-success");
+        setCreatedTimestamp(olderFailure, 500L);
+        setCreatedTimestamp(newerSuccess, 1_000L);
+
+        stubIssuedCredentials("token-failure", "token-success");
+        when(statusListRepository.findNonRevokedMappings(entityManager, "realm-1", "user-1", "IdentityCredential"))
+                .thenReturn(List.of(olderFailure, newerSuccess));
+        when(statusListRepository.countInFlightMappings(entityManager, "realm-1", "user-1", "IdentityCredential"))
+                .thenReturn(0L);
+
+        service.enforceWithinReservationTransaction(
+                entityManager, "realm-1", "user-1", "IdentityCredential", 2, OVERFLOW_POLICY_REVOKE_OLDEST);
+
+        verify(credentialRevocationService).revokeMapping(entityManager, newerSuccess);
+        verify(credentialRevocationService, never()).revokeMapping(entityManager, olderFailure);
+    }
+
+    @Test
+    void enforceWithinReservationTransaction_freesFailureLocallyWhenNoSuccessOccupiesSlot() throws Exception {
+        StatusListMappingEntity failed = failureMapping("token-failed");
+        failed.setId("mapping-failed");
+
+        stubIssuedCredentials("token-failed");
+        when(statusListRepository.findNonRevokedMappings(entityManager, "realm-1", "user-1", "IdentityCredential"))
+                .thenReturn(List.of(failed));
+        when(statusListRepository.countInFlightMappings(entityManager, "realm-1", "user-1", "IdentityCredential"))
+                .thenReturn(0L);
+        when(entityManager.contains(failed)).thenReturn(true);
+
+        service.enforceWithinReservationTransaction(
+                entityManager, "realm-1", "user-1", "IdentityCredential", 1, OVERFLOW_POLICY_REVOKE_OLDEST);
+
+        assertEquals(TokenStatus.INVALID, failed.getTokenStatus());
+        verify(credentialRevocationService, never()).revokeMapping(any(), any());
     }
 
     @Test

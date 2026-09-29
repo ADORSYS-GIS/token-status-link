@@ -9,6 +9,7 @@ import io.github.adorsysgis.keycloakstatuslist.exception.StatusListException;
 import io.github.adorsysgis.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
 import io.github.adorsysgis.keycloakstatuslist.jpa.repository.StatusListRepository;
 import io.github.adorsysgis.keycloakstatuslist.model.IssuedCredentialStatusResponse.IssuedCredentialLimit;
+import io.github.adorsysgis.keycloakstatuslist.model.TokenStatus;
 import jakarta.persistence.EntityManager;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -146,7 +147,6 @@ public class CredentialIssuanceQuotaService {
         String policy = StatusListConfig.parseOverflowPolicy(overflowPolicy);
         if (OVERFLOW_POLICY_REVOKE_OLDEST.equals(policy)) {
             revokeOldestToFreeSlot(em, realmId, userId, credentialConfigurationId, max, countTowardLimit, issuedIds);
-            issuedIds = new LinkedHashSet<>(issuedIds);
             activeCount = countIssuedNonRevoked(
                     statusListRepository.findNonRevokedMappings(em, realmId, userId, credentialConfigurationId),
                     issuedIds);
@@ -163,8 +163,11 @@ public class CredentialIssuanceQuotaService {
     }
 
     /**
-     * Revokes the oldest occupying mapping and marks it {@code INVALID} on {@code em}. A later
-     * issuance failure does not restore it; a retry uses the freed slot.
+     * Frees the oldest occupying slot. Prefers a {@code SUCCESS} mapping and revokes it on the
+     * status-list server. When only {@code FAILURE} rows occupy slots (e.g. after revoke-then-publish
+     * failure), marks the oldest {@code FAILURE} {@code INVALID} locally without calling the server —
+     * those rows may never have been published. A completed free is kept even if a later issuance
+     * fails; a retry uses the freed slot.
      */
     private void revokeOldestToFreeSlot(
             EntityManager em,
@@ -174,21 +177,47 @@ public class CredentialIssuanceQuotaService {
             int max,
             long countTowardLimit,
             Set<String> issuedIds) {
+        List<StatusListMappingEntity> occupying =
+                statusListRepository.findNonRevokedMappings(em, realmId, userId, credentialConfigurationId).stream()
+                        .filter(mapping -> occupiesIssuedSlot(mapping, issuedIds))
+                        .toList();
+
+        StatusListMappingEntity oldestSuccess = occupying.stream()
+                .filter(mapping -> mapping.getStatus() == StatusListMappingEntity.MappingStatus.SUCCESS)
+                .min(OLDEST_OCCUPYING_MAPPING)
+                .orElse(null);
+        if (oldestSuccess != null) {
+            revokeSuccessfulMapping(em, oldestSuccess, userId, credentialConfigurationId, max, countTowardLimit);
+            issuedIds.remove(oldestSuccess.getTokenId());
+            return;
+        }
+
+        StatusListMappingEntity oldestFailure = occupying.stream()
+                .filter(mapping -> mapping.getStatus() == StatusListMappingEntity.MappingStatus.FAILURE)
+                .min(OLDEST_OCCUPYING_MAPPING)
+                .orElse(null);
+        if (oldestFailure != null) {
+            freeFailedMappingLocally(em, oldestFailure, userId, credentialConfigurationId, max, countTowardLimit);
+            issuedIds.remove(oldestFailure.getTokenId());
+            return;
+        }
+
+        logger.warnf(
+                "No oldest mapping found to revoke despite countTowardLimit=%d: userId=%s, credentialConfigurationId=%s",
+                countTowardLimit, userId, credentialConfigurationId);
+        throw CredentialIssuanceQuotaException.limitReached(LIMIT_REACHED_MESSAGE);
+    }
+
+    private void revokeSuccessfulMapping(
+            EntityManager em,
+            StatusListMappingEntity oldest,
+            String userId,
+            String credentialConfigurationId,
+            int max,
+            long countTowardLimit) {
         if (credentialRevocationService == null) {
             logger.error(REVOKE_OLDEST_UNAVAILABLE_MESSAGE);
             throw CredentialIssuanceQuotaException.failClosed(REVOKE_OLDEST_UNAVAILABLE_MESSAGE);
-        }
-
-        StatusListMappingEntity oldest =
-                statusListRepository.findNonRevokedMappings(em, realmId, userId, credentialConfigurationId).stream()
-                        .filter(mapping -> occupiesIssuedSlot(mapping, issuedIds))
-                        .min(OLDEST_OCCUPYING_MAPPING)
-                        .orElse(null);
-        if (oldest == null) {
-            logger.warnf(
-                    "No oldest mapping found to revoke despite countTowardLimit=%d: userId=%s, credentialConfigurationId=%s",
-                    countTowardLimit, userId, credentialConfigurationId);
-            throw CredentialIssuanceQuotaException.limitReached(LIMIT_REACHED_MESSAGE);
         }
 
         logger.infof(
@@ -197,7 +226,6 @@ public class CredentialIssuanceQuotaService {
 
         try {
             credentialRevocationService.revokeMapping(em, oldest);
-            issuedIds.remove(oldest.getTokenId());
         } catch (StatusListException | RuntimeException e) {
             logger.errorf(
                     e,
@@ -206,6 +234,23 @@ public class CredentialIssuanceQuotaService {
                     credentialConfigurationId,
                     oldest.getId());
             throw CredentialIssuanceQuotaException.failClosed(REVOKE_OLDEST_FAILED_MESSAGE);
+        }
+    }
+
+    private void freeFailedMappingLocally(
+            EntityManager em,
+            StatusListMappingEntity oldest,
+            String userId,
+            String credentialConfigurationId,
+            int max,
+            long countTowardLimit) {
+        logger.infof(
+                "Freeing FAILURE slot without status-list revoke: userId=%s, credentialConfigurationId=%s, mappingId=%s, tokenId=%s, countTowardLimit=%d, max=%d",
+                userId, credentialConfigurationId, oldest.getId(), oldest.getTokenId(), countTowardLimit, max);
+
+        oldest.setTokenStatus(TokenStatus.INVALID);
+        if (!em.contains(oldest)) {
+            em.merge(oldest);
         }
     }
 
