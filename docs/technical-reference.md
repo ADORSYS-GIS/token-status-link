@@ -3,16 +3,19 @@
 This document is the detailed technical reference for the Keycloak Token Status Plugin.
 For a general overview and quick start, see the [README](../README.md).
 
+The plugin works with any status list server implementing the
+[OAuth 2.0 Status List](https://datatracker.ietf.org/doc/draft-ietf-oauth-status-list) specification, such as the
+[status list server](https://github.com/adorsys/status-list-server) project.
+
 ## Table of Contents
 
 - [Configuration Properties](#configuration-properties)
-  - [Proxy support](#proxy-support)
 - [Enabling the Status List protocol mapper](#enabling-the-status-list-protocol-mapper)
 - [HTTP Endpoints](#http-endpoints)
   - [Revoke an issued credential](#revoke-an-issued-credential)
-  - [List issued credentials and their status](#list-issued-credentials-and-their-status)
-- [Status List Server API](#status-list-server-api)
+  - [List issued credentials and their statuses](#list-issued-credentials-and-their-statuses)
 - [Performance Considerations](#performance-considerations)
+- [Proxy support](#proxy-support)
 
 ## Configuration Properties
 
@@ -34,16 +37,6 @@ The plugin can be configured at the realm level with the following properties:
 | `status-list-tls-trust-all`                     | Instructs the status-list http-client to trust all TLS certificates. **DO NOT USE IN PRODUCTION**                                                                                                                                  | `false`          |
 | `status-list-tls-ca-cert-path`                  | Path to a PEM-encoded CA certificate to be trusted by the status-list http-client, in addition to the JVM defaults                                                                                                                 | `null`           |
 
-### Proxy support
-
-Usage of HTTP(S) proxies for the status list HTTP client is supported via the standard environment variables
-(see [Keycloak Outgoing Proxy Config](https://www.keycloak.org/server/outgoinghttp#_proxy_mappings_for_outgoing_http_requests)
-for format reference):
-
-- `HTTPS_PROXY` / `HTTP_PROXY` (also lowercase) define the proxy to be used. `HTTPS_PROXY` takes precedence.
-- `NO_PROXY` (also lowercase) defines a comma-separated list of hosts to be reached without the proxy. Matching is
-  case-insensitive; a bare `*` matches all hosts.
-
 ## Enabling the Status List protocol mapper
 
 To enable the Status List protocol mapper, attach it to the client scope for the relevant credential configuration. Below is a sample configuration:
@@ -59,20 +52,18 @@ To enable the Status List protocol mapper, attach it to the client scope for the
 }
 ```
 
+<!-- TODO: Rework this section. Some sentences are hard to follow, and the behavior is under active reconsideration. -->
+
 `status-list-max-credentials-per-user` is optional. Omit or blank to inherit the realm fallback; `0` leaves this type unlimited.
 
 A positive value caps live holdings of that type: `SUCCESS`/`FAILURE` mappings that still have an issued credential and are not `INVALID`. `FAILURE` counts because issuance continues when status-list is not mandatory. `SUSPENDED` still occupies a slot; revoke frees one. `limits.activeCount` is that same count. In-flight `INIT` rows count only during reservation (not in `activeCount`) so concurrent requests cannot overshoot.
 
-Missing holder or type with a limit set fails closed (`400`, `credential_limit_unresolved`). Limit reached is `409`, `credential_limit_reached`, with an `error_description`. Non-numeric or negative values are rejected. Quota check, list-id choice, and index reservation share one transaction that locks the latest realm mapping, or the Keycloak realm row when none exists yet.
-
-**Upgrade note (legacy mappings):** The Liquibase change that adds `credential_configuration_id` leaves existing `status_list_mapping` rows as `NULL`. Those pre-migration credentials are intentionally excluded from quota counts and from `limits` metadata, because their credential type cannot be recovered reliably. Quotas therefore apply only to credentials issued after the migration (when the mapper persists `credential_configuration_id`). Enabling a limit after upgrade does not count older active credentials toward that limit; revoke them manually first if you need a hard cap that includes holdings issued before the upgrade.
-
 ## HTTP Endpoints
 
-The plugin exposes two inbound endpoints, both realm-scoped under `{keycloak-base}/realms/{realm}/status-list`. Both
-authenticate with a standard Keycloak bearer access token. Listing is scoped to the authenticated user. Users with the
-realm role `credential-offer-create` may list another holder with `target_user`. Revocation accepts either the
-credential holder or a user with the realm role `credential-offer-create`.
+The plugin exposes two inbound endpoints, both realm-scoped under `{keycloak-base}/realms/{realm}/status-list` and
+authenticating with a standard Keycloak bearer access token. Users can list and revoke their own credentials. Users
+with the realm role `credential-offer-create` (admin users) can additionally list or revoke the credentials of other
+users in the same realm.
 
 ### Revoke an issued credential
 
@@ -80,7 +71,7 @@ Revocation is initiated by the client application at the plugin's dedicated
 `/revoke` endpoint. It activates only when `mode=issued_credential_revocation` is present in the form payload;
 any other value is rejected.
 
-```http
+```text
 POST /realms/{realm}/status-list/revoke
 Authorization: Bearer <user-access-token>
 Content-Type: application/x-www-form-urlencoded
@@ -95,10 +86,8 @@ mode=issued_credential_revocation&credential_id=<issued-credential-id>&reason=<o
 | `reason`        | no       | Free-form reason, echoed back in the response                          |
 
 The credential is looked up among those issued to the authenticated user. Users with the realm role
-`credential-offer-create` may also revoke a credential issued to another user in the same realm. Callers without
-that role still receive `404` for another user's `credential_id`, the same as for an unknown id. On success, the
-credential's status list entry is set to `INVALID` and the issued credential record is kept in Keycloak, so clients
-can continue to display it with a revoked status.
+`credential-offer-create` may also revoke a credential issued to another user in the same realm. On success, the
+credential's status list entry is set to `INVALID` and the issued credential record updated accordingly in Keycloak.
 
 **Success** (`200 OK`, `application/json`):
 
@@ -121,23 +110,23 @@ can continue to display it with a revoked status.
 | `404`  | Credential not found for this caller, or it has no status list mapping                                           |
 | `500`  | Service disabled or not configured, or an unexpected error during revocation                                     |
 
-### List issued credentials and their status
+### List issued credentials and their statuses
 
-Returns issued credentials together with the status recorded in the plugin's status list mapping
+This endpoint returns issued credentials together with the status recorded in the plugin's status list mapping
 table, plus display metadata (`credentialType`, `clientName`). The status is read locally and is
 not fetched from the status list server per request.
 
-Callers receive their own credentials. Users with the realm role `credential-offer-create` may pass
+Callers receive their own credentials. Admin users may pass
 `target_user` to list a single holder. Without that query, admins still receive only their own
-credentials. Callers without that role receive `403` if `target_user` is set.
+credentials. Non-admin users receive `403` if `target_user` is set.
 
-```http
+```text
 GET /realms/{realm}/status-list/issued-credential-status
 Authorization: Bearer <user-access-token>
 Accept: application/json
 ```
 
-```http
+```text
 GET /realms/{realm}/status-list/issued-credential-status?target_user=<holder-username>
 Authorization: Bearer <user-access-token>
 Accept: application/json
@@ -175,19 +164,19 @@ for credential types that have a configured maximum:
 }
 ```
 
-| Field                    | Type   | Description                                                                                 |
-| ------------------------ | ------ | ------------------------------------------------------------------------------------------- |
-| `credentialId`           | string | Keycloak-issued credential ID                                                               |
-| `verifiableCredentialId` | string | Verifiable credential identifier                                                            |
-| `credentialType`         | string | Credential configuration/type (client-scope name)                                           |
-| `issuedAt`               | number | Issuance timestamp as recorded by Keycloak, in Unix epoch milliseconds                      |
-| `expiresAt`              | number | Expiration timestamp as recorded by Keycloak, in Unix epoch milliseconds; `null` if not set |
-| `clientId`               | string | Internal id of the client that requested the credential                                     |
-| `clientName`             | string | Display name of that client, falling back to its public client id                           |
-| `revision`               | string | Credential revision                                                                         |
-| `status`                 | string | `VALID`, `INVALID`, `SUSPENDED`, or `UNKNOWN` when no mapping exists                        |
-| `userId`                 | string | Keycloak user id of the credential holder                                                   |
-| `username`               | string | Username of the credential holder                                                           |
+| Field                    | Type   | Description                                                                                                                |
+| ------------------------ | ------ | -------------------------------------------------------------------------------------------------------------------------- |
+| `credentialId`           | string | Internal ID of the issued credential record in Keycloak, created per issuance; used for status list mapping and revocation |
+| `verifiableCredentialId` | string | ID of the holder's verifiable credential (the OID4VCI credential identifier), stable per holder and credential type        |
+| `credentialType`         | string | Credential configuration/type (client-scope name)                                                                          |
+| `issuedAt`               | number | Issuance timestamp as recorded by Keycloak, in Unix epoch milliseconds                                                     |
+| `expiresAt`              | number | Expiration timestamp as recorded by Keycloak, in Unix epoch milliseconds; `null` if not set                                |
+| `clientId`               | string | Internal id of the client that requested the credential                                                                    |
+| `clientName`             | string | Display name of that client, falling back to its public client id                                                          |
+| `revision`               | string | Credential revision                                                                                                        |
+| `status`                 | string | `VALID`, `INVALID`, `SUSPENDED`, or `UNKNOWN` when no mapping exists                                                       |
+| `userId`                 | string | Keycloak user id of the credential holder                                                                                  |
+| `username`               | string | Username of the credential holder                                                                                          |
 
 Each `limits` entry describes the holder's quota for one credential type:
 
@@ -199,20 +188,9 @@ Each `limits` entry describes the holder's quota for one credential type:
 | `remaining`                 | number | Slots left before issuance of this type is rejected                                                                       |
 | `overflowPolicy`            | string | Currently always `REJECT`                                                                                                 |
 
-## Status List Server API
-
-These are the outbound calls the plugin makes to the configured status list server. Each request includes an
-`Authorization: Bearer <jwt>` header signed with the realm's active signing key.
-
-| Operation                                  | Endpoint                                                                       |
-| ------------------------------------------ | ------------------------------------------------------------------------------ |
-| Register issuer credentials and public key | `POST /api/v1/credentials`                                                     |
-| Retrieve status list JWT                   | `GET /api/v1/status-lists/{list_id}` with `Accept: application/statuslist+jwt` |
-| Publish status entries                     | `PUT /api/v1/status-lists/{list_id}/statuses`                                  |
-| Update status entries                      | `PATCH /api/v1/status-lists/{list_id}/statuses`                                |
-| Health check                               | `GET /health`                                                                  |
-
 ## Performance Considerations
+
+<!-- TODO: Rework this section - see https://github.com/ADORSYS-GIS/token-status-link/issues/136. Much of it has fallen out of sync. -->
 
 - **Non-Blocking Registration**: Realm registration is performed **asynchronously** in background threads (
   `status-list-registration`). This ensures that Keycloak startup and request processing are never blocked by status list
@@ -224,3 +202,13 @@ These are the outbound calls the plugin makes to the configured status list serv
   accessed, but the trigger itself is non-blocking to the caller's thread.
 - **Configurable Timeouts**: Timeouts are configurable via `status-list-issuance-timeout` (default: 10s for runtime) and
   `status-list-registration-timeout` (default: 30s for background).
+
+## Proxy support
+
+Usage of HTTP(S) proxies for the status list HTTP client is supported via the standard environment variables
+(see [Keycloak Outgoing Proxy Config](https://www.keycloak.org/server/outgoinghttp#_proxy_mappings_for_outgoing_http_requests)
+for format reference):
+
+- `HTTPS_PROXY` / `HTTP_PROXY` (also lowercase) define the proxy to be used. `HTTPS_PROXY` takes precedence.
+- `NO_PROXY` (also lowercase) defines a comma-separated list of hosts to be reached without the proxy. Matching is
+  case-insensitive; a bare `*` matches all hosts.

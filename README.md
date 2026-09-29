@@ -2,17 +2,13 @@
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 
-A [Keycloak](https://www.keycloak.org) plugin that reports the status of long-lived tokens and verifiable
-credentials to an external [OAuth 2.0 Status List](https://datatracker.ietf.org/doc/draft-ietf-oauth-status-list)
-server.
-
-This lets you revoke a credential before it expires, for example when it is compromised or must be
-invalidated for compliance reasons.
+A [Keycloak](https://www.keycloak.org) plugin that reports the status of verifiable credentials to an external
+status list server, so you can revoke a credential before it expires, for example when it is compromised or must
+be invalidated for compliance reasons.
 
 ## Features
 
-- Reports token and credential status to an external status list server
-- Supports `VALID`, `INVALID` and `SUSPENDED` statuses
+- Reports credential status to an external status list server
 - Revokes issued verifiable credentials through a dedicated endpoint
 
 ## Compatibility
@@ -23,6 +19,11 @@ This plugin has been tested and verified to work with:
 | --------- | ------- |
 | Keycloak  | 26.7.2  |
 
+It works with any status list server implementing the
+[OAuth 2.0 Status List](https://datatracker.ietf.org/doc/draft-ietf-oauth-status-list) specification, such as the
+[status list server](https://github.com/adorsys/status-list-server) project. A public instance is available at
+`https://statuslist.eudi-adorsys.com`.
+
 ## Getting started
 
 ### Installation
@@ -32,7 +33,7 @@ Prerequisite: Java 17 or later.
 1. Build the plugin:
 
    ```bash
-   ./mvnw clean package
+   ./mvnw clean package -DskipTests
    ```
 
 2. Copy the resulting JAR from `target/keycloak-token-status-plugin-*.jar` into Keycloak's
@@ -79,8 +80,6 @@ revocation demo. A step-by-step setup guide is available in
 ./mvnw spotless:check  # verify formatting
 ./mvnw spotless:apply  # fix formatting
 ```
-
-To test against a local status list server, point `status-list-server-url` at it and enable debug logging to see the request and response details.
 
 ## License
 
