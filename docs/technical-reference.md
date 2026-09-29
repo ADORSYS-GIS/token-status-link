@@ -36,7 +36,7 @@ The plugin can be configured at the realm level with the following properties:
 
 ### Proxy support
 
-Usage of HTTP/HTTPS proxies for the status list HTTP client is supported via the standard environment variables
+Usage of HTTP(S) proxies for the status list HTTP client is supported via the standard environment variables
 (see [Keycloak Outgoing Proxy Config](https://www.keycloak.org/server/outgoinghttp#_proxy_mappings_for_outgoing_http_requests)
 for format reference):
 
