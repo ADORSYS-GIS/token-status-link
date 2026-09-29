@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.keycloak.OID4VCConstants.OPENID_CREDENTIAL;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.lenient;
@@ -415,10 +416,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         stubMapperMax("1");
         when(headers.getHeaderString(HttpHeaders.AUTHORIZATION))
                 .thenReturn("Bearer " + accessTokenWithIssuedCredentialId("issued-credential-1"));
-        lenient()
-                .doReturn(1L)
-                .when(statusListRepository)
-                .countInFlightMappings(any(), eq(TEST_REALM_ID), eq("holder-1"), eq("PidCredential"));
+        stubInFlightMapping("holder-1", "PidCredential");
 
         CredentialIssuanceQuotaException exception =
                 assertThrows(CredentialIssuanceQuotaException.class, () -> mapper.setClaim(claims, userSession));
@@ -482,10 +480,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         stubMapperMax("2");
         when(headers.getHeaderString(HttpHeaders.AUTHORIZATION))
                 .thenReturn("Bearer " + accessTokenWithIssuedCredentialId("issued-credential-1"));
-        lenient()
-                .doReturn(1L)
-                .when(statusListRepository)
-                .countInFlightMappings(any(), eq(TEST_REALM_ID), eq("holder-1"), eq("PidCredential"));
+        stubInFlightMapping("holder-1", "PidCredential");
 
         mapper.setClaim(claims, userSession);
 
@@ -526,18 +521,19 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
                 .doAnswer(invocation -> invocation.getArgument(0))
                 .when(statusListRepository)
                 .save(any());
-        lenient()
-                .doReturn(List.of())
-                .when(statusListRepository)
-                .findNonRevokedMappings(any(), anyString(), any(), any());
-        lenient()
-                .doReturn(0L)
-                .when(statusListRepository)
-                .countInFlightMappings(any(), anyString(), anyString(), anyString());
+        lenient().doReturn(List.of()).when(statusListRepository).findMappingsByUser(any(), anyString(), any());
         setPrivateField(
                 mapper,
                 "credentialIssuanceQuotaService",
                 new CredentialIssuanceQuotaService(session, statusListRepository));
+    }
+
+    private void stubInFlightMapping(String userId, String credentialConfigurationId) {
+        var inFlight = new StatusListMappingEntity();
+        inFlight.setTokenId("concurrent-credential");
+        inFlight.setUserId(userId);
+        inFlight.setCredentialConfigurationId(credentialConfigurationId);
+        doReturn(List.of(inFlight)).when(statusListRepository).findMappingsByUser(any(), eq(TEST_REALM_ID), eq(userId));
     }
 
     private void stubHolder(String userId) {

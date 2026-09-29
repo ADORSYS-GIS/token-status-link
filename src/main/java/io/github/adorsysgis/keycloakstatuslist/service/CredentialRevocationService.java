@@ -13,7 +13,6 @@ import io.github.adorsysgis.keycloakstatuslist.jpa.repository.StatusListReposito
 import io.github.adorsysgis.keycloakstatuslist.model.CredentialRevocationRequest;
 import io.github.adorsysgis.keycloakstatuslist.model.CredentialRevocationResponse;
 import io.github.adorsysgis.keycloakstatuslist.model.IssuedCredentialStatusResponse;
-import io.github.adorsysgis.keycloakstatuslist.model.IssuedCredentialStatusResponse.DanglingIssuedCredentials;
 import io.github.adorsysgis.keycloakstatuslist.model.IssuedCredentialStatusResponse.IssuedCredentialLimit;
 import io.github.adorsysgis.keycloakstatuslist.model.IssuedCredentialStatusResponse.IssuedCredentialStatus;
 import io.github.adorsysgis.keycloakstatuslist.model.TokenStatus;
@@ -146,9 +145,10 @@ public class CredentialRevocationService {
      * <p>Callers receive their own credentials unless they hold the realm role
      * {@code credential-offer-create} and pass {@code targetUser}. Callers without that role receive
      * {@code 403} if {@code target_user} is provided. {@code limits} describes the resolved holder's
-     * configured quotas; an unknown {@code targetUser} yields an empty response. Issued credentials
-     * without a {@code SUCCESS} status-list mapping are omitted from {@code credentials} and counted
-     * in {@code dangling}.
+     * configured quotas; an unknown {@code targetUser} yields an empty response. Every issued
+     * credential is listed with {@code mappingStatus} and {@code countsTowardQuota}.
+     * {@code limits.activeCount} uses the same occupancy rule (unmapped, {@code SUCCESS}, and
+     * {@code FAILURE}; leftover {@code INIT} omitted).
      */
     public IssuedCredentialStatusResponse getIssuedCredentialStatuses(AuthResult authResult, String targetUser)
             throws StatusListException {
@@ -170,20 +170,14 @@ public class CredentialRevocationService {
                 .filter(StringUtil::isNotBlank)
                 .toList();
         List<IssuedCredentialLimit> limits = new CredentialIssuanceQuotaService(session, statusListRepository)
-                .listLimits(realm, userId, credentialIds);
+                .listLimits(realm, userId, issuedCredentials);
         Map<String, StatusListMappingEntity> mappings =
-                statusListRepository.findSuccessfulMappingsByTokenIds(realm.getId(), userId, credentialIds);
+                statusListRepository.findMappingsByTokenIds(realm.getId(), userId, credentialIds);
         List<IssuedCredentialStatus> credentials = new ArrayList<>();
-        int danglingCount = 0;
         for (IssuedVerifiableCredentialModel credential : issuedCredentials) {
-            StatusListMappingEntity mapping = mappings.get(credential.getId());
-            if (mapping == null) {
-                danglingCount++;
-                continue;
-            }
-            credentials.add(toIssuedCredentialStatus(credential, mapping, holder, realm));
+            credentials.add(toIssuedCredentialStatus(credential, mappings.get(credential.getId()), holder, realm));
         }
-        return new IssuedCredentialStatusResponse(credentials, limits, DanglingIssuedCredentials.of(danglingCount));
+        return new IssuedCredentialStatusResponse(credentials, limits);
     }
 
     private Optional<UserModel> resolveHolder(UserModel caller, RealmModel realm, String targetUser)
@@ -288,7 +282,11 @@ public class CredentialRevocationService {
                 representation.getRevision(),
                 resolveTokenStatus(mapping),
                 holder.getId(),
-                holder.getUsername());
+                holder.getUsername(),
+                mapping == null || mapping.getStatus() == null
+                        ? null
+                        : mapping.getStatus().name(),
+                CredentialIssuanceQuotaService.occupiesQuota(mapping));
     }
 
     /**

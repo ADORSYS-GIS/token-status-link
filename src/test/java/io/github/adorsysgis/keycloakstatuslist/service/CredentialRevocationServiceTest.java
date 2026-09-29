@@ -1,6 +1,7 @@
 package io.github.adorsysgis.keycloakstatuslist.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -8,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
@@ -23,7 +25,6 @@ import io.github.adorsysgis.keycloakstatuslist.model.CredentialRevocationRequest
 import io.github.adorsysgis.keycloakstatuslist.model.CredentialRevocationResponse;
 import io.github.adorsysgis.keycloakstatuslist.model.IssuedCredentialStatusResponse;
 import io.github.adorsysgis.keycloakstatuslist.model.TokenStatus;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Stream;
@@ -315,8 +316,7 @@ class CredentialRevocationServiceTest {
         when(user.getUsername()).thenReturn("alice");
         when(userProvider.getIssuedVerifiableCredentialsStreamByUser("user-1"))
                 .thenReturn(Stream.of(activeCredential, revokedCredential));
-        when(statusListRepository.findSuccessfulMappingsByTokenIds(
-                        "realm-1", "user-1", List.of("issued-1", "issued-2")))
+        when(statusListRepository.findMappingsByTokenIds(eq("realm-1"), eq("user-1"), any()))
                 .thenReturn(Map.of("issued-1", activeMapping, "issued-2", revokedMapping));
 
         IssuedCredentialStatusResponse response = service.getIssuedCredentialStatuses(authResult, null);
@@ -335,11 +335,15 @@ class CredentialRevocationServiceTest {
         assertEquals("alice", active.username());
         assertNull(active.credentialType());
         assertNull(active.clientName());
-        assertEquals("issued-2", response.credentials().get(1).credentialId());
-        assertEquals("INVALID", response.credentials().get(1).status());
+        assertEquals("SUCCESS", active.mappingStatus());
+        assertTrue(active.countsTowardQuota());
+        IssuedCredentialStatusResponse.IssuedCredentialStatus revoked =
+                response.credentials().get(1);
+        assertEquals("issued-2", revoked.credentialId());
+        assertEquals("INVALID", revoked.status());
+        assertEquals("SUCCESS", revoked.mappingStatus());
+        assertFalse(revoked.countsTowardQuota());
         assertTrue(response.limits().isEmpty());
-        assertEquals(0, response.dangling().count());
-        assertNull(response.dangling().notice());
     }
 
     @Test
@@ -353,7 +357,7 @@ class CredentialRevocationServiceTest {
         when(user.getId()).thenReturn("user-1");
         when(user.getUsername()).thenReturn("alice");
         when(userProvider.getIssuedVerifiableCredentialsStreamByUser("user-1")).thenReturn(Stream.of(credential));
-        when(statusListRepository.findSuccessfulMappingsByTokenIds("realm-1", "user-1", List.of("issued-1")))
+        when(statusListRepository.findMappingsByTokenIds(eq("realm-1"), eq("user-1"), any()))
                 .thenReturn(Map.of("issued-1", statusListMapping("list-1", 7L)));
         when(userProvider.getVerifiableCredentialById("vc-1")).thenReturn(verifiableCredential);
         when(verifiableCredential.getClientScopeId()).thenReturn("scope-1");
@@ -377,7 +381,8 @@ class CredentialRevocationServiceTest {
         assertEquals("VALID", status.status());
         assertEquals("user-1", status.userId());
         assertEquals("alice", status.username());
-        assertEquals(0, response.dangling().count());
+        assertEquals("SUCCESS", status.mappingStatus());
+        assertTrue(status.countsTowardQuota());
     }
 
     @Test
@@ -389,7 +394,7 @@ class CredentialRevocationServiceTest {
         when(user.getId()).thenReturn("user-1");
         when(user.getUsername()).thenReturn("alice");
         when(userProvider.getIssuedVerifiableCredentialsStreamByUser("user-1")).thenReturn(Stream.of(credential));
-        when(statusListRepository.findSuccessfulMappingsByTokenIds("realm-1", "user-1", List.of("issued-1")))
+        when(statusListRepository.findMappingsByTokenIds(eq("realm-1"), eq("user-1"), any()))
                 .thenReturn(Map.of("issued-1", statusListMapping("list-1", 7L)));
         when(realm.getClientById("wallet-client")).thenReturn(walletClient);
         when(walletClient.getName()).thenReturn("");
@@ -402,48 +407,102 @@ class CredentialRevocationServiceTest {
     }
 
     @Test
-    void getIssuedCredentialStatuses_omitsDanglingEntriesWhenMappingIsMissing() throws Exception {
+    void getIssuedCredentialStatuses_listsUnmappedIssuedCredentialWithQuotaFields() throws Exception {
         AuthResult authResult = new AuthResult(user, null, null, null);
         IssuedVerifiableCredentialModel credential = issuedCredential("issued-1", "PidCredential");
 
         when(user.getId()).thenReturn("user-1");
+        when(user.getUsername()).thenReturn("alice");
         when(userProvider.getIssuedVerifiableCredentialsStreamByUser("user-1")).thenReturn(Stream.of(credential));
-        when(statusListRepository.findSuccessfulMappingsByTokenIds("realm-1", "user-1", List.of("issued-1")))
+        when(statusListRepository.findMappingsByTokenIds(eq("realm-1"), eq("user-1"), any()))
                 .thenReturn(Map.of());
 
         IssuedCredentialStatusResponse response = service.getIssuedCredentialStatuses(authResult, null);
 
-        assertTrue(response.credentials().isEmpty());
-        assertEquals(1, response.dangling().count());
-        assertEquals(
-                IssuedCredentialStatusResponse.DANGLING_NOTICE,
-                response.dangling().notice());
+        assertEquals(1, response.credentials().size());
+        IssuedCredentialStatusResponse.IssuedCredentialStatus status =
+                response.credentials().get(0);
+        assertEquals("issued-1", status.credentialId());
+        assertEquals("UNKNOWN", status.status());
+        assertNull(status.mappingStatus());
+        assertTrue(status.countsTowardQuota());
     }
 
     @Test
-    void getIssuedCredentialStatuses_listsMappedCredentialsAndCountsDanglingSeparately() throws Exception {
+    void getIssuedCredentialStatuses_listsMappedAndUnmappedCredentialsTogether() throws Exception {
         AuthResult authResult = new AuthResult(user, null, null, null);
         IssuedVerifiableCredentialModel mapped = issuedCredential("issued-1", "PidCredential");
-        IssuedVerifiableCredentialModel dangling = issuedCredential("issued-ghost", "GhostCredential");
+        IssuedVerifiableCredentialModel unmapped = issuedCredential("issued-ghost", "GhostCredential");
         StatusListMappingEntity mapping = statusListMapping("list-1", 7L);
         mapping.setTokenId("issued-1");
 
         when(user.getId()).thenReturn("user-1");
         when(user.getUsername()).thenReturn("alice");
-        when(userProvider.getIssuedVerifiableCredentialsStreamByUser("user-1")).thenReturn(Stream.of(mapped, dangling));
-        when(statusListRepository.findSuccessfulMappingsByTokenIds(
-                        "realm-1", "user-1", List.of("issued-1", "issued-ghost")))
+        when(userProvider.getIssuedVerifiableCredentialsStreamByUser("user-1")).thenReturn(Stream.of(mapped, unmapped));
+        when(statusListRepository.findMappingsByTokenIds(eq("realm-1"), eq("user-1"), any()))
+                .thenReturn(Map.of("issued-1", mapping));
+
+        IssuedCredentialStatusResponse response = service.getIssuedCredentialStatuses(authResult, null);
+
+        assertEquals(2, response.credentials().size());
+        IssuedCredentialStatusResponse.IssuedCredentialStatus listed =
+                response.credentials().get(0);
+        assertEquals("issued-1", listed.credentialId());
+        assertEquals("VALID", listed.status());
+        assertEquals("SUCCESS", listed.mappingStatus());
+        assertTrue(listed.countsTowardQuota());
+        IssuedCredentialStatusResponse.IssuedCredentialStatus leftover =
+                response.credentials().get(1);
+        assertEquals("issued-ghost", leftover.credentialId());
+        assertEquals("UNKNOWN", leftover.status());
+        assertNull(leftover.mappingStatus());
+        assertTrue(leftover.countsTowardQuota());
+    }
+
+    @Test
+    void getIssuedCredentialStatuses_listsInitMappingWithoutCountingTowardQuota() throws Exception {
+        AuthResult authResult = new AuthResult(user, null, null, null);
+        IssuedVerifiableCredentialModel credential = issuedCredential("issued-1", "PidCredential");
+        StatusListMappingEntity mapping = statusListMapping("list-1", 7L);
+        mapping.setStatus(StatusListMappingEntity.MappingStatus.INIT);
+
+        when(user.getId()).thenReturn("user-1");
+        when(user.getUsername()).thenReturn("alice");
+        when(userProvider.getIssuedVerifiableCredentialsStreamByUser("user-1")).thenReturn(Stream.of(credential));
+        when(statusListRepository.findMappingsByTokenIds(eq("realm-1"), eq("user-1"), any()))
                 .thenReturn(Map.of("issued-1", mapping));
 
         IssuedCredentialStatusResponse response = service.getIssuedCredentialStatuses(authResult, null);
 
         assertEquals(1, response.credentials().size());
-        assertEquals("issued-1", response.credentials().get(0).credentialId());
-        assertEquals("VALID", response.credentials().get(0).status());
-        assertEquals(1, response.dangling().count());
-        assertEquals(
-                IssuedCredentialStatusResponse.DANGLING_NOTICE,
-                response.dangling().notice());
+        IssuedCredentialStatusResponse.IssuedCredentialStatus status =
+                response.credentials().get(0);
+        assertEquals("INIT", status.mappingStatus());
+        assertFalse(status.countsTowardQuota());
+        assertEquals("VALID", status.status());
+    }
+
+    @Test
+    void getIssuedCredentialStatuses_listsFailureMappingAsOccupyingQuota() throws Exception {
+        AuthResult authResult = new AuthResult(user, null, null, null);
+        IssuedVerifiableCredentialModel credential = issuedCredential("issued-1", "PidCredential");
+        StatusListMappingEntity mapping = statusListMapping("list-1", 7L);
+        mapping.setStatus(StatusListMappingEntity.MappingStatus.FAILURE);
+
+        when(user.getId()).thenReturn("user-1");
+        when(user.getUsername()).thenReturn("alice");
+        when(userProvider.getIssuedVerifiableCredentialsStreamByUser("user-1")).thenReturn(Stream.of(credential));
+        when(statusListRepository.findMappingsByTokenIds(eq("realm-1"), eq("user-1"), any()))
+                .thenReturn(Map.of("issued-1", mapping));
+
+        IssuedCredentialStatusResponse response = service.getIssuedCredentialStatuses(authResult, null);
+
+        assertEquals(1, response.credentials().size());
+        IssuedCredentialStatusResponse.IssuedCredentialStatus status =
+                response.credentials().get(0);
+        assertEquals("FAILURE", status.mappingStatus());
+        assertTrue(status.countsTowardQuota());
+        assertEquals("VALID", status.status());
     }
 
     @Test
@@ -458,7 +517,7 @@ class CredentialRevocationServiceTest {
         StatusListMappingEntity ownMapping = statusListMapping("list-1", 7L);
         ownMapping.setTokenId("issued-admin");
         ownMapping.setUserId("admin-1");
-        when(statusListRepository.findSuccessfulMappingsByTokenIds("realm-1", "admin-1", List.of("issued-admin")))
+        when(statusListRepository.findMappingsByTokenIds(eq("realm-1"), eq("admin-1"), any()))
                 .thenReturn(Map.of("issued-admin", ownMapping));
 
         IssuedCredentialStatusResponse response = service.getIssuedCredentialStatuses(authResult, null);
@@ -487,7 +546,7 @@ class CredentialRevocationServiceTest {
         StatusListMappingEntity holderMapping = statusListMapping("list-1", 7L);
         holderMapping.setTokenId("issued-holder");
         holderMapping.setUserId("holder-2");
-        when(statusListRepository.findSuccessfulMappingsByTokenIds("realm-1", "holder-2", List.of("issued-holder")))
+        when(statusListRepository.findMappingsByTokenIds(eq("realm-1"), eq("holder-2"), any()))
                 .thenReturn(Map.of("issued-holder", holderMapping));
 
         IssuedCredentialStatusResponse response = service.getIssuedCredentialStatuses(authResult, "bob");
@@ -528,7 +587,6 @@ class CredentialRevocationServiceTest {
         IssuedCredentialStatusResponse response = service.getIssuedCredentialStatuses(authResult, "missing");
 
         assertTrue(response.credentials().isEmpty());
-        assertEquals(0, response.dangling().count());
     }
 
     private CredentialRevocationRequest issuedRevocationRequest(String credentialId, String reason) {
@@ -546,6 +604,7 @@ class CredentialRevocationServiceTest {
         mapping.setUserId("user-1");
         mapping.setRealmId("realm-1");
         mapping.setTokenId("issued-1");
+        mapping.setCredentialConfigurationId("PidCredential");
         mapping.setStatus(StatusListMappingEntity.MappingStatus.SUCCESS);
         mapping.setTokenStatus(TokenStatus.VALID);
         return mapping;
