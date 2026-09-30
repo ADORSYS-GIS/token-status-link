@@ -10,12 +10,12 @@ the components we developed to demonstrate credential revocation in practice.
 - [User journey](#user-journey)
 - [Overview of components](#overview-of-components)
 - [Configuration of components](#configuration-of-components)
-    - [Demo app](#demo-app)
-    - [Wallet](#wallet)
-    - [Keycloak](#keycloak)
-        - [Token Status plugin](#token-status-plugin)
-        - [OpenID4VP plugin](#openid4vp-plugin)
-    - [Status List Server](#status-list-server)
+  - [Demo app](#demo-app)
+  - [Wallet](#wallet)
+  - [Keycloak](#keycloak)
+    - [Token Status plugin](#token-status-plugin)
+    - [OpenID4VP plugin](#openid4vp-plugin)
+  - [Status List Server](#status-list-server)
 - [Closing thoughts](#closing-thoughts)
 
 ## User journey
@@ -48,8 +48,8 @@ The environment comprises the following main components:
 - **Wallet**: Allows users to receive, store, and present verifiable credentials.
 - **Keycloak**: Configured for credential issuance and extended with custom plugins to support both credential
   revocation and OpenID4VP authentication.
-    - Token Status plugin: Connects to the Status List Server to enable revocation functionality.
-    - OpenID4VP plugin: Facilitates user authentication through verifiable credential presentation.
+  - Token Status plugin: Connects to the Status List Server to enable revocation functionality.
+  - OpenID4VP plugin: Facilitates user authentication through verifiable credential presentation.
 - **Status List Server**: Maintains and serves status lists for checking the validity of credentials.
 
 ## Configuration of components
@@ -125,7 +125,7 @@ and place them in the `providers` directory of your Keycloak installation.
 For reference, these versions of Keycloak and the plugins have been successfully tested and confirmed to be compatible:
 
 | Component           | Version | Source                                                                    |
-|---------------------|---------|---------------------------------------------------------------------------|
+| ------------------- | ------- | ------------------------------------------------------------------------- |
 | Keycloak            | 26.5.3  | https://www.keycloak.org/archive/downloads-26.5.3.html                    |
 | Token Status plugin | 0.1.0   | https://github.com/ADORSYS-GIS/token-status-link/releases/tag/v0.1.0      |
 | OpenID4VP plugin    | 1.0.1   | https://github.com/ADORSYS-GIS/keycloak-oid4vp-plugin/releases/tag/v1.0.1 |
