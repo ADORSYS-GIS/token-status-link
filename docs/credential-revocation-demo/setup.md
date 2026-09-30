@@ -81,8 +81,7 @@ VITE_OID4VC_PRE_AUTHORIZED=true
 
 ### Wallet
 
-The [German national wallet](https://eudi-wallet.gov.de/en/app) (official project site) is preferred and supports
-authorization-code issuance. We also developed a
+The German national wallet is preferred and supports authorization-code issuance. We also developed a
 [wallet](https://github.com/adorsys/eudiw-app) for testing issuance and presentation. An online instance
 is available at https://adorsys.github.io/eudiw-app. That hosted build cannot reach a Keycloak instance running on
 localhost because a proxy handles its HTTP calls. With a local Keycloak, start the wallet locally as well.
