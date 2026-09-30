@@ -48,8 +48,8 @@ The environment comprises the following main components:
 - **Wallet**: Allows users to receive, store, and present verifiable credentials.
 - **Keycloak**: Configured for credential issuance and extended with custom plugins to support both credential
   revocation and OpenID4VP authentication.
-    - Token Status plugin: Connects to the Status List Server to enable revocation functionality.
-    - OpenID4VP plugin: Facilitates user authentication through verifiable credential presentation.
+  - Token Status plugin: Connects to the Status List Server to enable revocation functionality.
+  - OpenID4VP plugin: Facilitates user authentication through verifiable credential presentation.
 - **Status List Server**: Maintains and serves status lists for checking the validity of credentials.
 
 ## Configuration of components
@@ -145,7 +145,7 @@ configuration, which is documented below. Download the JAR files from the indica
 For reference, these versions of Keycloak and the plugins have been successfully tested and confirmed to be compatible:
 
 | Component           | Version | Source                                                                    |
-|---------------------|---------|---------------------------------------------------------------------------|
+| ------------------- | ------- | ------------------------------------------------------------------------- |
 | Keycloak            | 26.7.2  | https://www.keycloak.org/archive/downloads-26.7.2.html                    |
 | Token Status plugin | 0.4.0   | https://github.com/ADORSYS-GIS/token-status-link/releases/tag/v0.4.0      |
 | OpenID4VP plugin    | 1.3.8   | https://github.com/ADORSYS-GIS/keycloak-oid4vp-plugin/releases/tag/v1.3.8 |
