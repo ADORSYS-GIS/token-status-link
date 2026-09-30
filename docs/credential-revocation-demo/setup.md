@@ -31,7 +31,9 @@ The user journey is as follows:
 - The user requests revocation of the VC from the demo app.
 - The user is no longer able to log in to the app using the now-revoked VC.
 
-![Credential revocation demo](assets/keycloak-oid4vp-auth%2Brevocation.webm)
+Below is a video recording demonstrating this user journey, end to end:
+
+[Download the demo video](assets/keycloak-oid4vp-auth+revocation.webm)
 
 ## Overview of components
 
@@ -75,14 +77,12 @@ VITE_OID4VC_DEFAULT_CREDENTIAL_CONFIGURATION_ID=IdentityCredential
 VITE_OID4VC_PRE_AUTHORIZED=true
 ```
 
-Revocation uses `POST /realms/{realm}/status-list/revoke` with `mode=issued_credential_revocation`. After a successful
-response, the demo app keeps the credential visible with status **Revoked**.
-
 ![Screenshot of our MOCK FE demo app](assets/demo-app-mock-fe.png)
 
 ### Wallet
 
-The national wallet is preferred and supports authorization-code issuance. We also developed a
+The [German national wallet](https://eudi-wallet.gov.de/en/app) (official project site) is preferred and supports
+authorization-code issuance. We also developed a
 [wallet](https://github.com/adorsys/eudiw-app) for testing issuance and presentation. An online instance
 is available at https://adorsys.github.io/eudiw-app. That hosted build cannot reach a Keycloak instance running on
 localhost because a proxy handles its HTTP calls. With a local Keycloak, start the wallet locally as well.
@@ -107,17 +107,18 @@ in Keycloak applies. The OAuth SIG maintains an OpenID4VCI deployment project th
 https://github.com/keycloak/keycloak-oauth-sig/tree/3083725392aa04e4d569bbe90d67d9f9466e41f3/oid4vci-deployment.
 The link directly points to the latest tested commit.
 
-On Keycloak **26.7**, OID4VCI stays experimental and two features used by this demo are gated:
+On Keycloak **26.7**, OpenID4VCI stays experimental and two features used by this demo are gated:
 
 - `oid4vc-vci-preauth-code` for pre-authorized issuance
-- `oid4vc-vci-rest-credential-offer` for `GET /protocol/oid4vc/create-credential-offer`
+- `oid4vc-vci-rest-credential-offer` so the demo app can ask Keycloak for a credential offer and show the QR code the
+  wallet scans
 
 Before a user can obtain a VC, Keycloak must grant that credential type to the user (for example
 `IdentityCredential`). On Keycloak 26.7+, `keycloak-ssi config` grants the enabled credentials to the demo user
 automatically. See
 [Migrating oid4vci-deployment to Keycloak 26.7.0](https://github.com/keycloak/keycloak-oauth-sig/blob/3083725392aa04e4d569bbe90d67d9f9466e41f3/oid4vci-deployment/docs/MIGRATION_26.7.md).
 
-Because of known issues with self-signed certificates, you can start Keycloak without HTTPS locally. The OID4VCI
+Because of known issues with self-signed certificates, you can start Keycloak without HTTPS locally. The OpenID4VCI
 harness defaults to HTTPS on port 8443. Either trust that certificate in the browser and wallet, or expose Keycloak
 through a public HTTPS URL (for example ngrok) and set `VITE_KEYCLOAK_URL`, `issuer_did`, and `--hostname` to that
 URL. Here is a sample `config.override.yaml` for a local 26.7 demo:
@@ -131,16 +132,19 @@ keycloak:
 start_command: "start-dev --log-level=INFO,io.github.adorsysgis.keycloakstatuslist:DEBUG,io.github.adorsysgis.keycloak.protocol.oid4vc:DEBUG --spi-realm-restapi-extension-oid4vp-auth-managed-realms=oid4vc-vci"
 ```
 
-`--spi-realm-restapi-extension-oid4vp-auth-managed-realms=oid4vc-vci` is required so the OpenID4VP plugin creates the
-`oid4vp auth` flow on the demo realm. Without it, presentation login stays on the built-in browser flow.
-
 If you keep the harness HTTPS defaults, use `start` with the generated certificate files instead of `start-dev`, as in
 the project's own override examples.
 
-Keycloak must be started with two plugins: a Token Status and an OpenID4VP plugin. The plugins require some
-configuration, which is documented below. Download the JAR files from the indicated sources and place them in the
-`providers` directory of your Keycloak installation. With `oid4vci-deployment`, that directory is
-`oid4vci-deployment/providers/`; `./keycloak-ssi.sh setup` copies those JARs into the Keycloak providers folder.
+Keycloak must be started with two plugins: a Token Status plugin (revocation via a status list server) and an OpenID4VP
+plugin (login by presenting a verifiable credential). The plugins require some configuration, which is documented
+below. Download the JAR files from the indicated sources and place them in the `providers` directory of your Keycloak
+installation. With `oid4vci-deployment`, that directory is `oid4vci-deployment/providers/`; `./keycloak-ssi.sh setup`
+copies those JARs into the Keycloak providers folder.
+
+The sample `start_command` above includes
+`--spi-realm-restapi-extension-oid4vp-auth-managed-realms=oid4vc-vci`. That flag is required so the OpenID4VP plugin
+creates the `oid4vp auth` flow on the demo realm. Without that flow, credential presentation cannot be used for login —
+only the built-in username/password browser flow remains.
 
 For reference, these versions of Keycloak and the plugins have been successfully tested and confirmed to be compatible:
 
@@ -195,20 +199,9 @@ to the list of visible claims and configure the Status List protocol mapper as s
 The above configuration is sufficient to enable using the plugin. For additional options and advanced settings, refer to
 the [plugin documentation](https://github.com/ADORSYS-GIS/token-status-link).
 
-Revocation from the demo app uses:
-
-```http
-POST /realms/{realm}/status-list/revoke
-Authorization: Bearer <user-access-token>
-Content-Type: application/x-www-form-urlencoded
-
-mode=issued_credential_revocation&credential_id=<issued-credential-id>&reason=<required by Mock FE>
-```
-
-The plugin activates only when `mode=issued_credential_revocation` is present. The credential holder can revoke their
-own credential. Users with the realm role `credential-offer-create` can also revoke another user's credential in the
-same realm. On success the status list entry is set to `INVALID` and the issued credential record is kept, so clients
-can still display it as revoked.
+From the demo app, a signed-in user can revoke their own credentials. To also revoke credentials for other users in the
+same realm, assign the realm role `credential-offer-create` in the Keycloak Admin Console
+(Users → Role mapping).
 
 #### OpenID4VP plugin
 
@@ -217,13 +210,11 @@ plugin provides a minimal theme named `keycloak.v2+oid4vp`.
 
 ![Select OpenID4VP login theme](assets/select-oid4vp-login-theme.png)
 
-In addition, the SD-JWT authenticator in the new `oid4vp auth` flow must be configured to accept specific credential
-types and to reject revoked credentials.
+In addition, configure the OpenID4VP authenticator in the `oid4vp auth` flow so presentation login rejects revoked
+credentials. Turn **Reject revoked credentials (Token Status List)** on — that closes the demo: after the demo app
+revokes the credential, a presentation login must fail.
 
-![Configure SD-JWT authenticator](assets/configure-sdjwt-authenticator.png)
-
-Turn **Reject revoked credentials (Token Status List)** on. That is what closes the demo: after the demo app revokes
-the credential, a presentation login must fail.
+![Configure OpenID4VP authenticator](assets/configure-oid4vp-authenticator.png)
 
 For additional details, refer to
 the [plugin documentation](https://github.com/ADORSYS-GIS/keycloak-oid4vp-plugin?tab=readme-ov-file#documentation-site-antora).
@@ -240,5 +231,5 @@ For demonstration purposes, you can use the public instance at: https://statusli
 
 This guide has outlined the essential steps to set up and demonstrate credential revocation using Keycloak and a Status
 List Server. By following these instructions, you can explore the full lifecycle of verifiable credentials in a
-practical environment, from issuance through client-initiated revocation to a failed presentation. For further
+practical environment, from issuance to revocation to a failed presentation. For further
 customization and advanced scenarios, consult the documentation of each component.
