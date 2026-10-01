@@ -16,6 +16,7 @@ import io.github.adorsysgis.keycloakstatuslist.model.IssuedCredentialStatusRespo
 import io.github.adorsysgis.keycloakstatuslist.model.IssuedCredentialStatusResponse.IssuedCredentialLimit;
 import io.github.adorsysgis.keycloakstatuslist.model.IssuedCredentialStatusResponse.IssuedCredentialStatus;
 import io.github.adorsysgis.keycloakstatuslist.model.TokenStatus;
+import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -108,11 +109,7 @@ public class CredentialRevocationService {
 
         try {
             StatusListMappingEntity mapping = resolveMappingForRevocation(user, realm, credentialId);
-            StatusEntry statusEntry = new StatusEntry(mapping.getIdx(), TokenStatus.INVALID);
-            StatusListPayload revocationPayload =
-                    new StatusListPayload(mapping.getStatusListId(), List.of(statusEntry));
-            getStatusListService().updateStatusList(revocationPayload, requestId);
-            mapping.setTokenStatus(TokenStatus.INVALID);
+            publishRevocation(mapping, requestId);
             statusListRepository.save(mapping);
 
             Instant revokedAt = Instant.now();
@@ -136,6 +133,62 @@ public class CredentialRevocationService {
                     requestId, e.getMessage(), e);
             throw new StatusListException("Failed to process issued credential revocation: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Marks a status-list mapping INVALID on the status list server, then persists via
+     * {@link StatusListRepository}. Used by holder-initiated revocation outside the issuance
+     * reservation transaction.
+     */
+    public void revokeMapping(StatusListMappingEntity mapping) throws StatusListException {
+        if (statusListRepository == null) {
+            throw new StatusListException(
+                    "Status list mapping repository is not available", HttpStatus.SC_INTERNAL_SERVER_ERROR);
+        }
+        publishRevocation(mapping, UUID.randomUUID().toString());
+        statusListRepository.save(mapping);
+    }
+
+    /**
+     * Marks a status-list mapping {@code INVALID} on the caller's open reservation
+     * {@code EntityManager} only. Does not call the status-list server — callers must
+     * {@link #publishRevocation(StatusListMappingEntity)} after the reservation transaction commits
+     * so a rollback cannot leave the server {@code INVALID} while the local row stays unchanged.
+     *
+     * <p>Named distinctly from {@link #revokeMapping} because this path must not call
+     * {@link StatusListRepository#save} (that would open a second transaction and wait on the
+     * {@code PESSIMISTIC_WRITE} already held for reservation).
+     */
+    public void revokeMappingInTransaction(EntityManager em, StatusListMappingEntity mapping) {
+        if (em == null) {
+            throw new IllegalArgumentException("EntityManager is required to revoke inside a reservation transaction");
+        }
+        if (mapping == null) {
+            throw new IllegalArgumentException("Status list mapping is required");
+        }
+        mapping.setTokenStatus(TokenStatus.INVALID);
+        if (!em.contains(mapping)) {
+            em.merge(mapping);
+        }
+    }
+
+    /**
+     * Publishes {@code INVALID} for an already locally revoked mapping. Call only after the local
+     * transaction that marked the mapping {@code INVALID} has committed.
+     */
+    public void publishRevocation(StatusListMappingEntity mapping) throws StatusListException {
+        publishRevocation(mapping, UUID.randomUUID().toString());
+    }
+
+    private void publishRevocation(StatusListMappingEntity mapping, String requestId) throws StatusListException {
+        if (mapping == null) {
+            throw new IllegalArgumentException("Status list mapping is required");
+        }
+
+        StatusEntry statusEntry = new StatusEntry(mapping.getIdx(), TokenStatus.INVALID);
+        StatusListPayload revocationPayload = new StatusListPayload(mapping.getStatusListId(), List.of(statusEntry));
+        getStatusListService().updateStatusList(revocationPayload, requestId);
+        mapping.setTokenStatus(TokenStatus.INVALID);
     }
 
     /**
