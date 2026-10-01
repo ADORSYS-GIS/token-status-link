@@ -136,37 +136,53 @@ public class CredentialRevocationService {
     }
 
     /**
-     * Marks a status-list mapping INVALID on the status list server and in the local store.
-     * Used by holder-initiated revocation, which is not inside the issuance reservation transaction.
+     * Marks a status-list mapping INVALID on the status list server, then persists via
+     * {@link StatusListRepository}. Used by holder-initiated revocation outside the issuance
+     * reservation transaction.
      */
     public void revokeMapping(StatusListMappingEntity mapping) throws StatusListException {
+        if (statusListRepository == null) {
+            throw new StatusListException(
+                    "Status list mapping repository is not available", HttpStatus.SC_INTERNAL_SERVER_ERROR);
+        }
         publishRevocation(mapping, UUID.randomUUID().toString());
         statusListRepository.save(mapping);
     }
 
     /**
-     * Marks a status-list mapping INVALID on the status list server and on the current reservation
-     * {@code EntityManager}. {@code REVOKE_OLDEST} runs while that transaction already holds
-     * {@code PESSIMISTIC_WRITE} on the latest mapping; {@link StatusListRepository#save} would open a
-     * second transaction and wait on that lock.
+     * Marks a status-list mapping {@code INVALID} on the caller's open reservation
+     * {@code EntityManager} only. Does not call the status-list server — callers must
+     * {@link #publishRevocation(StatusListMappingEntity)} after the reservation transaction commits
+     * so a rollback cannot leave the server {@code INVALID} while the local row stays unchanged.
+     *
+     * <p>Named distinctly from {@link #revokeMapping} because this path must not call
+     * {@link StatusListRepository#save} (that would open a second transaction and wait on the
+     * {@code PESSIMISTIC_WRITE} already held for reservation).
      */
-    public void revokeMapping(EntityManager em, StatusListMappingEntity mapping) throws StatusListException {
+    public void revokeMappingInTransaction(EntityManager em, StatusListMappingEntity mapping) {
         if (em == null) {
             throw new IllegalArgumentException("EntityManager is required to revoke inside a reservation transaction");
         }
-        publishRevocation(mapping, UUID.randomUUID().toString());
+        if (mapping == null) {
+            throw new IllegalArgumentException("Status list mapping is required");
+        }
+        mapping.setTokenStatus(TokenStatus.INVALID);
         if (!em.contains(mapping)) {
             em.merge(mapping);
         }
     }
 
+    /**
+     * Publishes {@code INVALID} for an already locally revoked mapping. Call only after the local
+     * transaction that marked the mapping {@code INVALID} has committed.
+     */
+    public void publishRevocation(StatusListMappingEntity mapping) throws StatusListException {
+        publishRevocation(mapping, UUID.randomUUID().toString());
+    }
+
     private void publishRevocation(StatusListMappingEntity mapping, String requestId) throws StatusListException {
         if (mapping == null) {
             throw new IllegalArgumentException("Status list mapping is required");
-        }
-        if (statusListRepository == null) {
-            throw new StatusListException(
-                    "Status list mapping repository is not available", HttpStatus.SC_INTERNAL_SERVER_ERROR);
         }
 
         StatusEntry statusEntry = new StatusEntry(mapping.getIdx(), TokenStatus.INVALID);

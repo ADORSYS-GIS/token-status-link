@@ -139,7 +139,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
                 StatusListConfig.STATUS_LIST_MAX_CREDENTIALS_PER_USER,
                 mapper.getIndividualConfigProperties().get(0).getName());
         assertEquals(
-                CredentialIssuanceQuotaService.OVERFLOW_POLICY_CONFIG,
+                StatusListConfig.STATUS_LIST_OVERFLOW_POLICY,
                 mapper.getIndividualConfigProperties().get(1).getName());
         mapper.close();
     }
@@ -546,9 +546,10 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         lenient().when(session.users()).thenReturn(users);
         lenient()
                 .when(users.getIssuedVerifiableCredentialsStreamByUser("holder-1"))
-                .thenReturn(Stream.of(issued));
+                .thenAnswer(invocation -> Stream.of(issued));
+        // After local INVALID commit, the next reservation TX must see the slot freed.
         lenient()
-                .doReturn(List.of(oldest))
+                .doAnswer(invocation -> oldest.getTokenStatus() == TokenStatus.INVALID ? List.of() : List.of(oldest))
                 .when(statusListRepository)
                 .findNonRevokedMappings(any(), eq(TEST_REALM_ID), eq("holder-1"), eq("PidCredential"));
         lenient()
@@ -591,9 +592,9 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         lenient().when(session.users()).thenReturn(users);
         lenient()
                 .when(users.getIssuedVerifiableCredentialsStreamByUser("holder-1"))
-                .thenReturn(Stream.of(issued));
+                .thenAnswer(invocation -> Stream.of(issued));
         lenient()
-                .doReturn(List.of(oldest))
+                .doAnswer(invocation -> oldest.getTokenStatus() == TokenStatus.INVALID ? List.of() : List.of(oldest))
                 .when(statusListRepository)
                 .findNonRevokedMappings(any(), eq(TEST_REALM_ID), eq("holder-1"), eq("PidCredential"));
         lenient()

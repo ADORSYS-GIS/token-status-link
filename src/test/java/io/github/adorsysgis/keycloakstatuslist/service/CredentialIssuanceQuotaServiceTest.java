@@ -3,6 +3,7 @@ package io.github.adorsysgis.keycloakstatuslist.service;
 import static io.github.adorsysgis.keycloakstatuslist.service.CredentialIssuanceQuotaService.OVERFLOW_POLICY_REJECT;
 import static io.github.adorsysgis.keycloakstatuslist.service.CredentialIssuanceQuotaService.OVERFLOW_POLICY_REVOKE_OLDEST;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -134,8 +135,7 @@ class CredentialIssuanceQuotaServiceTest {
     @Test
     void resolveOverflowPolicy_usesMapperConfigOverRealmFallback() {
         when(mapperModel.getConfig())
-                .thenReturn(
-                        Map.of(CredentialIssuanceQuotaService.OVERFLOW_POLICY_CONFIG, OVERFLOW_POLICY_REVOKE_OLDEST));
+                .thenReturn(Map.of(StatusListConfig.STATUS_LIST_OVERFLOW_POLICY, OVERFLOW_POLICY_REVOKE_OLDEST));
         lenient()
                 .when(realm.getAttribute(StatusListConfig.STATUS_LIST_OVERFLOW_POLICY))
                 .thenReturn(OVERFLOW_POLICY_REJECT);
@@ -220,7 +220,7 @@ class CredentialIssuanceQuotaServiceTest {
         assertEquals(CredentialIssuanceQuotaService.LIMIT_REACHED_MESSAGE, exception.getMessage());
         assertEquals(CredentialIssuanceQuotaException.ERROR_LIMIT_REACHED, exception.getError());
         assertEquals(409, exception.getResponse().getStatus());
-        verify(credentialRevocationService, never()).revokeMapping(any(), any());
+        verify(credentialRevocationService, never()).revokeMappingInTransaction(any(), any());
     }
 
     @Test
@@ -302,10 +302,12 @@ class CredentialIssuanceQuotaServiceTest {
         when(statusListRepository.countInFlightMappings(entityManager, "realm-1", "user-1", "IdentityCredential"))
                 .thenReturn(0L);
 
-        service.enforceWithinReservationTransaction(
+        StatusListMappingEntity pendingRemote = service.enforceWithinReservationTransaction(
                 entityManager, "realm-1", "user-1", "IdentityCredential", 1, OVERFLOW_POLICY_REVOKE_OLDEST);
 
-        verify(credentialRevocationService).revokeMapping(entityManager, oldest);
+        assertEquals(oldest, pendingRemote);
+        verify(credentialRevocationService).revokeMappingInTransaction(entityManager, oldest);
+        verify(credentialRevocationService, never()).publishRevocation(any());
     }
 
     @Test
@@ -323,11 +325,12 @@ class CredentialIssuanceQuotaServiceTest {
         when(statusListRepository.countInFlightMappings(entityManager, "realm-1", "user-1", "IdentityCredential"))
                 .thenReturn(0L);
 
-        service.enforceWithinReservationTransaction(
+        StatusListMappingEntity pendingRemote = service.enforceWithinReservationTransaction(
                 entityManager, "realm-1", "user-1", "IdentityCredential", 2, OVERFLOW_POLICY_REVOKE_OLDEST);
 
-        verify(credentialRevocationService).revokeMapping(entityManager, earlierId);
-        verify(credentialRevocationService, never()).revokeMapping(entityManager, laterId);
+        assertEquals(earlierId, pendingRemote);
+        verify(credentialRevocationService).revokeMappingInTransaction(entityManager, earlierId);
+        verify(credentialRevocationService, never()).revokeMappingInTransaction(entityManager, laterId);
     }
 
     @Test
@@ -345,11 +348,12 @@ class CredentialIssuanceQuotaServiceTest {
         when(statusListRepository.countInFlightMappings(entityManager, "realm-1", "user-1", "IdentityCredential"))
                 .thenReturn(0L);
 
-        service.enforceWithinReservationTransaction(
+        StatusListMappingEntity pendingRemote = service.enforceWithinReservationTransaction(
                 entityManager, "realm-1", "user-1", "IdentityCredential", 2, OVERFLOW_POLICY_REVOKE_OLDEST);
 
-        verify(credentialRevocationService).revokeMapping(entityManager, newerSuccess);
-        verify(credentialRevocationService, never()).revokeMapping(entityManager, olderFailure);
+        assertEquals(newerSuccess, pendingRemote);
+        verify(credentialRevocationService).revokeMappingInTransaction(entityManager, newerSuccess);
+        verify(credentialRevocationService, never()).revokeMappingInTransaction(entityManager, olderFailure);
     }
 
     @Test
@@ -364,35 +368,31 @@ class CredentialIssuanceQuotaServiceTest {
                 .thenReturn(0L);
         when(entityManager.contains(failed)).thenReturn(true);
 
-        service.enforceWithinReservationTransaction(
+        StatusListMappingEntity pendingRemote = service.enforceWithinReservationTransaction(
                 entityManager, "realm-1", "user-1", "IdentityCredential", 1, OVERFLOW_POLICY_REVOKE_OLDEST);
 
+        assertNull(pendingRemote);
         assertEquals(TokenStatus.INVALID, failed.getTokenStatus());
-        verify(credentialRevocationService, never()).revokeMapping(any(), any());
+        verify(credentialRevocationService, never()).revokeMappingInTransaction(any(), any());
     }
 
     @Test
-    void enforceWithinReservationTransaction_failsWhenRevokeOldestCannotRevoke() throws Exception {
+    void publishOverflowRevocation_failsClosedAndRestoresLocalStatusWhenPublishFails() throws Exception {
         StatusListMappingEntity oldest = successfulMapping("token-oldest");
         oldest.setId("mapping-1");
+        oldest.setTokenStatus(TokenStatus.INVALID);
 
-        stubIssuedCredentials("token-oldest");
-        when(statusListRepository.findNonRevokedMappings(entityManager, "realm-1", "user-1", "IdentityCredential"))
-                .thenReturn(List.of(oldest));
-        when(statusListRepository.countInFlightMappings(entityManager, "realm-1", "user-1", "IdentityCredential"))
-                .thenReturn(0L);
         doThrow(new StatusListException("status list unavailable"))
                 .when(credentialRevocationService)
-                .revokeMapping(entityManager, oldest);
+                .publishRevocation(oldest);
 
-        CredentialIssuanceQuotaException exception = assertThrows(
-                CredentialIssuanceQuotaException.class,
-                () -> service.enforceWithinReservationTransaction(
-                        entityManager, "realm-1", "user-1", "IdentityCredential", 1, OVERFLOW_POLICY_REVOKE_OLDEST));
+        CredentialIssuanceQuotaException exception =
+                assertThrows(CredentialIssuanceQuotaException.class, () -> service.publishOverflowRevocation(oldest));
 
         assertEquals(CredentialIssuanceQuotaService.REVOKE_OLDEST_FAILED_MESSAGE, exception.getMessage());
         assertEquals(CredentialIssuanceQuotaException.ERROR_FAIL_CLOSED, exception.getError());
         assertEquals(400, exception.getResponse().getStatus());
+        verify(statusListRepository).withEntityManagerInTransaction(any());
     }
 
     @Test

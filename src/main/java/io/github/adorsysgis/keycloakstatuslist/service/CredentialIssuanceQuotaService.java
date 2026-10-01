@@ -34,6 +34,10 @@ import org.keycloak.utils.StringUtil;
 
 /**
  * Enforces and reports the maximum number of non-revoked credentials per holder and credential type.
+ *
+ * <p>The two-argument constructor is for read-only quota reporting ({@link #listLimits}). Enforcement
+ * with {@code REVOKE_OLDEST} requires the three-argument form that supplies a
+ * {@link CredentialRevocationService}.
  */
 public class CredentialIssuanceQuotaService {
 
@@ -43,7 +47,6 @@ public class CredentialIssuanceQuotaService {
                     StatusListMappingEntity::getCreatedTimestamp, Comparator.nullsLast(Long::compareTo))
             .thenComparing(StatusListMappingEntity::getId, Comparator.nullsLast(String::compareTo));
 
-    public static final String OVERFLOW_POLICY_CONFIG = StatusListConfig.STATUS_LIST_OVERFLOW_POLICY;
     public static final String LIMIT_REACHED_MESSAGE =
             "Issued credential limit reached for this user and credential type";
     public static final String FAIL_CLOSED_MESSAGE =
@@ -59,6 +62,7 @@ public class CredentialIssuanceQuotaService {
     private final StatusListRepository statusListRepository;
     private final CredentialRevocationService credentialRevocationService;
 
+    /** Read-only use (listing). {@code REVOKE_OLDEST} enforcement needs the overload below. */
     public CredentialIssuanceQuotaService(KeycloakSession session, StatusListRepository statusListRepository) {
         this(session, statusListRepository, null);
     }
@@ -90,7 +94,7 @@ public class CredentialIssuanceQuotaService {
      * omits the key, the optional realm attribute is used. Defaults to {@code REJECT}.
      */
     public String resolveOverflowPolicy(ProtocolMapperModel mapperModel, RealmModel realm) {
-        Optional<String> mapperValue = mapperConfigValue(mapperModel, OVERFLOW_POLICY_CONFIG);
+        Optional<String> mapperValue = mapperConfigValue(mapperModel, StatusListConfig.STATUS_LIST_OVERFLOW_POLICY);
         if (mapperValue.isPresent()) {
             return StatusListConfig.parseOverflowPolicy(mapperValue.get());
         }
@@ -118,12 +122,17 @@ public class CredentialIssuanceQuotaService {
     /**
      * Rejects issuance when {@code activeCount} (same algorithm as {@link #listLimits}) plus in-flight
      * {@code INIT} rows already meet {@code max}. {@code INIT} is extra so concurrent reservation
-     * cannot overshoot; it is not part of displayed {@code activeCount}. {@code REVOKE_OLDEST} revokes
-     * the oldest occupying mapping and continues only if a slot is actually freed; a failed revocation
-     * fails issuance. Revocation is irreversible: a later issuance failure does not restore the old
-     * credential. The freed slot is what a retry uses.
+     * cannot overshoot; it is not part of displayed {@code activeCount}.
+     *
+     * <p>For {@code REVOKE_OLDEST}, marks the oldest occupying slot {@code INVALID} locally and
+     * returns a {@code SUCCESS} mapping that still needs a status-list publish after this transaction
+     * commits ({@link #publishOverflowRevocation}). {@code FAILURE} rows are freed locally only
+     * (return {@code null}). A completed local free is kept even if a later issuance step fails.
+     *
+     * @return mapping that must be published remotely after commit, or {@code null} when no remote
+     *     publish is required
      */
-    public void enforceWithinReservationTransaction(
+    public StatusListMappingEntity enforceWithinReservationTransaction(
             EntityManager em,
             String realmId,
             String userId,
@@ -131,7 +140,7 @@ public class CredentialIssuanceQuotaService {
             int max,
             String overflowPolicy) {
         if (max <= 0) {
-            return;
+            return null;
         }
         requireHolderAndTypeWhenLimited(userId, credentialConfigurationId, max);
 
@@ -141,35 +150,57 @@ public class CredentialIssuanceQuotaService {
         long inFlight = statusListRepository.countInFlightMappings(em, realmId, userId, credentialConfigurationId);
         long countTowardLimit = activeCount + inFlight;
         if (countTowardLimit < max) {
-            return;
+            return null;
         }
 
         String policy = StatusListConfig.parseOverflowPolicy(overflowPolicy);
         if (OVERFLOW_POLICY_REVOKE_OLDEST.equals(policy)) {
-            revokeOldestToFreeSlot(em, realmId, userId, credentialConfigurationId, max, countTowardLimit, issuedIds);
-            activeCount = countIssuedNonRevoked(
-                    statusListRepository.findNonRevokedMappings(em, realmId, userId, credentialConfigurationId),
-                    issuedIds);
-            inFlight = statusListRepository.countInFlightMappings(em, realmId, userId, credentialConfigurationId);
-            if (activeCount + inFlight < max) {
-                return;
-            }
+            return freeOldestOccupyingSlot(
+                    em, realmId, userId, credentialConfigurationId, max, countTowardLimit, issuedIds);
         }
 
         logger.warnf(
                 "Rejecting issuance: userId=%s, credentialConfigurationId=%s, countTowardLimit=%d, max=%d",
-                userId, credentialConfigurationId, activeCount + inFlight, max);
+                userId, credentialConfigurationId, countTowardLimit, max);
         throw CredentialIssuanceQuotaException.limitReached(LIMIT_REACHED_MESSAGE);
     }
 
     /**
-     * Frees the oldest occupying slot. Prefers a {@code SUCCESS} mapping and revokes it on the
-     * status-list server. When only {@code FAILURE} rows occupy slots (e.g. after revoke-then-publish
-     * failure), marks the oldest {@code FAILURE} {@code INVALID} locally without calling the server —
-     * those rows may never have been published. A completed free is kept even if a later issuance
-     * fails; a retry uses the freed slot.
+     * Publishes {@code INVALID} for a mapping freed locally by {@code REVOKE_OLDEST}. Call only after
+     * the reservation transaction that marked it {@code INVALID} has committed. On failure, restore
+     * the local row to {@code VALID} so fail-closed leaves no half-applied revoke.
      */
-    private void revokeOldestToFreeSlot(
+    public void publishOverflowRevocation(StatusListMappingEntity mapping) {
+        if (mapping == null) {
+            return;
+        }
+        if (credentialRevocationService == null) {
+            logger.error(REVOKE_OLDEST_UNAVAILABLE_MESSAGE);
+            restoreTokenStatus(mapping, TokenStatus.VALID);
+            throw CredentialIssuanceQuotaException.failClosed(REVOKE_OLDEST_UNAVAILABLE_MESSAGE);
+        }
+
+        try {
+            credentialRevocationService.publishRevocation(mapping);
+        } catch (StatusListException | RuntimeException e) {
+            logger.errorf(
+                    e,
+                    "Failed to publish overflow revocation: mappingId=%s, tokenId=%s",
+                    mapping.getId(),
+                    mapping.getTokenId());
+            restoreTokenStatus(mapping, TokenStatus.VALID);
+            throw CredentialIssuanceQuotaException.failClosed(REVOKE_OLDEST_FAILED_MESSAGE);
+        }
+    }
+
+    /**
+     * Frees one occupying slot or throws. Prefers the oldest {@code SUCCESS} mapping (local
+     * {@code INVALID}, remote publish deferred); otherwise frees the oldest {@code FAILURE} locally.
+     *
+     * @return {@code SUCCESS} mapping awaiting remote publish, or {@code null} when only a local free
+     *     was required
+     */
+    private StatusListMappingEntity freeOldestOccupyingSlot(
             EntityManager em,
             String realmId,
             String userId,
@@ -187,9 +218,8 @@ public class CredentialIssuanceQuotaService {
                 .min(OLDEST_OCCUPYING_MAPPING)
                 .orElse(null);
         if (oldestSuccess != null) {
-            revokeSuccessfulMapping(em, oldestSuccess, userId, credentialConfigurationId, max, countTowardLimit);
-            issuedIds.remove(oldestSuccess.getTokenId());
-            return;
+            return markSuccessfulMappingInvalidLocally(
+                    em, oldestSuccess, userId, credentialConfigurationId, max, countTowardLimit);
         }
 
         StatusListMappingEntity oldestFailure = occupying.stream()
@@ -197,9 +227,10 @@ public class CredentialIssuanceQuotaService {
                 .min(OLDEST_OCCUPYING_MAPPING)
                 .orElse(null);
         if (oldestFailure != null) {
+            // FAILURE still occupies quota (Keycloak issued the credential; status publish may never
+            // have reached the server), so free it locally without a status-list call.
             freeFailedMappingLocally(em, oldestFailure, userId, credentialConfigurationId, max, countTowardLimit);
-            issuedIds.remove(oldestFailure.getTokenId());
-            return;
+            return null;
         }
 
         logger.warnf(
@@ -208,7 +239,7 @@ public class CredentialIssuanceQuotaService {
         throw CredentialIssuanceQuotaException.limitReached(LIMIT_REACHED_MESSAGE);
     }
 
-    private void revokeSuccessfulMapping(
+    private StatusListMappingEntity markSuccessfulMappingInvalidLocally(
             EntityManager em,
             StatusListMappingEntity oldest,
             String userId,
@@ -221,19 +252,31 @@ public class CredentialIssuanceQuotaService {
         }
 
         logger.infof(
-                "Revoking oldest credential for overflow: userId=%s, credentialConfigurationId=%s, mappingId=%s, tokenId=%s, countTowardLimit=%d, max=%d",
+                "Marking oldest credential INVALID locally for overflow: userId=%s, credentialConfigurationId=%s, mappingId=%s, tokenId=%s, countTowardLimit=%d, max=%d",
                 userId, credentialConfigurationId, oldest.getId(), oldest.getTokenId(), countTowardLimit, max);
 
+        credentialRevocationService.revokeMappingInTransaction(em, oldest);
+        return oldest;
+    }
+
+    private void restoreTokenStatus(StatusListMappingEntity mapping, TokenStatus tokenStatus) {
         try {
-            credentialRevocationService.revokeMapping(em, oldest);
-        } catch (StatusListException | RuntimeException e) {
+            statusListRepository.withEntityManagerInTransaction(em -> {
+                StatusListMappingEntity managed =
+                        mapping.getId() == null ? null : em.find(StatusListMappingEntity.class, mapping.getId());
+                if (managed == null) {
+                    mapping.setTokenStatus(tokenStatus);
+                    em.merge(mapping);
+                    return;
+                }
+                managed.setTokenStatus(tokenStatus);
+            });
+        } catch (RuntimeException e) {
             logger.errorf(
                     e,
-                    "Failed to revoke oldest credential: userId=%s, credentialConfigurationId=%s, mappingId=%s",
-                    userId,
-                    credentialConfigurationId,
-                    oldest.getId());
-            throw CredentialIssuanceQuotaException.failClosed(REVOKE_OLDEST_FAILED_MESSAGE);
+                    "Failed to restore token status after overflow publish failure: mappingId=%s, tokenStatus=%s",
+                    mapping.getId(),
+                    tokenStatus);
         }
     }
 
