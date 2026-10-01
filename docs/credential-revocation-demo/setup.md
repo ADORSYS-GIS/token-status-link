@@ -42,8 +42,6 @@ credential revocation demo for the above user journey:
 
 ![Components for Credential Revocation](assets/overview.png)
 
-![Credential revocation sequence](assets/sequence-diagram.png)
-
 The environment comprises the following main components:
 
 - **Demo app**: An application that leverages Keycloak for user authentication.
@@ -53,6 +51,11 @@ The environment comprises the following main components:
   - Token Status plugin: Connects to the Status List Server to enable revocation functionality.
   - OpenID4VP plugin: Facilitates user authentication through verifiable credential presentation.
 - **Status List Server**: Maintains and serves status lists for checking the validity of credentials.
+
+The sequence diagram below shows how those components interact across the user journey, from issuance and a successful
+presentation login to revocation and a rejected presentation:
+
+![Credential revocation sequence](assets/sequence-diagram.png)
 
 ## Configuration of components
 
@@ -81,7 +84,7 @@ VITE_OID4VC_PRE_AUTHORIZED=true
 
 ### Wallet
 
-The German national wallet is preferred and supports authorization-code issuance. We also developed a
+The [German national wallet](https://github.com/german-national-wallet) is preferred and supports authorization-code issuance. We also developed a
 [wallet](https://github.com/adorsys/eudiw-app) for testing issuance and presentation. An online instance
 is available at https://adorsys.github.io/eudiw-app. That hosted build cannot reach a Keycloak instance running on
 localhost because a proxy handles its HTTP calls. With a local Keycloak, start the wallet locally as well.
@@ -209,9 +212,12 @@ plugin provides a minimal theme named `keycloak.v2+oid4vp`.
 
 ![Select OpenID4VP login theme](assets/select-oid4vp-login-theme.png)
 
-In addition, configure the OpenID4VP authenticator in the `oid4vp auth` flow so presentation login rejects revoked
-credentials. Turn **Reject revoked credentials (Token Status List)** on — that closes the demo: after the demo app
-revokes the credential, a presentation login must fail.
+In addition, open the OpenID4VP authenticator in the `oid4vp auth` flow and set:
+
+- **Credential types allowed (legacy)** to the `vct` of the credential type issued in the demo. For the sample
+  configuration in this guide, use `https://credentials.example.com/identity_credential`.
+- **Reject revoked credentials (Token Status List)** to **On**, so presentation login fails after a credential is
+  revoked.
 
 ![Configure OpenID4VP authenticator](assets/configure-oid4vp-authenticator.png)
 
