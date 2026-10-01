@@ -40,16 +40,16 @@ Place the keystore in a realm-specific directory. By default, Keycloak looks und
 
 In the Admin Console, select **Realm Settings** > **Keys** > **Providers**, add a **java-keystore** provider, and set:
 
-| Setting | Example |
-| --- | --- |
-| Keystore | `oid4vci-issuer.p12` |
-| Keystore Password | The PKCS#12 export password |
-| Keystore Type | `PKCS12` |
-| Key Alias | `oid4vci-issuer` |
-| Key Password | The private-key password (may be the same as the keystore password) |
-| Algorithm | `ES256` |
-| Key Use | `sig` |
-| Priority | Choose a priority that makes this the active key for the selected algorithm |
+| Setting           | Example                                                                     |
+| ----------------- | --------------------------------------------------------------------------- |
+| Keystore          | `oid4vci-issuer.p12`                                                        |
+| Keystore Password | The PKCS#12 export password                                                 |
+| Keystore Type     | `PKCS12`                                                                    |
+| Key Alias         | `oid4vci-issuer`                                                            |
+| Key Password      | The private-key password (may be the same as the keystore password)         |
+| Algorithm         | `ES256`                                                                     |
+| Key Use           | `sig`                                                                       |
+| Priority          | Choose a priority that makes this the active key for the selected algorithm |
 
 Enable the provider and make it active. The configured key algorithm must match the key type.
 
