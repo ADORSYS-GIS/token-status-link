@@ -138,6 +138,9 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
 
             var rejected = oid4vci.tryIssueCredential(holder.username(), holder.accessToken());
             assertQuotaRejection(rejected);
+            assertRejectedIssuanceIsListedWithoutMapping(
+                    holder.accessToken(), rejected.credentialAccessToken(), first.id());
+            assertLimit(holder.accessToken(), CREDENTIAL_CONFIGURATION_ID, 1, 2, 0);
 
             IssuedCredentialFixture otherCredential =
                     oid4vci.issueCredential(otherHolder.username(), otherHolder.accessToken());
@@ -145,11 +148,10 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
 
             var revokeResponse = oid4vci.revokeCredential(holder.accessToken(), first.id(), "free quota slot");
             assertEquals(200, revokeResponse.statusCode());
-            assertLimit(holder.accessToken(), CREDENTIAL_CONFIGURATION_ID, 1, 0, 1);
-
-            IssuedCredentialFixture reissued = oid4vci.issueCredential(holder.username(), holder.accessToken());
-            assertCredentialStatus(holder.accessToken(), reissued.id(), TokenStatus.VALID.name());
             assertLimit(holder.accessToken(), CREDENTIAL_CONFIGURATION_ID, 1, 1, 0);
+
+            var reissued = oid4vci.tryIssueCredential(holder.username(), holder.accessToken());
+            assertQuotaRejection(reissued);
         } finally {
             setMaxCredentialsPerUser(null);
         }
@@ -189,11 +191,36 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
             attempts.stream()
                     .filter(a -> a.response().statusCode() == 409)
                     .forEach(KeycloakStatusListFlowIT::assertQuotaRejection);
-            assertLimit(holder.accessToken(), CREDENTIAL_CONFIGURATION_ID, 2, 2, 0);
+            assertLimit(holder.accessToken(), CREDENTIAL_CONFIGURATION_ID, 2, 3, 0);
         } finally {
             executor.shutdownNow();
             setMaxCredentialsPerUser(null);
         }
+    }
+
+    private static void assertRejectedIssuanceIsListedWithoutMapping(
+            String holderAccessToken, String credentialAccessToken, String listedCredentialId) throws Exception {
+        String rejectedId = oid4vci.issuedCredentialId(credentialAccessToken);
+        JsonNode listing = oid4vci.issuedCredentialStatuses(holderAccessToken);
+        JsonNode credentials = listing.path("credentials");
+        assertTrue(containsCredential(credentials, rejectedId), "rejected issuance must be listed: " + credentials);
+        assertTrue(
+                containsCredential(credentials, listedCredentialId),
+                "completed issuance must remain listed: " + credentials);
+        assertTrue(
+                listing.path("dangling").isMissingNode()
+                        || listing.path("dangling").isNull(),
+                listing.toString());
+        assertEquals("UNKNOWN", fieldFor(credentials, rejectedId, "status"));
+        assertNoMappingStatus(credentialNode(credentials, rejectedId), listing);
+        assertTrue(credentialNode(credentials, rejectedId)
+                .path("countsTowardQuota")
+                .asBoolean());
+        assertEquals("VALID", fieldFor(credentials, listedCredentialId, "status"));
+        assertEquals("SUCCESS", fieldFor(credentials, listedCredentialId, "mappingStatus"));
+        assertTrue(credentialNode(credentials, listedCredentialId)
+                .path("countsTowardQuota")
+                .asBoolean());
     }
 
     private static void assertQuotaRejection(Oid4vciTestClient.CredentialIssuanceAttempt attempt) {
@@ -267,12 +294,25 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
         return false;
     }
 
-    private static String fieldFor(JsonNode statuses, String credentialId, String field) {
+    private static void assertNoMappingStatus(JsonNode credential, JsonNode listing) {
+        JsonNode mappingStatus = credential.path("mappingStatus");
+        assertTrue(
+                mappingStatus.isMissingNode()
+                        || mappingStatus.isNull()
+                        || mappingStatus.asText().isBlank(),
+                "rejected issuance mappingStatus: " + listing);
+    }
+
+    private static JsonNode credentialNode(JsonNode statuses, String credentialId) {
         for (JsonNode credential : statuses) {
             if (credentialId.equals(credential.path("credentialId").asText())) {
-                return credential.path(field).asText();
+                return credential;
             }
         }
         throw new AssertionError("Credential not found: " + credentialId);
+    }
+
+    private static String fieldFor(JsonNode statuses, String credentialId, String field) {
+        return credentialNode(statuses, credentialId).path(field).asText();
     }
 }

@@ -334,7 +334,8 @@ public class StatusListProtocolMapper extends OID4VCMapper {
                         mapping.getRealmId(),
                         mapping.getUserId(),
                         mapping.getCredentialConfigurationId(),
-                        maxCredentialsPerUser);
+                        maxCredentialsPerUser,
+                        mapping.getTokenId());
                 persistInitialMapping(em, mapping);
             });
             return true;

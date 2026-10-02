@@ -6,8 +6,10 @@ import io.github.adorsysgis.keycloakstatuslist.StatusListProtocolMapper;
 import io.github.adorsysgis.keycloakstatuslist.config.StatusListConfig;
 import io.github.adorsysgis.keycloakstatuslist.exception.CredentialIssuanceQuotaException;
 import io.github.adorsysgis.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
+import io.github.adorsysgis.keycloakstatuslist.jpa.entity.StatusListMappingEntity.MappingStatus;
 import io.github.adorsysgis.keycloakstatuslist.jpa.repository.StatusListRepository;
 import io.github.adorsysgis.keycloakstatuslist.model.IssuedCredentialStatusResponse.IssuedCredentialLimit;
+import io.github.adorsysgis.keycloakstatuslist.model.TokenStatus;
 import jakarta.persistence.EntityManager;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -17,20 +19,24 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.stream.Collectors;
 import org.jboss.logging.Logger;
+import org.keycloak.common.util.Time;
 import org.keycloak.models.ClientScopeModel;
 import org.keycloak.models.IssuedVerifiableCredentialModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.ProtocolMapperModel;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserProvider;
+import org.keycloak.models.UserVerifiableCredentialModel;
 import org.keycloak.models.oid4vci.CredentialScopeModel;
 import org.keycloak.protocol.oid4vc.OID4VCLoginProtocolFactory;
 import org.keycloak.utils.StringUtil;
 
 /**
- * Enforces and reports the maximum number of non-revoked credentials per holder and credential type.
+ * Enforces and reports the maximum number of occupying credentials per holder and credential type.
+ * Occupancy is issued credentials with no mapping or a {@code SUCCESS}/{@code FAILURE} mapping that
+ * is not {@code INVALID}; {@code INIT} mappings are omitted. Reservation also adds recent
+ * in-flight {@code INIT} rows so parallel issuance cannot overshoot {@code max}.
  */
 public class CredentialIssuanceQuotaService {
 
@@ -41,6 +47,7 @@ public class CredentialIssuanceQuotaService {
     public static final String FAIL_CLOSED_MESSAGE =
             "Issued credential limit is configured but holder or credential type could not be resolved";
     public static final String OVERFLOW_POLICY_REJECT = "REJECT";
+    static final long MIN_IN_FLIGHT_INIT_WINDOW_MS = 60_000L;
 
     private final KeycloakSession session;
     private final StatusListRepository statusListRepository;
@@ -79,21 +86,57 @@ public class CredentialIssuanceQuotaService {
     }
 
     /**
-     * Rejects issuance when {@code activeCount} (same algorithm as {@link #listLimits}) plus in-flight
-     * {@code INIT} rows already meet {@code max}. {@code INIT} is extra so concurrent reservation
-     * cannot overshoot; it is not part of displayed {@code activeCount}.
+     * An issued credential occupies a quota slot when it has no mapping, or a {@code SUCCESS} /
+     * {@code FAILURE} mapping that is not {@code INVALID}. {@code INIT} mappings and legacy mappings
+     * without a credential type are omitted.
+     */
+    public static boolean occupiesQuota(StatusListMappingEntity mapping) {
+        if (mapping == null) {
+            return true;
+        }
+        if (StringUtil.isBlank(mapping.getCredentialConfigurationId())) {
+            return false;
+        }
+        if (mapping.getStatus() == MappingStatus.INIT) {
+            return false;
+        }
+        if (mapping.getTokenStatus() == TokenStatus.INVALID) {
+            return false;
+        }
+        return mapping.getStatus() == MappingStatus.SUCCESS || mapping.getStatus() == MappingStatus.FAILURE;
+    }
+
+    /**
+     * Rejects issuance when occupying credentials plus concurrent in-flight {@code INIT} rows
+     * already meet {@code max}. An {@code INIT} row is in flight while it is younger than
+     * {@link #inFlightInitWindowMs}; older ones are leftovers and are omitted, matching displayed
+     * {@code activeCount}. In-flight {@code INIT} is counted only so parallel reservation cannot
+     * overshoot.
+     *
+     * <p>{@code currentTokenId} is excluded so this request cannot fill the slot against itself.
+     * Unmapped issued credentials occupy only when they predate this issuance ({@code issuedAt}), so
+     * a leftover from a finished attempt still blocks while a concurrent Keycloak row does not
+     * deadlock both requests. Displayed {@code activeCount} still counts every unmapped leftover.
      */
     public void enforceWithinReservationTransaction(
-            EntityManager em, String realmId, String userId, String credentialConfigurationId, int max) {
+            EntityManager em,
+            String realmId,
+            String userId,
+            String credentialConfigurationId,
+            int max,
+            String currentTokenId) {
         if (max <= 0) {
             return;
         }
         requireHolderAndTypeWhenLimited(userId, credentialConfigurationId, max);
 
-        long activeCount = countIssuedNonRevoked(
-                statusListRepository.findNonRevokedMappings(em, realmId, userId, credentialConfigurationId),
-                issuedCredentialIds(userId));
-        long inFlight = statusListRepository.countInFlightMappings(em, realmId, userId, credentialConfigurationId);
+        List<IssuedVerifiableCredentialModel> issued = loadIssuedCredentials(userId);
+        List<StatusListMappingEntity> holderMappings = statusListRepository.findMappingsByUser(em, realmId, userId);
+        RealmModel realm = currentRealm();
+        long activeCount = countOccupying(
+                issued, latestByTokenId(holderMappings), credentialConfigurationId, realm, currentTokenId);
+        long inFlightSince = Time.currentTimeMillis() - inFlightInitWindowMs(realm);
+        long inFlight = countInFlight(holderMappings, credentialConfigurationId, currentTokenId, inFlightSince);
         long countTowardLimit = activeCount + inFlight;
         if (countTowardLimit >= max) {
             logger.warnf(
@@ -105,23 +148,23 @@ public class CredentialIssuanceQuotaService {
 
     /**
      * Returns quota metadata for OID4VC credential types that have a configured (non-zero) limit.
-     * {@code activeCount} uses the same issued-credential join as issuance: {@code SUCCESS} and
-     * {@code FAILURE} mappings that still have an issued credential. In-flight {@code INIT} rows
-     * are omitted.
+     * {@code activeCount} is issued credentials of that type with no mapping or a {@code SUCCESS} /
+     * {@code FAILURE} mapping that is not {@code INVALID}. Leftover {@code INIT} mappings are omitted.
      */
     public List<IssuedCredentialLimit> listLimits(
-            RealmModel realm, String userId, Collection<String> issuedCredentialIds) {
+            RealmModel realm, String userId, Collection<IssuedVerifiableCredentialModel> issuedCredentials) {
         if (realm == null || StringUtil.isBlank(userId)) {
             return List.of();
         }
 
-        Set<String> issuedIds = issuedCredentialIds == null
-                ? Set.of()
-                : issuedCredentialIds.stream()
-                        .filter(StringUtil::isNotBlank)
-                        .collect(Collectors.toCollection(LinkedHashSet::new));
-        Map<String, Long> activeCounts = countIssuedNonRevokedByType(
-                statusListRepository.findNonRevokedMappings(realm.getId(), userId), issuedIds);
+        List<IssuedVerifiableCredentialModel> issued = issuedCredentials == null
+                ? List.of()
+                : issuedCredentials.stream()
+                        .filter(credential -> credential != null && StringUtil.isNotBlank(credential.getId()))
+                        .toList();
+        Map<String, StatusListMappingEntity> mappings =
+                statusListRepository.findMappingsByTokenIds(realm.getId(), userId, idsOf(issued));
+        Map<String, Long> activeCounts = countOccupyingByType(issued, mappings, realm);
         Map<String, IssuedCredentialLimit> limits = new LinkedHashMap<>();
 
         realm.getClientScopesStream()
@@ -157,44 +200,82 @@ public class CredentialIssuanceQuotaService {
                 credentialConfigurationId, max, activeCount, Math.max(0L, max - activeCount), OVERFLOW_POLICY_REJECT));
     }
 
-    private Set<String> issuedCredentialIds(String userId) {
+    private List<IssuedVerifiableCredentialModel> loadIssuedCredentials(String userId) {
         if (session == null || StringUtil.isBlank(userId)) {
-            return Set.of();
+            return List.of();
         }
 
         UserProvider users = session.users();
         if (users == null) {
-            return Set.of();
+            return List.of();
         }
 
         var stream = users.getIssuedVerifiableCredentialsStreamByUser(userId);
         if (stream == null) {
-            return Set.of();
+            return List.of();
         }
 
-        return stream.map(IssuedVerifiableCredentialModel::getId)
-                .filter(StringUtil::isNotBlank)
-                .collect(Collectors.toCollection(LinkedHashSet::new));
+        return stream.filter(credential -> credential != null && StringUtil.isNotBlank(credential.getId()))
+                .toList();
     }
 
-    private static long countIssuedNonRevoked(List<StatusListMappingEntity> mappings, Set<String> issuedCredentialIds) {
-        if (mappings == null) {
+    private static Set<String> idsOf(Collection<IssuedVerifiableCredentialModel> issuedCredentials) {
+        Set<String> ids = new LinkedHashSet<>();
+        if (issuedCredentials == null) {
+            return ids;
+        }
+        for (IssuedVerifiableCredentialModel credential : issuedCredentials) {
+            if (credential != null && StringUtil.isNotBlank(credential.getId())) {
+                ids.add(credential.getId());
+            }
+        }
+        return ids;
+    }
+
+    private long countOccupying(
+            Collection<IssuedVerifiableCredentialModel> issuedCredentials,
+            Map<String, StatusListMappingEntity> mappings,
+            String credentialConfigurationId,
+            RealmModel realm,
+            String currentTokenId) {
+        if (issuedCredentials == null || StringUtil.isBlank(credentialConfigurationId)) {
             return 0L;
         }
-        return mappings.stream()
-                .filter(mapping -> occupiesIssuedSlot(mapping, issuedCredentialIds))
-                .count();
+        IssuedVerifiableCredentialModel current = findIssued(issuedCredentials, currentTokenId);
+        long count = 0L;
+        for (IssuedVerifiableCredentialModel credential : issuedCredentials) {
+            if (credential == null || StringUtil.isBlank(credential.getId())) {
+                continue;
+            }
+            if (credential.getId().equals(currentTokenId)) {
+                continue;
+            }
+            StatusListMappingEntity mapping = mappingOf(mappings, credential.getId());
+            if (!credentialConfigurationId.equals(credentialTypeOf(credential, mapping, realm))) {
+                continue;
+            }
+            if (occupiesQuota(mapping) && (mapping != null || isPriorLeftover(credential, current))) {
+                count++;
+            }
+        }
+        return count;
     }
 
-    private static Map<String, Long> countIssuedNonRevokedByType(
-            List<StatusListMappingEntity> mappings, Set<String> issuedCredentialIds) {
+    private Map<String, Long> countOccupyingByType(
+            Collection<IssuedVerifiableCredentialModel> issuedCredentials,
+            Map<String, StatusListMappingEntity> mappings,
+            RealmModel realm) {
         Map<String, Long> counts = new LinkedHashMap<>();
-        if (mappings == null) {
+        if (issuedCredentials == null) {
             return counts;
         }
-        for (StatusListMappingEntity mapping : mappings) {
-            String type = mapping.getCredentialConfigurationId();
-            if (StringUtil.isBlank(type) || !occupiesIssuedSlot(mapping, issuedCredentialIds)) {
+        for (IssuedVerifiableCredentialModel credential : issuedCredentials) {
+            if (credential == null || StringUtil.isBlank(credential.getId())) {
+                continue;
+            }
+            StatusListMappingEntity mapping = mappingOf(mappings, credential.getId());
+            String type = credentialTypeOf(credential, mapping, realm);
+            if (StringUtil.isBlank(type) || !occupiesQuota(mapping)) {
                 continue;
             }
             counts.merge(type, 1L, Long::sum);
@@ -202,9 +283,114 @@ public class CredentialIssuanceQuotaService {
         return counts;
     }
 
-    private static boolean occupiesIssuedSlot(StatusListMappingEntity mapping, Set<String> issuedCredentialIds) {
-        String tokenId = mapping.getTokenId();
-        return StringUtil.isNotBlank(tokenId) && issuedCredentialIds.contains(tokenId);
+    private static Map<String, StatusListMappingEntity> latestByTokenId(List<StatusListMappingEntity> newestFirst) {
+        Map<String, StatusListMappingEntity> byTokenId = new LinkedHashMap<>();
+        for (StatusListMappingEntity mapping : newestFirst) {
+            if (StringUtil.isNotBlank(mapping.getTokenId())) {
+                byTokenId.putIfAbsent(mapping.getTokenId(), mapping);
+            }
+        }
+        return byTokenId;
+    }
+
+    private static long countInFlight(
+            List<StatusListMappingEntity> mappings,
+            String credentialConfigurationId,
+            String currentTokenId,
+            long createdSince) {
+        return mappings.stream()
+                .filter(mapping -> mapping.getStatus() == MappingStatus.INIT)
+                .filter(mapping -> mapping.getTokenStatus() != TokenStatus.INVALID)
+                .filter(mapping -> credentialConfigurationId.equals(mapping.getCredentialConfigurationId()))
+                .filter(mapping -> currentTokenId == null || !currentTokenId.equals(mapping.getTokenId()))
+                .filter(mapping ->
+                        mapping.getCreatedTimestamp() != null && mapping.getCreatedTimestamp() >= createdSince)
+                .count();
+    }
+
+    private static StatusListMappingEntity mappingOf(Map<String, StatusListMappingEntity> mappings, String tokenId) {
+        return mappings == null ? null : mappings.get(tokenId);
+    }
+
+    private static IssuedVerifiableCredentialModel findIssued(
+            Collection<IssuedVerifiableCredentialModel> issuedCredentials, String tokenId) {
+        if (issuedCredentials == null || StringUtil.isBlank(tokenId)) {
+            return null;
+        }
+        for (IssuedVerifiableCredentialModel credential : issuedCredentials) {
+            if (credential != null && tokenId.equals(credential.getId())) {
+                return credential;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * How long an {@code INIT} mapping is treated as a concurrent in-flight reservation. One attempt
+     * spans reservation, the status-list publish call (bounded by the issuance timeout), and the
+     * completion write, so the window is a multiple of that timeout with a floor for no-timeout setups.
+     */
+    static long inFlightInitWindowMs(RealmModel realm) {
+        int issuanceTimeout = realm == null ? 0 : new StatusListConfig(realm).getIssuanceTimeout();
+        return Math.max(MIN_IN_FLIGHT_INIT_WINDOW_MS, 3L * issuanceTimeout);
+    }
+
+    /**
+     * A leftover from an earlier finished attempt has an earlier {@code issuedAt} than the
+     * credential being issued. Concurrent Keycloak rows created for the same wave are not older.
+     */
+    private static boolean isPriorLeftover(
+            IssuedVerifiableCredentialModel leftover, IssuedVerifiableCredentialModel current) {
+        if (current == null) {
+            return true;
+        }
+        Long leftoverIssuedAt = leftover.getIssuedAt();
+        Long currentIssuedAt = current.getIssuedAt();
+        return leftoverIssuedAt != null && currentIssuedAt != null && leftoverIssuedAt < currentIssuedAt;
+    }
+
+    private String credentialTypeOf(
+            IssuedVerifiableCredentialModel credential, StatusListMappingEntity mapping, RealmModel realm) {
+        if (mapping != null) {
+            return mapping.getCredentialConfigurationId();
+        }
+        return resolveCredentialConfigurationId(credential, realm);
+    }
+
+    private String resolveCredentialConfigurationId(IssuedVerifiableCredentialModel credential, RealmModel realm) {
+        if (credential == null || realm == null || session == null) {
+            return null;
+        }
+
+        String verifiableCredentialId = credential.getVerifiableCredentialId();
+        if (StringUtil.isBlank(verifiableCredentialId)) {
+            return null;
+        }
+
+        UserProvider users = session.users();
+        if (users == null) {
+            return null;
+        }
+
+        UserVerifiableCredentialModel verifiableCredential = users.getVerifiableCredentialById(verifiableCredentialId);
+        if (verifiableCredential == null || StringUtil.isBlank(verifiableCredential.getClientScopeId())) {
+            return null;
+        }
+
+        ClientScopeModel scope = realm.getClientScopeById(verifiableCredential.getClientScopeId());
+        if (scope == null || !OID4VCLoginProtocolFactory.PROTOCOL_ID.equals(scope.getProtocol())) {
+            return null;
+        }
+
+        String credentialConfigurationId = new CredentialScopeModel(scope).getCredentialConfigurationId();
+        return StringUtil.isBlank(credentialConfigurationId) ? null : credentialConfigurationId;
+    }
+
+    private RealmModel currentRealm() {
+        if (session == null || session.getContext() == null) {
+            return null;
+        }
+        return session.getContext().getRealm();
     }
 
     private static ProtocolMapperModel findStatusListMapper(ClientScopeModel scope) {

@@ -57,7 +57,9 @@ class IssuedCredentialStatusEndpointTest {
                 "revision-1",
                 "VALID",
                 "user-1",
-                "alice")));
+                "alice",
+                "SUCCESS",
+                true)));
 
         Response response = endpoint.getIssuedCredentialStatuses(null);
 

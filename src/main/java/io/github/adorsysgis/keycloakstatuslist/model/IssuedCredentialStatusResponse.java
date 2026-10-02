@@ -1,5 +1,6 @@
 package io.github.adorsysgis.keycloakstatuslist.model;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import java.util.List;
 
 public record IssuedCredentialStatusResponse(
@@ -25,7 +26,9 @@ public record IssuedCredentialStatusResponse(
             String revision,
             String status,
             String userId,
-            String username) {}
+            String username,
+            @JsonInclude(JsonInclude.Include.ALWAYS) String mappingStatus,
+            boolean countsTowardQuota) {}
 
     public record IssuedCredentialLimit(
             String credentialConfigurationId, int max, long activeCount, long remaining, String overflowPolicy) {}
