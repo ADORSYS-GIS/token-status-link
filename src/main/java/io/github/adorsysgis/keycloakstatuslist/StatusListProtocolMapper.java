@@ -364,7 +364,8 @@ public class StatusListProtocolMapper extends OID4VCMapper {
                                     mapping.getUserId(),
                                     mapping.getCredentialConfigurationId(),
                                     maxCredentialsPerUser,
-                                    overflowPolicy);
+                                    overflowPolicy,
+                                    mapping.getTokenId());
                     if (needsRemotePublish != null) {
                         pendingRemoteRevoke.set(needsRemotePublish);
                         return;

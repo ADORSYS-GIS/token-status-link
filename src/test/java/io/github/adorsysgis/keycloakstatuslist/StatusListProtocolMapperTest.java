@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.keycloak.OID4VCConstants.OPENID_CREDENTIAL;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.lenient;
@@ -330,9 +331,9 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
     @Test
     void shouldNotMap_WhenSendingStatusFails() throws Exception {
         mockGetNextIndex();
-        lenient()
-                .when(realm.getAttribute(StatusListConfig.STATUS_LIST_MANDATORY))
-                .thenReturn("false");
+        when(realm.getAttribute(StatusListConfig.STATUS_LIST_MANDATORY)).thenReturn("false");
+        when(headers.getHeaderString(HttpHeaders.AUTHORIZATION))
+                .thenReturn("Bearer " + accessTokenWithIssuedCredentialId("issued-credential-1"));
         doThrow(new StatusListException("Server not reachable"))
                 .when(statusListService)
                 .publishOrUpdate(any(StatusListService.StatusListPayload.class));
@@ -372,9 +373,9 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
     @Test
     void shouldFailIssuance_WhenMandatoryAndDbPersistenceFails() {
         mockGetNextIndex();
-        lenient()
-                .when(realm.getAttribute(StatusListConfig.STATUS_LIST_MANDATORY))
-                .thenReturn("true");
+        when(realm.getAttribute(StatusListConfig.STATUS_LIST_MANDATORY)).thenReturn("true");
+        when(headers.getHeaderString(HttpHeaders.AUTHORIZATION))
+                .thenReturn("Bearer " + accessTokenWithIssuedCredentialId("issued-credential-1"));
         doThrow(new PersistenceException("DB Error")).when(entityManager).persist(any());
 
         assertThrows(RuntimeException.class, () -> mapper.setClaim(claims, userSession));
@@ -386,9 +387,9 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
     @Test
     void shouldFailIssuance_WhenMandatoryAndSendingStatusFails() throws Exception {
         mockGetNextIndex();
-        lenient()
-                .when(realm.getAttribute(StatusListConfig.STATUS_LIST_MANDATORY))
-                .thenReturn("true");
+        when(realm.getAttribute(StatusListConfig.STATUS_LIST_MANDATORY)).thenReturn("true");
+        when(headers.getHeaderString(HttpHeaders.AUTHORIZATION))
+                .thenReturn("Bearer " + accessTokenWithIssuedCredentialId("issued-credential-1"));
         doThrow(new StatusListException("Server not reachable"))
                 .when(statusListService)
                 .publishOrUpdate(any(StatusListService.StatusListPayload.class));
@@ -444,10 +445,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         stubMapperMax("1");
         when(headers.getHeaderString(HttpHeaders.AUTHORIZATION))
                 .thenReturn("Bearer " + accessTokenWithIssuedCredentialId("issued-credential-1"));
-        lenient()
-                .doReturn(1L)
-                .when(statusListRepository)
-                .countInFlightMappings(any(), eq(TEST_REALM_ID), eq("holder-1"), eq("PidCredential"));
+        stubInFlightMapping("holder-1", "PidCredential");
 
         CredentialIssuanceQuotaException exception =
                 assertThrows(CredentialIssuanceQuotaException.class, () -> mapper.setClaim(claims, userSession));
@@ -478,6 +476,8 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         mockGetNextIndex();
         stubHolder("holder-1");
         stubMapperMax("1");
+        when(headers.getHeaderString(HttpHeaders.AUTHORIZATION))
+                .thenReturn("Bearer " + accessToken("issued-credential-1", null));
 
         CredentialIssuanceQuotaException exception =
                 assertThrows(CredentialIssuanceQuotaException.class, () -> mapper.setClaim(claims, userSession));
@@ -509,10 +509,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         stubMapperMax("2");
         when(headers.getHeaderString(HttpHeaders.AUTHORIZATION))
                 .thenReturn("Bearer " + accessTokenWithIssuedCredentialId("issued-credential-1"));
-        lenient()
-                .doReturn(1L)
-                .when(statusListRepository)
-                .countInFlightMappings(any(), eq(TEST_REALM_ID), eq("holder-1"), eq("PidCredential"));
+        stubInFlightMapping("holder-1", "PidCredential");
 
         mapper.setClaim(claims, userSession);
 
@@ -547,15 +544,11 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         lenient()
                 .when(users.getIssuedVerifiableCredentialsStreamByUser("holder-1"))
                 .thenAnswer(invocation -> Stream.of(issued));
-        // After local INVALID commit, the next reservation TX must see the slot freed.
+        // After local INVALID, occupiesQuota ignores the mapping so the next reservation TX can proceed.
         lenient()
-                .doAnswer(invocation -> oldest.getTokenStatus() == TokenStatus.INVALID ? List.of() : List.of(oldest))
+                .doReturn(List.of(oldest))
                 .when(statusListRepository)
-                .findNonRevokedMappings(any(), eq(TEST_REALM_ID), eq("holder-1"), eq("PidCredential"));
-        lenient()
-                .doReturn(0L)
-                .when(statusListRepository)
-                .countInFlightMappings(any(), eq(TEST_REALM_ID), eq("holder-1"), eq("PidCredential"));
+                .findMappingsByUser(any(), eq(TEST_REALM_ID), eq("holder-1"));
 
         mapper.setClaim(claims, userSession);
 
@@ -594,13 +587,9 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
                 .when(users.getIssuedVerifiableCredentialsStreamByUser("holder-1"))
                 .thenAnswer(invocation -> Stream.of(issued));
         lenient()
-                .doAnswer(invocation -> oldest.getTokenStatus() == TokenStatus.INVALID ? List.of() : List.of(oldest))
+                .doReturn(List.of(oldest))
                 .when(statusListRepository)
-                .findNonRevokedMappings(any(), eq(TEST_REALM_ID), eq("holder-1"), eq("PidCredential"));
-        lenient()
-                .doReturn(0L)
-                .when(statusListRepository)
-                .countInFlightMappings(any(), eq(TEST_REALM_ID), eq("holder-1"), eq("PidCredential"));
+                .findMappingsByUser(any(), eq(TEST_REALM_ID), eq("holder-1"));
         doThrow(new StatusListServerException("publish failed", 500))
                 .when(statusListService)
                 .publishOrUpdate(any(StatusListService.StatusListPayload.class));
@@ -645,14 +634,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
                 .doAnswer(invocation -> invocation.getArgument(0))
                 .when(statusListRepository)
                 .save(any());
-        lenient()
-                .doReturn(List.of())
-                .when(statusListRepository)
-                .findNonRevokedMappings(any(), anyString(), any(), any());
-        lenient()
-                .doReturn(0L)
-                .when(statusListRepository)
-                .countInFlightMappings(any(), anyString(), anyString(), anyString());
+        lenient().doReturn(List.of()).when(statusListRepository).findMappingsByUser(any(), anyString(), any());
         setPrivateField(
                 mapper,
                 "credentialIssuanceQuotaService",
@@ -660,6 +642,14 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
                         session,
                         statusListRepository,
                         new CredentialRevocationService(session, statusListService, statusListRepository)));
+    }
+
+    private void stubInFlightMapping(String userId, String credentialConfigurationId) {
+        var inFlight = new StatusListMappingEntity();
+        inFlight.setTokenId("concurrent-credential");
+        inFlight.setUserId(userId);
+        inFlight.setCredentialConfigurationId(credentialConfigurationId);
+        doReturn(List.of(inFlight)).when(statusListRepository).findMappingsByUser(any(), eq(TEST_REALM_ID), eq(userId));
     }
 
     private void stubHolder(String userId) {
@@ -703,19 +693,25 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
     }
 
     private String accessTokenWithIssuedCredentialId(String issuedCredentialId) {
+        return accessToken(issuedCredentialId, "PidCredential");
+    }
+
+    private String accessToken(String issuedCredentialId, String credentialConfigurationId) {
         String issuedCredentialClaim =
                 issuedCredentialId == null ? "" : ",\"issued_credential_id\":\"" + issuedCredentialId + "\"";
+        String configurationClaim = credentialConfigurationId == null
+                ? ""
+                : ",\"credential_configuration_id\":\"" + credentialConfigurationId + "\"";
         String payload = """
                 {
                   "typ": "Bearer",
                   "authorization_details": [
                     {
-                      "type": "%s",
-                      "credential_configuration_id": "PidCredential"%s
+                      "type": "%s"%s%s
                     }
                   ]
                 }
-                """.formatted(OPENID_CREDENTIAL, issuedCredentialClaim);
+                """.formatted(OPENID_CREDENTIAL, configurationClaim, issuedCredentialClaim);
 
         Base64.Encoder encoder = Base64.getUrlEncoder().withoutPadding();
         return encoder.encodeToString("{\"alg\":\"none\"}".getBytes(StandardCharsets.UTF_8))

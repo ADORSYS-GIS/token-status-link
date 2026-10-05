@@ -1,7 +1,6 @@
 package io.github.adorsysgis.keycloakstatuslist.jpa.repository;
 
 import io.github.adorsysgis.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
-import io.github.adorsysgis.keycloakstatuslist.model.TokenStatus;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import jakarta.persistence.TypedQuery;
@@ -183,65 +182,55 @@ public class StatusListRepository {
     }
 
     /**
-     * Finds successful mappings for Keycloak issued credential ids owned by the given user.
+     * Finds mappings for Keycloak issued credential ids owned by the given user, any mapping status.
      */
-    public Map<String, StatusListMappingEntity> findSuccessfulMappingsByTokenIds(
+    public Map<String, StatusListMappingEntity> findMappingsByTokenIds(
             String realmId, String userId, Collection<String> tokenIds) {
+        AtomicReference<Map<String, StatusListMappingEntity>> result = new AtomicReference<>(Map.of());
+        withEntityManagerInTransaction(em -> result.set(findMappingsByTokenIds(em, realmId, userId, tokenIds)));
+        return result.get();
+    }
+
+    /**
+     * Finds mappings for Keycloak issued credential ids owned by the given user, any mapping status.
+     * Must run inside an open transaction.
+     */
+    public Map<String, StatusListMappingEntity> findMappingsByTokenIds(
+            EntityManager em, String realmId, String userId, Collection<String> tokenIds) {
         List<String> normalizedTokenIds = tokenIds == null
                 ? List.of()
                 : tokenIds.stream().filter(StringUtil::isNotBlank).distinct().toList();
-        if (normalizedTokenIds.isEmpty()) {
+        if (normalizedTokenIds.isEmpty() || StringUtil.isBlank(userId)) {
             return Map.of();
         }
 
-        AtomicReference<List<StatusListMappingEntity>> result = new AtomicReference<>(List.of());
+        String q = """
+                    SELECT m FROM StatusListMappingEntity m
+                    WHERE m.realmId = :realmId
+                      AND m.userId = :userId
+                      AND m.tokenId IN :tokenIds
+                    ORDER BY m.createdTimestamp DESC
+                """;
 
-        withEntityManagerInTransaction(em -> {
-            String q = """
-                        SELECT m FROM StatusListMappingEntity m
-                        WHERE m.realmId = :realmId
-                          AND m.userId = :userId
-                          AND m.tokenId IN :tokenIds
-                          AND m.status = :status
-                        ORDER BY m.createdTimestamp DESC
-                    """;
+        TypedQuery<StatusListMappingEntity> query = em.createQuery(q, StatusListMappingEntity.class);
+        query.setParameter("realmId", realmId);
+        query.setParameter("userId", userId);
+        query.setParameter("tokenIds", normalizedTokenIds);
 
-            TypedQuery<StatusListMappingEntity> query = em.createQuery(q, StatusListMappingEntity.class);
-            query.setParameter("realmId", realmId);
-            query.setParameter("userId", userId);
-            query.setParameter("tokenIds", normalizedTokenIds);
-            query.setParameter("status", StatusListMappingEntity.MappingStatus.SUCCESS);
-
-            result.set(query.getResultList());
-        });
-
-        return result.get().stream()
+        return query.getResultList().stream()
+                .filter(mapping -> StringUtil.isNotBlank(mapping.getTokenId()))
                 .collect(Collectors.toMap(
                         StatusListMappingEntity::getTokenId, Function.identity(), (first, ignored) -> first));
     }
 
     /**
-     * Non-revoked {@code SUCCESS} and {@code FAILURE} mappings for the holder. {@code FAILURE} is
-     * included because issuance can still proceed when status-list is not mandatory. Caller intersects
-     * with issued credentials. This is the shared list for {@code limits.activeCount} and issuance;
-     * in-flight {@code INIT} rows are counted separately during reservation only.
+     * Every mapping of the holder, any status, newest first. Quota reservation derives both occupancy
+     * and in-flight {@code INIT} rows from this one read: a concurrent attempt can move its row from
+     * {@code INIT} to {@code SUCCESS} without holding the reservation lock, so two separate reads
+     * could miss it in both. Must run inside an open transaction, typically after
+     * {@link #lockLatestMapping}.
      */
-    public List<StatusListMappingEntity> findNonRevokedMappings(String realmId, String userId) {
-        if (StringUtil.isBlank(userId)) {
-            return List.of();
-        }
-
-        AtomicReference<List<StatusListMappingEntity>> result = new AtomicReference<>(List.of());
-        withEntityManagerInTransaction(em -> result.set(findNonRevokedMappings(em, realmId, userId, null)));
-        return result.get();
-    }
-
-    /**
-     * Non-revoked {@code SUCCESS} and {@code FAILURE} mappings for the holder and optional credential
-     * type. Must run inside an open transaction. A blank type returns every type.
-     */
-    public List<StatusListMappingEntity> findNonRevokedMappings(
-            EntityManager em, String realmId, String userId, String credentialConfigurationId) {
+    public List<StatusListMappingEntity> findMappingsByUser(EntityManager em, String realmId, String userId) {
         if (StringUtil.isBlank(userId)) {
             return List.of();
         }
@@ -250,52 +239,14 @@ public class StatusListRepository {
                     SELECT m FROM StatusListMappingEntity m
                     WHERE m.realmId = :realmId
                       AND m.userId = :userId
-                      AND m.status IN :statuses
-                      AND m.tokenStatus <> :invalid
+                    ORDER BY m.createdTimestamp DESC
                 """;
-        if (StringUtil.isNotBlank(credentialConfigurationId)) {
-            q += " AND m.credentialConfigurationId = :credentialConfigurationId";
-        }
 
         TypedQuery<StatusListMappingEntity> query = em.createQuery(q, StatusListMappingEntity.class);
         query.setParameter("realmId", realmId);
         query.setParameter("userId", userId);
-        query.setParameter(
-                "statuses",
-                List.of(StatusListMappingEntity.MappingStatus.SUCCESS, StatusListMappingEntity.MappingStatus.FAILURE));
-        query.setParameter("invalid", TokenStatus.INVALID);
-        if (StringUtil.isNotBlank(credentialConfigurationId)) {
-            query.setParameter("credentialConfigurationId", credentialConfigurationId);
-        }
 
         return query.getResultList();
-    }
-
-    /**
-     * Counts in-flight {@code INIT} mappings for the holder and credential type (not {@code INVALID}).
-     * Used only during reservation so concurrent issuance cannot overshoot the displayed
-     * {@code activeCount}. Must run inside an open transaction, typically after
-     * {@link #lockLatestMapping}.
-     */
-    public long countInFlightMappings(
-            EntityManager em, String realmId, String userId, String credentialConfigurationId) {
-        String q = """
-                    SELECT COUNT(m) FROM StatusListMappingEntity m
-                    WHERE m.realmId = :realmId
-                      AND m.userId = :userId
-                      AND m.credentialConfigurationId = :credentialConfigurationId
-                      AND m.status = :status
-                      AND m.tokenStatus <> :invalid
-                """;
-
-        TypedQuery<Long> query = em.createQuery(q, Long.class);
-        query.setParameter("realmId", realmId);
-        query.setParameter("userId", userId);
-        query.setParameter("credentialConfigurationId", credentialConfigurationId);
-        query.setParameter("status", StatusListMappingEntity.MappingStatus.INIT);
-        query.setParameter("invalid", TokenStatus.INVALID);
-
-        return query.getSingleResult();
     }
 
     /**

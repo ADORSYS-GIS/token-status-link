@@ -3,14 +3,18 @@ package io.github.adorsysgis.keycloakstatuslist.service;
 import static io.github.adorsysgis.keycloakstatuslist.service.CredentialIssuanceQuotaService.OVERFLOW_POLICY_REJECT;
 import static io.github.adorsysgis.keycloakstatuslist.service.CredentialIssuanceQuotaService.OVERFLOW_POLICY_REVOKE_OLDEST;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 import io.github.adorsysgis.keycloakstatuslist.StatusListProtocolMapper;
@@ -28,12 +32,15 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.keycloak.common.util.Time;
 import org.keycloak.models.ClientScopeModel;
 import org.keycloak.models.IssuedVerifiableCredentialModel;
+import org.keycloak.models.KeycloakContext;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.ProtocolMapperModel;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserProvider;
+import org.keycloak.models.UserVerifiableCredentialModel;
 import org.keycloak.protocol.oid4vc.OID4VCLoginProtocolFactory;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -65,6 +72,9 @@ class CredentialIssuanceQuotaServiceTest {
     @Mock
     private EntityManager entityManager;
 
+    @Mock
+    private KeycloakContext context;
+
     private CredentialIssuanceQuotaService service;
 
     @BeforeEach
@@ -72,6 +82,8 @@ class CredentialIssuanceQuotaServiceTest {
         service = new CredentialIssuanceQuotaService(session, statusListRepository, credentialRevocationService);
         lenient().when(realm.getId()).thenReturn("realm-1");
         lenient().when(session.users()).thenReturn(userProvider);
+        lenient().when(session.getContext()).thenReturn(context);
+        lenient().when(context.getRealm()).thenReturn(realm);
     }
 
     @Test
@@ -197,25 +209,46 @@ class CredentialIssuanceQuotaServiceTest {
     @Test
     void enforceWithinReservationTransaction_doesNothingWhenUnlimited() {
         service.enforceWithinReservationTransaction(
-                entityManager, "realm-1", "user-1", "IdentityCredential", 0, OVERFLOW_POLICY_REJECT);
+                entityManager, "realm-1", "user-1", "IdentityCredential", 0, OVERFLOW_POLICY_REJECT, "current");
 
-        verify(statusListRepository, never()).countInFlightMappings(any(), any(), any(), any());
-        verify(statusListRepository, never()).findNonRevokedMappings(any(), any(), any(), any());
+        verify(statusListRepository, never()).findMappingsByUser(any(), any(), any());
     }
 
     @Test
-    void enforceWithinReservationTransaction_rejectsWhenIssuedCredentialsReachMax() throws Exception {
+    void enforceWithinReservationTransaction_readsHolderMappingsOnce() {
+        stubIssuedCredentials("issued-1");
+        stubHolderMappings(successfulMapping("issued-1"), initMapping("sibling"));
+
+        assertThrows(
+                CredentialIssuanceQuotaException.class,
+                () -> service.enforceWithinReservationTransaction(
+                        entityManager,
+                        "realm-1",
+                        "user-1",
+                        "IdentityCredential",
+                        2,
+                        OVERFLOW_POLICY_REJECT,
+                        "current"));
+
+        verify(statusListRepository).findMappingsByUser(entityManager, "realm-1", "user-1");
+        verifyNoMoreInteractions(statusListRepository);
+    }
+
+    @Test
+    void enforceWithinReservationTransaction_rejectsWhenIssuedCredentialsReachMax() {
         stubIssuedCredentials("issued-1", "issued-2", "issued-3");
-        when(statusListRepository.findNonRevokedMappings(entityManager, "realm-1", "user-1", "IdentityCredential"))
-                .thenReturn(List.of(
-                        successfulMapping("issued-1"), successfulMapping("issued-2"), successfulMapping("issued-3")));
-        when(statusListRepository.countInFlightMappings(entityManager, "realm-1", "user-1", "IdentityCredential"))
-                .thenReturn(0L);
+        stubHolderMappings(successfulMapping("issued-1"), successfulMapping("issued-2"), successfulMapping("issued-3"));
 
         CredentialIssuanceQuotaException exception = assertThrows(
                 CredentialIssuanceQuotaException.class,
                 () -> service.enforceWithinReservationTransaction(
-                        entityManager, "realm-1", "user-1", "IdentityCredential", 3, OVERFLOW_POLICY_REJECT));
+                        entityManager,
+                        "realm-1",
+                        "user-1",
+                        "IdentityCredential",
+                        3,
+                        OVERFLOW_POLICY_REJECT,
+                        "current"));
 
         assertEquals(CredentialIssuanceQuotaService.LIMIT_REACHED_MESSAGE, exception.getMessage());
         assertEquals(CredentialIssuanceQuotaException.ERROR_LIMIT_REACHED, exception.getError());
@@ -226,39 +259,36 @@ class CredentialIssuanceQuotaServiceTest {
     @Test
     void enforceWithinReservationTransaction_ignoresOrphanMappingsWithoutIssuedCredential() {
         stubIssuedCredentials();
-        when(statusListRepository.findNonRevokedMappings(entityManager, "realm-1", "user-1", "IdentityCredential"))
-                .thenReturn(List.of(successfulMapping("orphan")));
-        when(statusListRepository.countInFlightMappings(entityManager, "realm-1", "user-1", "IdentityCredential"))
-                .thenReturn(0L);
+        stubHolderMappings(successfulMapping("orphan"));
 
         service.enforceWithinReservationTransaction(
-                entityManager, "realm-1", "user-1", "IdentityCredential", 1, OVERFLOW_POLICY_REJECT);
+                entityManager, "realm-1", "user-1", "IdentityCredential", 1, OVERFLOW_POLICY_REJECT, "current");
     }
 
     @Test
     void enforceWithinReservationTransaction_allowsIssuanceBelowMax() {
         stubIssuedCredentials("issued-1", "issued-2");
-        when(statusListRepository.findNonRevokedMappings(entityManager, "realm-1", "user-1", "IdentityCredential"))
-                .thenReturn(List.of(successfulMapping("issued-1"), successfulMapping("issued-2")));
-        when(statusListRepository.countInFlightMappings(entityManager, "realm-1", "user-1", "IdentityCredential"))
-                .thenReturn(0L);
+        stubHolderMappings(successfulMapping("issued-1"), successfulMapping("issued-2"));
 
         service.enforceWithinReservationTransaction(
-                entityManager, "realm-1", "user-1", "IdentityCredential", 3, OVERFLOW_POLICY_REJECT);
+                entityManager, "realm-1", "user-1", "IdentityCredential", 3, OVERFLOW_POLICY_REJECT, "current");
     }
 
     @Test
     void enforceWithinReservationTransaction_countsFailureMappingWhenIssuedCredentialExists() {
         stubIssuedCredentials("issued-1");
-        when(statusListRepository.findNonRevokedMappings(entityManager, "realm-1", "user-1", "IdentityCredential"))
-                .thenReturn(List.of(failureMapping("issued-1")));
-        when(statusListRepository.countInFlightMappings(entityManager, "realm-1", "user-1", "IdentityCredential"))
-                .thenReturn(0L);
+        stubHolderMappings(failureMapping("issued-1"));
 
         CredentialIssuanceQuotaException exception = assertThrows(
                 CredentialIssuanceQuotaException.class,
                 () -> service.enforceWithinReservationTransaction(
-                        entityManager, "realm-1", "user-1", "IdentityCredential", 1, OVERFLOW_POLICY_REJECT));
+                        entityManager,
+                        "realm-1",
+                        "user-1",
+                        "IdentityCredential",
+                        1,
+                        OVERFLOW_POLICY_REJECT,
+                        "current"));
 
         assertEquals(CredentialIssuanceQuotaService.LIMIT_REACHED_MESSAGE, exception.getMessage());
     }
@@ -266,27 +296,153 @@ class CredentialIssuanceQuotaServiceTest {
     @Test
     void enforceWithinReservationTransaction_ignoresFailureMappingWithoutIssuedCredential() {
         stubIssuedCredentials();
-        when(statusListRepository.findNonRevokedMappings(entityManager, "realm-1", "user-1", "IdentityCredential"))
-                .thenReturn(List.of(failureMapping("orphan")));
-        when(statusListRepository.countInFlightMappings(entityManager, "realm-1", "user-1", "IdentityCredential"))
-                .thenReturn(0L);
+        stubHolderMappings(failureMapping("orphan"));
 
         service.enforceWithinReservationTransaction(
-                entityManager, "realm-1", "user-1", "IdentityCredential", 1, OVERFLOW_POLICY_REJECT);
+                entityManager, "realm-1", "user-1", "IdentityCredential", 1, OVERFLOW_POLICY_REJECT, "current");
+    }
+
+    @Test
+    void enforceWithinReservationTransaction_countsUnmappedIssuedCredentialTowardLimit() {
+        IssuedVerifiableCredentialModel leftover = issuedModel("issued-ghost", "vc-ghost", 1L);
+        IssuedVerifiableCredentialModel current = issuedModel("current", "vc-current", 2L);
+        when(userProvider.getIssuedVerifiableCredentialsStreamByUser("user-1"))
+                .thenReturn(Stream.of(leftover, current));
+        stubHolderMappings();
+        stubCredentialType("vc-ghost", "IdentityCredential");
+
+        CredentialIssuanceQuotaException exception = assertThrows(
+                CredentialIssuanceQuotaException.class,
+                () -> service.enforceWithinReservationTransaction(
+                        entityManager,
+                        "realm-1",
+                        "user-1",
+                        "IdentityCredential",
+                        1,
+                        OVERFLOW_POLICY_REJECT,
+                        "current"));
+
+        assertEquals(CredentialIssuanceQuotaService.LIMIT_REACHED_MESSAGE, exception.getMessage());
+    }
+
+    @Test
+    void enforceWithinReservationTransaction_ignoresConcurrentUnmappedIssuedCredential() {
+        IssuedVerifiableCredentialModel sibling = issuedModel("sibling", "vc-sibling", 10L);
+        IssuedVerifiableCredentialModel current = issuedModel("current", "vc-current", 10L);
+        when(userProvider.getIssuedVerifiableCredentialsStreamByUser("user-1")).thenReturn(Stream.of(sibling, current));
+        stubHolderMappings();
+        stubCredentialType("vc-sibling", "IdentityCredential");
+
+        service.enforceWithinReservationTransaction(
+                entityManager, "realm-1", "user-1", "IdentityCredential", 1, OVERFLOW_POLICY_REJECT, "current");
+    }
+
+    @Test
+    void enforceWithinReservationTransaction_excludesCurrentTokenFromOccupancy() {
+        stubIssuedCredentials("current");
+        stubHolderMappings(successfulMapping("current"));
+
+        service.enforceWithinReservationTransaction(
+                entityManager, "realm-1", "user-1", "IdentityCredential", 1, OVERFLOW_POLICY_REJECT, "current");
+    }
+
+    @Test
+    void enforceWithinReservationTransaction_doesNotCountRevokedMapping() {
+        stubIssuedCredentials("issued-1");
+        stubHolderMappings(revokedMapping("issued-1"));
+
+        service.enforceWithinReservationTransaction(
+                entityManager, "realm-1", "user-1", "IdentityCredential", 1, OVERFLOW_POLICY_REJECT, "current");
+    }
+
+    @Test
+    void enforceWithinReservationTransaction_doesNotCountInitMappingTowardActiveCount() {
+        stubIssuedCredentials("issued-init");
+        stubHolderMappings(staleInitMapping("issued-init"));
+
+        service.enforceWithinReservationTransaction(
+                entityManager, "realm-1", "user-1", "IdentityCredential", 1, OVERFLOW_POLICY_REJECT, "current");
     }
 
     @Test
     void enforceWithinReservationTransaction_countsInFlightInitTowardLimit() {
         stubIssuedCredentials();
-        when(statusListRepository.findNonRevokedMappings(entityManager, "realm-1", "user-1", "IdentityCredential"))
-                .thenReturn(List.of());
-        when(statusListRepository.countInFlightMappings(entityManager, "realm-1", "user-1", "IdentityCredential"))
-                .thenReturn(1L);
+        stubHolderMappings(initMapping("sibling"));
 
         CredentialIssuanceQuotaException exception = assertThrows(
                 CredentialIssuanceQuotaException.class,
                 () -> service.enforceWithinReservationTransaction(
-                        entityManager, "realm-1", "user-1", "IdentityCredential", 1, OVERFLOW_POLICY_REJECT));
+                        entityManager,
+                        "realm-1",
+                        "user-1",
+                        "IdentityCredential",
+                        1,
+                        OVERFLOW_POLICY_REJECT,
+                        "current"));
+
+        assertEquals(CredentialIssuanceQuotaService.LIMIT_REACHED_MESSAGE, exception.getMessage());
+    }
+
+    @Test
+    void enforceWithinReservationTransaction_onlyCountsInitCreatedWithinInFlightWindow() {
+        IssuedVerifiableCredentialModel leftover = issuedModel("issued-stale", "vc-stale", 1L);
+        IssuedVerifiableCredentialModel current = issuedModel("current", "vc-current", 2L);
+        when(userProvider.getIssuedVerifiableCredentialsStreamByUser("user-1"))
+                .thenReturn(Stream.of(leftover, current));
+        stubHolderMappings(staleInitMapping("issued-stale"));
+
+        service.enforceWithinReservationTransaction(
+                entityManager, "realm-1", "user-1", "IdentityCredential", 1, OVERFLOW_POLICY_REJECT, "current");
+    }
+
+    @Test
+    void inFlightInitWindowMs_scalesWithIssuanceTimeoutAboveTheFloor() {
+        assertEquals(
+                CredentialIssuanceQuotaService.MIN_IN_FLIGHT_INIT_WINDOW_MS,
+                CredentialIssuanceQuotaService.inFlightInitWindowMs(null));
+
+        when(realm.getAttribute(StatusListConfig.STATUS_LIST_ISSUANCE_TIMEOUT)).thenReturn("40000");
+        assertEquals(120_000L, CredentialIssuanceQuotaService.inFlightInitWindowMs(realm));
+    }
+
+    @Test
+    void enforceWithinReservationTransaction_countsInFlightInitFromEarlierIssuedSibling() {
+        IssuedVerifiableCredentialModel sibling = issuedModel("sibling", "vc-sibling", 9L);
+        IssuedVerifiableCredentialModel current = issuedModel("current", "vc-current", 10L);
+        when(userProvider.getIssuedVerifiableCredentialsStreamByUser("user-1")).thenReturn(Stream.of(sibling, current));
+        stubHolderMappings(initMapping("sibling"));
+
+        CredentialIssuanceQuotaException exception = assertThrows(
+                CredentialIssuanceQuotaException.class,
+                () -> service.enforceWithinReservationTransaction(
+                        entityManager,
+                        "realm-1",
+                        "user-1",
+                        "IdentityCredential",
+                        1,
+                        OVERFLOW_POLICY_REJECT,
+                        "current"));
+
+        assertEquals(CredentialIssuanceQuotaService.LIMIT_REACHED_MESSAGE, exception.getMessage());
+    }
+
+    @Test
+    void enforceWithinReservationTransaction_countsConcurrentInitTowardLimit() {
+        IssuedVerifiableCredentialModel sibling = issuedModel("sibling", "vc-sibling", 10L);
+        IssuedVerifiableCredentialModel current = issuedModel("current", "vc-current", 10L);
+        when(userProvider.getIssuedVerifiableCredentialsStreamByUser("user-1")).thenReturn(Stream.of(sibling, current));
+        stubHolderMappings(initMapping("sibling"));
+
+        CredentialIssuanceQuotaException exception = assertThrows(
+                CredentialIssuanceQuotaException.class,
+                () -> service.enforceWithinReservationTransaction(
+                        entityManager,
+                        "realm-1",
+                        "user-1",
+                        "IdentityCredential",
+                        1,
+                        OVERFLOW_POLICY_REJECT,
+                        "current"));
 
         assertEquals(CredentialIssuanceQuotaService.LIMIT_REACHED_MESSAGE, exception.getMessage());
     }
@@ -297,13 +453,10 @@ class CredentialIssuanceQuotaServiceTest {
         oldest.setId("mapping-1");
 
         stubIssuedCredentials("token-oldest");
-        when(statusListRepository.findNonRevokedMappings(entityManager, "realm-1", "user-1", "IdentityCredential"))
-                .thenReturn(List.of(oldest));
-        when(statusListRepository.countInFlightMappings(entityManager, "realm-1", "user-1", "IdentityCredential"))
-                .thenReturn(0L);
+        stubHolderMappings(oldest);
 
         StatusListMappingEntity pendingRemote = service.enforceWithinReservationTransaction(
-                entityManager, "realm-1", "user-1", "IdentityCredential", 1, OVERFLOW_POLICY_REVOKE_OLDEST);
+                entityManager, "realm-1", "user-1", "IdentityCredential", 1, OVERFLOW_POLICY_REVOKE_OLDEST, "current");
 
         assertEquals(oldest, pendingRemote);
         verify(credentialRevocationService).revokeMappingInTransaction(entityManager, oldest);
@@ -320,13 +473,10 @@ class CredentialIssuanceQuotaServiceTest {
         setCreatedTimestamp(earlierId, 1_000L);
 
         stubIssuedCredentials("token-z", "token-a");
-        when(statusListRepository.findNonRevokedMappings(entityManager, "realm-1", "user-1", "IdentityCredential"))
-                .thenReturn(List.of(laterId, earlierId));
-        when(statusListRepository.countInFlightMappings(entityManager, "realm-1", "user-1", "IdentityCredential"))
-                .thenReturn(0L);
+        stubHolderMappings(laterId, earlierId);
 
         StatusListMappingEntity pendingRemote = service.enforceWithinReservationTransaction(
-                entityManager, "realm-1", "user-1", "IdentityCredential", 2, OVERFLOW_POLICY_REVOKE_OLDEST);
+                entityManager, "realm-1", "user-1", "IdentityCredential", 2, OVERFLOW_POLICY_REVOKE_OLDEST, "current");
 
         assertEquals(earlierId, pendingRemote);
         verify(credentialRevocationService).revokeMappingInTransaction(entityManager, earlierId);
@@ -343,13 +493,10 @@ class CredentialIssuanceQuotaServiceTest {
         setCreatedTimestamp(newerSuccess, 1_000L);
 
         stubIssuedCredentials("token-failure", "token-success");
-        when(statusListRepository.findNonRevokedMappings(entityManager, "realm-1", "user-1", "IdentityCredential"))
-                .thenReturn(List.of(olderFailure, newerSuccess));
-        when(statusListRepository.countInFlightMappings(entityManager, "realm-1", "user-1", "IdentityCredential"))
-                .thenReturn(0L);
+        stubHolderMappings(olderFailure, newerSuccess);
 
         StatusListMappingEntity pendingRemote = service.enforceWithinReservationTransaction(
-                entityManager, "realm-1", "user-1", "IdentityCredential", 2, OVERFLOW_POLICY_REVOKE_OLDEST);
+                entityManager, "realm-1", "user-1", "IdentityCredential", 2, OVERFLOW_POLICY_REVOKE_OLDEST, "current");
 
         assertEquals(newerSuccess, pendingRemote);
         verify(credentialRevocationService).revokeMappingInTransaction(entityManager, newerSuccess);
@@ -362,17 +509,56 @@ class CredentialIssuanceQuotaServiceTest {
         failed.setId("mapping-failed");
 
         stubIssuedCredentials("token-failed");
-        when(statusListRepository.findNonRevokedMappings(entityManager, "realm-1", "user-1", "IdentityCredential"))
-                .thenReturn(List.of(failed));
-        when(statusListRepository.countInFlightMappings(entityManager, "realm-1", "user-1", "IdentityCredential"))
-                .thenReturn(0L);
+        stubHolderMappings(failed);
         when(entityManager.contains(failed)).thenReturn(true);
 
         StatusListMappingEntity pendingRemote = service.enforceWithinReservationTransaction(
-                entityManager, "realm-1", "user-1", "IdentityCredential", 1, OVERFLOW_POLICY_REVOKE_OLDEST);
+                entityManager, "realm-1", "user-1", "IdentityCredential", 1, OVERFLOW_POLICY_REVOKE_OLDEST, "current");
 
         assertNull(pendingRemote);
         assertEquals(TokenStatus.INVALID, failed.getTokenStatus());
+        verify(credentialRevocationService, never()).revokeMappingInTransaction(any(), any());
+    }
+
+    @Test
+    void enforceWithinReservationTransaction_allowsRevokeOldestWhenOnlyUnmappedLeftoversRemain() {
+        IssuedVerifiableCredentialModel leftover = issuedModel("issued-ghost", "vc-ghost", 1L);
+        IssuedVerifiableCredentialModel current = issuedModel("current", "vc-current", 2L);
+        when(userProvider.getIssuedVerifiableCredentialsStreamByUser("user-1"))
+                .thenReturn(Stream.of(leftover, current));
+        stubHolderMappings();
+        stubCredentialType("vc-ghost", "IdentityCredential");
+
+        assertNull(service.enforceWithinReservationTransaction(
+                entityManager,
+                "realm-1",
+                "user-1",
+                "IdentityCredential",
+                1,
+                OVERFLOW_POLICY_REVOKE_OLDEST,
+                "current"));
+        verify(credentialRevocationService, never()).revokeMappingInTransaction(any(), any());
+    }
+
+    @Test
+    void enforceWithinReservationTransaction_rejectsRevokeOldestWhenOnlyInFlightRemains() {
+        IssuedVerifiableCredentialModel sibling = issuedModel("sibling", "vc-sibling", 10L);
+        IssuedVerifiableCredentialModel current = issuedModel("current", "vc-current", 10L);
+        when(userProvider.getIssuedVerifiableCredentialsStreamByUser("user-1")).thenReturn(Stream.of(sibling, current));
+        stubHolderMappings(initMapping("sibling"));
+
+        CredentialIssuanceQuotaException exception = assertThrows(
+                CredentialIssuanceQuotaException.class,
+                () -> service.enforceWithinReservationTransaction(
+                        entityManager,
+                        "realm-1",
+                        "user-1",
+                        "IdentityCredential",
+                        1,
+                        OVERFLOW_POLICY_REVOKE_OLDEST,
+                        "current"));
+
+        assertEquals(CredentialIssuanceQuotaService.LIMIT_REACHED_MESSAGE, exception.getMessage());
         verify(credentialRevocationService, never()).revokeMappingInTransaction(any(), any());
     }
 
@@ -397,12 +583,12 @@ class CredentialIssuanceQuotaServiceTest {
 
     @Test
     void listLimits_returnsQuotaMetadataForConfiguredTypes() {
-        stubCredentialScope("IdentityCredential", "2", null);
+        stubCredentialScope("IdentityCredential", "2");
         when(realm.getClientScopesStream()).thenAnswer(invocation -> Stream.of(credentialScope));
-        when(statusListRepository.findNonRevokedMappings("realm-1", "user-1"))
-                .thenReturn(List.of(successfulMapping("issued-1"), successfulMapping("orphan")));
+        when(statusListRepository.findMappingsByTokenIds(eq("realm-1"), eq("user-1"), any()))
+                .thenReturn(Map.of("issued-1", successfulMapping("issued-1"), "orphan", successfulMapping("orphan")));
 
-        List<IssuedCredentialLimit> limits = service.listLimits(realm, "user-1", List.of("issued-1"));
+        List<IssuedCredentialLimit> limits = service.listLimits(realm, "user-1", List.of(issuedModel("issued-1")));
 
         assertEquals(1, limits.size());
         IssuedCredentialLimit limit = limits.get(0);
@@ -415,12 +601,12 @@ class CredentialIssuanceQuotaServiceTest {
 
     @Test
     void listLimits_countsFailureMappingWhenIssuedCredentialExists() {
-        stubCredentialScope("IdentityCredential", "2", null);
+        stubCredentialScope("IdentityCredential", "2");
         when(realm.getClientScopesStream()).thenAnswer(invocation -> Stream.of(credentialScope));
-        when(statusListRepository.findNonRevokedMappings("realm-1", "user-1"))
-                .thenReturn(List.of(failureMapping("issued-1")));
+        when(statusListRepository.findMappingsByTokenIds(eq("realm-1"), eq("user-1"), any()))
+                .thenReturn(Map.of("issued-1", failureMapping("issued-1")));
 
-        List<IssuedCredentialLimit> limits = service.listLimits(realm, "user-1", List.of("issued-1"));
+        List<IssuedCredentialLimit> limits = service.listLimits(realm, "user-1", List.of(issuedModel("issued-1")));
 
         assertEquals(1, limits.size());
         assertEquals(1L, limits.get(0).activeCount());
@@ -431,10 +617,10 @@ class CredentialIssuanceQuotaServiceTest {
     void listLimits_reflectsConfiguredRevokeOldestPolicy() {
         stubCredentialScope("IdentityCredential", "2", OVERFLOW_POLICY_REVOKE_OLDEST);
         when(realm.getClientScopesStream()).thenAnswer(invocation -> Stream.of(credentialScope));
-        when(statusListRepository.findNonRevokedMappings("realm-1", "user-1"))
-                .thenReturn(List.of(successfulMapping("issued-1")));
+        when(statusListRepository.findMappingsByTokenIds(eq("realm-1"), eq("user-1"), any()))
+                .thenReturn(Map.of("issued-1", successfulMapping("issued-1")));
 
-        List<IssuedCredentialLimit> limits = service.listLimits(realm, "user-1", List.of("issued-1"));
+        List<IssuedCredentialLimit> limits = service.listLimits(realm, "user-1", List.of(issuedModel("issued-1")));
 
         assertEquals(1, limits.size());
         assertEquals(OVERFLOW_POLICY_REVOKE_OLDEST, limits.get(0).overflowPolicy());
@@ -442,36 +628,173 @@ class CredentialIssuanceQuotaServiceTest {
     }
 
     @Test
+    void listLimits_countsUnmappedIssuedCredentialTowardQuota() {
+        stubCredentialScope("IdentityCredential", "2");
+        when(realm.getClientScopesStream()).thenAnswer(invocation -> Stream.of(credentialScope));
+        when(statusListRepository.findMappingsByTokenIds(eq("realm-1"), eq("user-1"), any()))
+                .thenReturn(Map.of());
+        stubCredentialType("vc-1", "IdentityCredential");
+
+        List<IssuedCredentialLimit> limits =
+                service.listLimits(realm, "user-1", List.of(issuedModel("issued-1", "vc-1")));
+
+        assertEquals(1, limits.size());
+        assertEquals(1L, limits.get(0).activeCount());
+        assertEquals(1L, limits.get(0).remaining());
+    }
+
+    @Test
+    void listLimits_doesNotCountRevokedMapping() {
+        stubCredentialScope("IdentityCredential", "2");
+        when(realm.getClientScopesStream()).thenAnswer(invocation -> Stream.of(credentialScope));
+        when(statusListRepository.findMappingsByTokenIds(eq("realm-1"), eq("user-1"), any()))
+                .thenReturn(Map.of("issued-1", revokedMapping("issued-1")));
+
+        List<IssuedCredentialLimit> limits = service.listLimits(realm, "user-1", List.of(issuedModel("issued-1")));
+
+        assertEquals(1, limits.size());
+        assertEquals(0L, limits.get(0).activeCount());
+        assertEquals(2L, limits.get(0).remaining());
+    }
+
+    @Test
+    void occupiesQuota_matchesIssuanceOccupancyRule() {
+        assertTrue(CredentialIssuanceQuotaService.occupiesQuota(null));
+        assertTrue(CredentialIssuanceQuotaService.occupiesQuota(successfulMapping("issued-1")));
+        assertTrue(CredentialIssuanceQuotaService.occupiesQuota(failureMapping("issued-1")));
+        assertFalse(CredentialIssuanceQuotaService.occupiesQuota(initMapping("issued-1")));
+        assertFalse(CredentialIssuanceQuotaService.occupiesQuota(revokedMapping("issued-1")));
+        assertFalse(CredentialIssuanceQuotaService.occupiesQuota(legacyMapping("issued-1")));
+    }
+
+    @Test
+    void listLimits_doesNotCountLegacyMappingWithoutCredentialType() {
+        stubCredentialScope("IdentityCredential", "2");
+        when(realm.getClientScopesStream()).thenAnswer(invocation -> Stream.of(credentialScope));
+        when(statusListRepository.findMappingsByTokenIds(eq("realm-1"), eq("user-1"), any()))
+                .thenReturn(Map.of("issued-1", legacyMapping("issued-1")));
+        UserVerifiableCredentialModel verifiableCredential = mock(UserVerifiableCredentialModel.class);
+        lenient().when(userProvider.getVerifiableCredentialById("vc-1")).thenReturn(verifiableCredential);
+        lenient().when(verifiableCredential.getClientScopeId()).thenReturn("scope-1");
+        lenient().when(realm.getClientScopeById("scope-1")).thenReturn(credentialScope);
+
+        List<IssuedCredentialLimit> limits =
+                service.listLimits(realm, "user-1", List.of(issuedModel("issued-1", "vc-1")));
+
+        assertEquals(1, limits.size());
+        assertEquals(0L, limits.get(0).activeCount());
+        assertEquals(2L, limits.get(0).remaining());
+    }
+
+    @Test
+    void listLimits_doesNotCountInitMapping() {
+        stubCredentialScope("IdentityCredential", "2");
+        when(realm.getClientScopesStream()).thenAnswer(invocation -> Stream.of(credentialScope));
+        when(statusListRepository.findMappingsByTokenIds(eq("realm-1"), eq("user-1"), any()))
+                .thenReturn(Map.of("issued-1", initMapping("issued-1")));
+
+        List<IssuedCredentialLimit> limits = service.listLimits(realm, "user-1", List.of(issuedModel("issued-1")));
+
+        assertEquals(1, limits.size());
+        assertEquals(0L, limits.get(0).activeCount());
+        assertEquals(2L, limits.get(0).remaining());
+    }
+
+    @Test
     void listLimits_omitsUnlimitedTypes() {
-        stubCredentialScope("IdentityCredential", "0", null);
+        stubCredentialScope("IdentityCredential", "0");
         when(realm.getClientScopesStream()).thenAnswer(invocation -> Stream.of(credentialScope));
 
-        assertTrue(service.listLimits(realm, "user-1", List.of("issued-1")).isEmpty());
+        assertTrue(service.listLimits(realm, "user-1", List.of(issuedModel("issued-1")))
+                .isEmpty());
     }
 
     private void stubIssuedCredentials(String... ids) {
         IssuedVerifiableCredentialModel[] credentials = new IssuedVerifiableCredentialModel[ids.length];
         for (int i = 0; i < ids.length; i++) {
-            credentials[i] = new IssuedVerifiableCredentialModel();
-            credentials[i].setId(ids[i]);
+            credentials[i] = issuedModel(ids[i]);
         }
         when(userProvider.getIssuedVerifiableCredentialsStreamByUser("user-1")).thenReturn(Stream.of(credentials));
     }
 
+    private void stubHolderMappings(StatusListMappingEntity... mappings) {
+        when(statusListRepository.findMappingsByUser(entityManager, "realm-1", "user-1"))
+                .thenReturn(List.of(mappings));
+    }
+
+    private void stubCredentialType(String verifiableCredentialId, String type) {
+        UserVerifiableCredentialModel verifiableCredential = mock(UserVerifiableCredentialModel.class);
+        when(userProvider.getVerifiableCredentialById(verifiableCredentialId)).thenReturn(verifiableCredential);
+        when(verifiableCredential.getClientScopeId()).thenReturn("scope-1");
+        when(realm.getClientScopeById("scope-1")).thenReturn(credentialScope);
+        when(credentialScope.getProtocol()).thenReturn(OID4VCLoginProtocolFactory.PROTOCOL_ID);
+        lenient()
+                .when(credentialScope.getAttribute("vc.credential_configuration_id"))
+                .thenReturn(type);
+        lenient().when(credentialScope.getName()).thenReturn(type);
+    }
+
+    private static IssuedVerifiableCredentialModel issuedModel(String id) {
+        return issuedModel(id, null);
+    }
+
+    private static IssuedVerifiableCredentialModel issuedModel(String id, String verifiableCredentialId) {
+        return issuedModel(id, verifiableCredentialId, null);
+    }
+
+    private static IssuedVerifiableCredentialModel issuedModel(
+            String id, String verifiableCredentialId, Long issuedAt) {
+        IssuedVerifiableCredentialModel credential = new IssuedVerifiableCredentialModel();
+        credential.setId(id);
+        credential.setVerifiableCredentialId(verifiableCredentialId);
+        credential.setIssuedAt(issuedAt);
+        return credential;
+    }
+
     private static StatusListMappingEntity successfulMapping(String tokenId) {
-        StatusListMappingEntity mapping = new StatusListMappingEntity();
-        mapping.setTokenId(tokenId);
-        mapping.setCredentialConfigurationId("IdentityCredential");
-        mapping.setStatus(StatusListMappingEntity.MappingStatus.SUCCESS);
-        return mapping;
+        return mapping(tokenId, StatusListMappingEntity.MappingStatus.SUCCESS);
     }
 
     private static StatusListMappingEntity failureMapping(String tokenId) {
+        return mapping(tokenId, StatusListMappingEntity.MappingStatus.FAILURE);
+    }
+
+    private static StatusListMappingEntity initMapping(String tokenId) {
+        return mapping(tokenId, StatusListMappingEntity.MappingStatus.INIT);
+    }
+
+    private static StatusListMappingEntity staleInitMapping(String tokenId) {
+        int windowSeconds = (int) (CredentialIssuanceQuotaService.MIN_IN_FLIGHT_INIT_WINDOW_MS / 1000);
+        Time.setOffset(-(windowSeconds + 1));
+        try {
+            return initMapping(tokenId);
+        } finally {
+            Time.setOffset(0);
+        }
+    }
+
+    private static StatusListMappingEntity revokedMapping(String tokenId) {
+        StatusListMappingEntity mapping = successfulMapping(tokenId);
+        mapping.setTokenStatus(TokenStatus.INVALID);
+        return mapping;
+    }
+
+    private static StatusListMappingEntity legacyMapping(String tokenId) {
+        StatusListMappingEntity mapping = successfulMapping(tokenId);
+        mapping.setCredentialConfigurationId(null);
+        return mapping;
+    }
+
+    private static StatusListMappingEntity mapping(String tokenId, StatusListMappingEntity.MappingStatus status) {
         StatusListMappingEntity mapping = new StatusListMappingEntity();
         mapping.setTokenId(tokenId);
         mapping.setCredentialConfigurationId("IdentityCredential");
-        mapping.setStatus(StatusListMappingEntity.MappingStatus.FAILURE);
+        mapping.setStatus(status);
         return mapping;
+    }
+
+    private void stubCredentialScope(String credentialConfigurationId, String max) {
+        stubCredentialScope(credentialConfigurationId, max, null);
     }
 
     private void stubCredentialScope(String credentialConfigurationId, String max, String overflowPolicy) {

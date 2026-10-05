@@ -18,6 +18,7 @@ import io.github.adorsysgis.keycloakstatuslist.model.IssuedCredentialStatusRespo
 import io.github.adorsysgis.keycloakstatuslist.model.TokenStatus;
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -197,7 +198,10 @@ public class CredentialRevocationService {
      * <p>Callers receive their own credentials unless they hold the realm role
      * {@code credential-offer-create} and pass {@code targetUser}. Callers without that role receive
      * {@code 403} if {@code target_user} is provided. {@code limits} describes the resolved holder's
-     * configured quotas; an unknown {@code targetUser} yields an empty response.
+     * configured quotas; an unknown {@code targetUser} yields an empty response. Every issued
+     * credential is listed with {@code mappingStatus} and {@code countsTowardQuota}.
+     * {@code limits.activeCount} uses the same occupancy rule (unmapped, {@code SUCCESS}, and
+     * {@code FAILURE}; leftover {@code INIT} omitted).
      */
     public IssuedCredentialStatusResponse getIssuedCredentialStatuses(AuthResult authResult, String targetUser)
             throws StatusListException {
@@ -219,13 +223,13 @@ public class CredentialRevocationService {
                 .filter(StringUtil::isNotBlank)
                 .toList();
         List<IssuedCredentialLimit> limits = new CredentialIssuanceQuotaService(session, statusListRepository)
-                .listLimits(realm, userId, credentialIds);
+                .listLimits(realm, userId, issuedCredentials);
         Map<String, StatusListMappingEntity> mappings =
-                statusListRepository.findSuccessfulMappingsByTokenIds(realm.getId(), userId, credentialIds);
-        List<IssuedCredentialStatus> credentials = issuedCredentials.stream()
-                .map(credential ->
-                        toIssuedCredentialStatus(credential, mappings.get(credential.getId()), holder, realm))
-                .toList();
+                statusListRepository.findMappingsByTokenIds(realm.getId(), userId, credentialIds);
+        List<IssuedCredentialStatus> credentials = new ArrayList<>();
+        for (IssuedVerifiableCredentialModel credential : issuedCredentials) {
+            credentials.add(toIssuedCredentialStatus(credential, mappings.get(credential.getId()), holder, realm));
+        }
         return new IssuedCredentialStatusResponse(credentials, limits);
     }
 
@@ -331,7 +335,11 @@ public class CredentialRevocationService {
                 representation.getRevision(),
                 resolveTokenStatus(mapping),
                 holder.getId(),
-                holder.getUsername());
+                holder.getUsername(),
+                mapping == null || mapping.getStatus() == null
+                        ? null
+                        : mapping.getStatus().name(),
+                CredentialIssuanceQuotaService.occupiesQuota(mapping));
     }
 
     /**
