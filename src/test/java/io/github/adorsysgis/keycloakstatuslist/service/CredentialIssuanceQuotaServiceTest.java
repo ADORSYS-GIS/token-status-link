@@ -530,13 +530,7 @@ class CredentialIssuanceQuotaServiceTest {
         stubCredentialType("vc-ghost", "IdentityCredential");
 
         assertNull(service.enforceWithinReservationTransaction(
-                entityManager,
-                "realm-1",
-                "user-1",
-                "IdentityCredential",
-                1,
-                OVERFLOW_POLICY_REVOKE_OLDEST,
-                "current"));
+                entityManager, "realm-1", "user-1", "IdentityCredential", 1, OVERFLOW_POLICY_REVOKE_OLDEST, "current"));
         verify(credentialRevocationService, never()).revokeMappingInTransaction(any(), any());
     }
 
