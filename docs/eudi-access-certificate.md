@@ -2,13 +2,15 @@
 
 ## Scope
 
-This guide shows how to configure Keycloak to sign OID4VCI Credential Issuer Metadata with an EUDI access certificate and how to inspect the resulting signed metadata JWT. It covers the access certificate used for metadata signing. Publishing a provider registration certificate in `issuer_info` is outside the scope of this guide.
+This guide shows how to configure Keycloak to sign OID4VCI Credential Issuer Metadata with a private key associated with an EUDI access certificate and how to inspect the resulting signed metadata JWT. It covers the access certificate used for metadata signing.
+
+Publishing a provider registration certificate in `issuer_info` is outside the scope of this guide.
 
 ## Prerequisites
 
-- A Keycloak realm with the OID4VCI issuer configured.
+- A Keycloak realm with OID4VCI configured.
 - The EUDI access certificate and the matching private key. The private key must correspond to the public key in the certificate.
-- Any issuing intermediate certificates and, if needed for Keycloak's certificate-path validation, the self-signed root certificate.
+- Any issuing intermediate certificates and the self-signed root certificate.
 - A supported signing algorithm matching the key. The example below uses an EC P-256 certificate and `ES256`.
 
 Do not put private keys, keystores, or passwords in source control.
@@ -19,7 +21,7 @@ Prepare these files:
 
 - `access-certificate.pem`: the EUDI access certificate (leaf certificate).
 - `access-certificate.key`: its matching private key.
-- `issuer-chain.pem`: intermediate certificate(s), followed by the self-signed root certificate when required.
+- `issuer-chain.pem`: intermediate certificate(s), followed by the self-signed root certificate.
 
 Create a PKCS#12 file. OpenSSL prompts for an export password; protect it and use the corresponding values when configuring Keycloak.
 
@@ -32,7 +34,9 @@ openssl pkcs12 -export \
   -out oid4vci-issuer.p12
 ```
 
-The key alias (`oid4vci-issuer` in this example) must identify the private-key entry and its associated certificate chain.
+The key alias (`oid4vci-issuer` in this example) identifies the private-key entry and its associated certificate chain.
+
+Include every issuing intermediate and the self-signed root certificate in `issuer-chain.pem`. Keycloak needs the complete chain to validate the configured certificate path; otherwise, it rejects the provider with `Certificate error on server. Path does not chain with any of the trust anchors`.
 
 ## Configure the Keycloak Java keystore provider
 
@@ -75,18 +79,6 @@ The response is a signed JWT. Decode it with a JWT debugger, and inspect its pro
 Check the `alg` value and the `x5c` certificate chain. The first certificate must be the EUDI access certificate; any required intermediate certificates follow it. In Keycloak 26.8.0, a trailing self-signed root is not included in `x5c`.
 
 Decoding a JWT only exposes its contents. Verify the signature separately before relying on the metadata.
-
-## Certificate-chain requirements
-
-Keycloak validates the certificate path configured in its Java keystore provider. Include the access certificate, its matching private key, and every intermediate or trust-anchor certificate required to validate that path.
-
-If a required trust anchor is absent, Keycloak rejects the provider configuration with:
-
-```text
-Certificate error on server. Path does not chain with any of the trust anchors
-```
-
-With Keycloak 26.8.0, a trailing self-signed root can remain in the keystore for certificate-path validation but is omitted from the signed metadata JWT's `x5c` header. Do not remove a root that Keycloak requires for validation merely to change the published header.
 
 ## References
 
