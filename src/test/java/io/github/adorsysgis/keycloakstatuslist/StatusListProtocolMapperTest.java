@@ -524,7 +524,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
     void shouldRevokeOldestAndContinue_WhenOverflowPolicyIsRevokeOldest() throws Exception {
         mockGetNextIndex();
         stubHolder("holder-1");
-        stubMapperConfig("1", CredentialIssuanceQuotaService.OVERFLOW_POLICY_REVOKE_OLDEST);
+        stubMapperConfig("1", StatusListConfig.OVERFLOW_POLICY_REVOKE_OLDEST);
         when(headers.getHeaderString(HttpHeaders.AUTHORIZATION))
                 .thenReturn("Bearer " + accessTokenWithIssuedCredentialId("issued-credential-2"));
 
@@ -544,7 +544,8 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         lenient()
                 .when(users.getIssuedVerifiableCredentialsStreamByUser("holder-1"))
                 .thenAnswer(invocation -> Stream.of(issued));
-        // After local INVALID, occupiesQuota ignores the mapping so the next reservation TX can proceed.
+        // After remote revoke persists INVALID, occupiesQuota ignores the mapping so the next
+        // reservation TX can proceed.
         lenient()
                 .doReturn(List.of(oldest))
                 .when(statusListRepository)
@@ -555,15 +556,69 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         assertThat(claims.keySet(), hasItem(Constants.STATUS_CLAIM_KEY));
         verify(statusListService).updateStatusList(any(StatusListService.StatusListPayload.class), anyString());
         assertEquals(TokenStatus.INVALID, oldest.getTokenStatus());
-        verify(entityManager).merge(oldest);
-        verify(statusListRepository, never()).save(oldest);
+        verify(statusListRepository).save(oldest);
+    }
+
+    @Test
+    void shouldReportLimitReached_WhenConcurrentIssuanceTakesFreedSlot() throws Exception {
+        mockGetNextIndex();
+        stubHolder("holder-1");
+        stubMapperConfig("1", StatusListConfig.OVERFLOW_POLICY_REVOKE_OLDEST);
+        when(headers.getHeaderString(HttpHeaders.AUTHORIZATION))
+                .thenReturn("Bearer " + accessTokenWithIssuedCredentialId("issued-credential-3"));
+
+        StatusListMappingEntity oldest = new StatusListMappingEntity();
+        oldest.setId("oldest-mapping");
+        oldest.setIdx(7L);
+        oldest.setStatusListId(TEST_LIST_ID);
+        oldest.setTokenId("issued-credential-1");
+        oldest.setTokenStatus(TokenStatus.VALID);
+        oldest.setStatus(MappingStatus.SUCCESS);
+        oldest.setCredentialConfigurationId("PidCredential");
+
+        StatusListMappingEntity concurrent = new StatusListMappingEntity();
+        concurrent.setId("concurrent-mapping");
+        concurrent.setIdx(8L);
+        concurrent.setStatusListId(TEST_LIST_ID);
+        concurrent.setTokenId("issued-credential-2");
+        concurrent.setTokenStatus(TokenStatus.VALID);
+        concurrent.setStatus(MappingStatus.SUCCESS);
+        concurrent.setCredentialConfigurationId("PidCredential");
+
+        UserProvider users = mock(UserProvider.class);
+        IssuedVerifiableCredentialModel first = new IssuedVerifiableCredentialModel();
+        first.setId("issued-credential-1");
+        IssuedVerifiableCredentialModel second = new IssuedVerifiableCredentialModel();
+        second.setId("issued-credential-2");
+        lenient().when(session.users()).thenReturn(users);
+        lenient()
+                .when(users.getIssuedVerifiableCredentialsStreamByUser("holder-1"))
+                .thenAnswer(invocation -> Stream.of(first))
+                .thenAnswer(invocation -> Stream.of(first, second));
+        // The first reservation sees only the oldest credential. By the second reservation, a
+        // parallel request has completed and occupies the slot freed by revoking the oldest.
+        lenient()
+                .doReturn(List.of(oldest))
+                .doReturn(List.of(concurrent, oldest))
+                .when(statusListRepository)
+                .findMappingsByUser(any(), eq(TEST_REALM_ID), eq("holder-1"));
+
+        CredentialIssuanceQuotaException exception =
+                assertThrows(CredentialIssuanceQuotaException.class, () -> mapper.setClaim(claims, userSession));
+
+        assertEquals(CredentialIssuanceQuotaException.ERROR_LIMIT_REACHED, exception.getError());
+        assertEquals(CredentialIssuanceQuotaService.FREED_SLOT_TAKEN_MESSAGE, exception.getErrorDescription());
+        assertEquals(TokenStatus.INVALID, oldest.getTokenStatus());
+        assertEquals(TokenStatus.VALID, concurrent.getTokenStatus());
+        verify(statusListService).updateStatusList(any(StatusListService.StatusListPayload.class), anyString());
+        assertThat(claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
     }
 
     @Test
     void shouldKeepOldestRevoked_WhenRevokeOldestSucceedsButNewPublicationFails() throws Exception {
         mockGetNextIndex();
         stubHolder("holder-1");
-        stubMapperConfig("1", CredentialIssuanceQuotaService.OVERFLOW_POLICY_REVOKE_OLDEST);
+        stubMapperConfig("1", StatusListConfig.OVERFLOW_POLICY_REVOKE_OLDEST);
         when(headers.getHeaderString(HttpHeaders.AUTHORIZATION))
                 .thenReturn("Bearer " + accessTokenWithIssuedCredentialId("issued-credential-2"));
         lenient()
@@ -597,7 +652,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         assertThrows(RuntimeException.class, () -> mapper.setClaim(claims, userSession));
         verify(statusListService).updateStatusList(any(StatusListService.StatusListPayload.class), anyString());
         assertEquals(TokenStatus.INVALID, oldest.getTokenStatus());
-        verify(entityManager).merge(oldest);
+        verify(statusListRepository).save(oldest);
         assertThat(claims.keySet(), not(hasItem(Constants.STATUS_CLAIM_KEY)));
     }
 

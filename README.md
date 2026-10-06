@@ -10,7 +10,7 @@ be invalidated for compliance reasons.
 
 - Reports credential status to an external status list server
 - Revokes issued verifiable credentials through a dedicated endpoint
-- Caps non-revoked credentials per holder and type, with `REJECT` or `REVOKE_OLDEST` overflow policy
+- Caps non-revoked credentials per holder and type, with an overflow policy to either fail issuance or revoke oldest credentials automatically
 
 ## Compatibility
 

@@ -34,7 +34,9 @@ public class StatusListConfig {
     public static final boolean DEFAULT_ENABLED = false;
     public static final boolean DEFAULT_MANDATORY = false;
     public static final int DEFAULT_MAX_ENTRIES = 10000;
-    public static final String DEFAULT_OVERFLOW_POLICY = "REJECT";
+    public static final String OVERFLOW_POLICY_REJECT = "REJECT";
+    public static final String OVERFLOW_POLICY_REVOKE_OLDEST = "REVOKE_OLDEST";
+    public static final String DEFAULT_OVERFLOW_POLICY = OVERFLOW_POLICY_REJECT;
     public static final boolean DEFAULT_TLS_TRUST_ALL = false;
 
     // Default values for issuance path (runtime)
@@ -250,11 +252,11 @@ public class StatusListConfig {
         }
 
         String normalized = value.trim().toUpperCase();
-        if ("REVOKE_OLDEST".equals(normalized)) {
-            return "REVOKE_OLDEST";
+        if (OVERFLOW_POLICY_REVOKE_OLDEST.equals(normalized)) {
+            return OVERFLOW_POLICY_REVOKE_OLDEST;
         }
-        if ("REJECT".equals(normalized)) {
-            return "REJECT";
+        if (OVERFLOW_POLICY_REJECT.equals(normalized)) {
+            return OVERFLOW_POLICY_REJECT;
         }
 
         logger.warnf("Invalid overflow policy '%s'. Using default: %s", value, DEFAULT_OVERFLOW_POLICY);

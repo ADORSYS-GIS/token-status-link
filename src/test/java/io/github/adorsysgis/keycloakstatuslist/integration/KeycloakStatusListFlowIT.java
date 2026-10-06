@@ -140,7 +140,7 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
                     1,
                     1,
                     0,
-                    CredentialIssuanceQuotaService.OVERFLOW_POLICY_REJECT);
+                    StatusListConfig.OVERFLOW_POLICY_REJECT);
 
             var rejected = oid4vci.tryIssueCredential(holder.username(), holder.accessToken());
             assertQuotaRejection(rejected);
@@ -152,7 +152,7 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
                     1,
                     2,
                     0,
-                    CredentialIssuanceQuotaService.OVERFLOW_POLICY_REJECT);
+                    StatusListConfig.OVERFLOW_POLICY_REJECT);
 
             IssuedCredentialFixture otherCredential =
                     oid4vci.issueCredential(otherHolder.username(), otherHolder.accessToken());
@@ -166,7 +166,7 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
                     1,
                     1,
                     0,
-                    CredentialIssuanceQuotaService.OVERFLOW_POLICY_REJECT);
+                    StatusListConfig.OVERFLOW_POLICY_REJECT);
 
             var reissued = oid4vci.tryIssueCredential(holder.username(), holder.accessToken());
             assertQuotaRejection(reissued);
@@ -177,7 +177,7 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
 
     @Test
     void issuanceRevokesOldestWhenOverflowPolicyIsRevokeOldest() throws Exception {
-        setIssuanceQuota("1", CredentialIssuanceQuotaService.OVERFLOW_POLICY_REVOKE_OLDEST);
+        setIssuanceQuota("1", StatusListConfig.OVERFLOW_POLICY_REVOKE_OLDEST);
         try {
             TestUser holder = credentialHolder("quota-revoke-oldest");
             TestUser otherHolder = credentialHolder("quota-revoke-other");
@@ -191,7 +191,7 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
                     1,
                     1,
                     0,
-                    CredentialIssuanceQuotaService.OVERFLOW_POLICY_REVOKE_OLDEST);
+                    StatusListConfig.OVERFLOW_POLICY_REVOKE_OLDEST);
 
             IssuedCredentialFixture second = oid4vci.issueCredential(holder.username(), holder.accessToken());
             assertCredentialStatus(holder.accessToken(), first.id(), TokenStatus.INVALID.name());
@@ -204,7 +204,7 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
                     1,
                     1,
                     0,
-                    CredentialIssuanceQuotaService.OVERFLOW_POLICY_REVOKE_OLDEST);
+                    StatusListConfig.OVERFLOW_POLICY_REVOKE_OLDEST);
 
             IssuedCredentialFixture otherCredential =
                     oid4vci.issueCredential(otherHolder.username(), otherHolder.accessToken());
@@ -217,7 +217,7 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
 
     @Test
     void issuanceKeepsOldestRevokedWhenLaterPublicationFails() throws Exception {
-        setIssuanceQuota("1", CredentialIssuanceQuotaService.OVERFLOW_POLICY_REVOKE_OLDEST);
+        setIssuanceQuota("1", StatusListConfig.OVERFLOW_POLICY_REVOKE_OLDEST);
         try {
             TestUser holder = credentialHolder("quota-revoke-then-fail");
             IssuedCredentialFixture first = oid4vci.issueCredential(holder.username(), holder.accessToken());
@@ -233,11 +233,13 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
             assertCredentialStatus(holder.accessToken(), first.id(), TokenStatus.INVALID.name());
             assertStatusListValue(first, TokenStatus.INVALID.getCode());
 
-            IssuedCredentialFixture replacement = oid4vci.issueCredential(holder.username(), holder.accessToken());
+            // The failed publication leaves a FAILURE mapping that still occupies the slot. REVOKE_OLDEST
+            // refuses to free it locally, so a retry fails closed rather than exceeding the quota.
+            statusListServer.allowStatusWrites();
+            var retry = oid4vci.tryIssueCredential(holder.username(), holder.accessToken());
+            assertFailClosedOverflow(retry);
             assertCredentialStatus(holder.accessToken(), first.id(), TokenStatus.INVALID.name());
-            assertCredentialStatus(holder.accessToken(), replacement.id(), TokenStatus.VALID.name());
             assertStatusListValue(first, TokenStatus.INVALID.getCode());
-            assertStatusListValue(replacement, TokenStatus.VALID.getCode());
         } finally {
             statusListServer.allowStatusWrites();
             setIssuanceQuota(null, null);
@@ -246,7 +248,7 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
 
     @Test
     void issuanceDoesNotContinueWhenOldestRevocationCannotReachStatusServer() throws Exception {
-        setIssuanceQuota("1", CredentialIssuanceQuotaService.OVERFLOW_POLICY_REVOKE_OLDEST);
+        setIssuanceQuota("1", StatusListConfig.OVERFLOW_POLICY_REVOKE_OLDEST);
         try {
             TestUser holder = credentialHolder("quota-revoke-server-down");
             IssuedCredentialFixture first = oid4vci.issueCredential(holder.username(), holder.accessToken());
@@ -263,11 +265,12 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
             assertCredentialStatus(holder.accessToken(), first.id(), TokenStatus.VALID.name());
             assertStatusListValue(first, TokenStatus.VALID.getCode());
 
-            IssuedCredentialFixture second = oid4vci.issueCredential(holder.username(), holder.accessToken());
-            assertCredentialStatus(holder.accessToken(), first.id(), TokenStatus.INVALID.name());
-            assertCredentialStatus(holder.accessToken(), second.id(), TokenStatus.VALID.name());
-            assertStatusListValue(first, TokenStatus.INVALID.getCode());
-            assertStatusListValue(second, TokenStatus.VALID.getCode());
+            // Keycloak still created an issued-credential row for the failed attempt. That unmapped
+            // leftover occupies quota and cannot be revoked through the status list, so REVOKE_OLDEST
+            // fails closed instead of silently going over the limit.
+            statusListServer.allowStatusWrites();
+            var retry = oid4vci.tryIssueCredential(holder.username(), holder.accessToken());
+            assertFailClosedOverflow(retry);
         } finally {
             statusListServer.allowStatusWrites();
             setIssuanceQuota(null, null);
@@ -289,7 +292,7 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
                     2,
                     1,
                     1,
-                    CredentialIssuanceQuotaService.OVERFLOW_POLICY_REJECT);
+                    StatusListConfig.OVERFLOW_POLICY_REJECT);
 
             Callable<Oid4vciTestClient.CredentialIssuanceAttempt> attempt =
                     () -> oid4vci.tryIssueCredential(holder.username(), holder.accessToken());
@@ -320,7 +323,7 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
                     2,
                     3,
                     0,
-                    CredentialIssuanceQuotaService.OVERFLOW_POLICY_REJECT);
+                    StatusListConfig.OVERFLOW_POLICY_REJECT);
         } finally {
             executor.shutdownNow();
             setIssuanceQuota(null, null);
@@ -372,6 +375,31 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
         } catch (Exception e) {
             throw new AssertionError(
                     "Failed to parse quota rejection body: "
+                            + attempt.response().body(),
+                    e);
+        }
+    }
+
+    private static void assertFailClosedOverflow(Oid4vciTestClient.CredentialIssuanceAttempt attempt) {
+        assertEquals(
+                400,
+                attempt.response().statusCode(),
+                "overflow fail-closed should be HTTP 400, got HTTP "
+                        + attempt.response().statusCode() + ": "
+                        + attempt.response().body());
+        try {
+            var body = oid4vci.readJson(attempt.response());
+            assertEquals(
+                    CredentialIssuanceQuotaException.ERROR_FAIL_CLOSED,
+                    body.path("error").asText(),
+                    "overflow fail-closed body: " + attempt.response().body());
+            assertEquals(
+                    CredentialIssuanceQuotaService.REVOKE_OLDEST_FAILED_MESSAGE,
+                    body.path("error_description").asText(),
+                    "overflow fail-closed body: " + attempt.response().body());
+        } catch (Exception e) {
+            throw new AssertionError(
+                    "Failed to parse overflow fail-closed body: "
                             + attempt.response().body(),
                     e);
         }

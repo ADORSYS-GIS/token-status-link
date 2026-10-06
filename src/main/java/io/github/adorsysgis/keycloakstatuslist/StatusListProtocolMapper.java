@@ -1,7 +1,7 @@
 package io.github.adorsysgis.keycloakstatuslist;
 
+import static io.github.adorsysgis.keycloakstatuslist.config.StatusListConfig.OVERFLOW_POLICY_REVOKE_OLDEST;
 import static io.github.adorsysgis.keycloakstatuslist.jpa.entity.StatusListMappingEntity.MappingStatus;
-import static io.github.adorsysgis.keycloakstatuslist.service.CredentialIssuanceQuotaService.OVERFLOW_POLICY_REVOKE_OLDEST;
 
 import io.github.adorsysgis.keycloakstatuslist.client.ApacheHttpStatusListClient;
 import io.github.adorsysgis.keycloakstatuslist.client.StatusListHttpClient;
@@ -31,7 +31,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import org.apache.commons.collections4.ListUtils;
 import org.apache.hc.core5.http.URIScheme;
@@ -346,47 +345,74 @@ public class StatusListProtocolMapper extends OID4VCMapper {
     private boolean reserveIndex(
             StatusListMappingEntity mapping, int maxCredentialsPerUser, String overflowPolicy, int maxEntries) {
         try {
-            // REVOKE_OLDEST marks SUCCESS rows INVALID locally first, commits, then publishes to the
-            // status-list server. That avoids remote INVALID surviving a rolled-back reservation TX.
-            for (int attempt = 0; attempt < 5; attempt++) {
-                AtomicReference<StatusListMappingEntity> pendingRemoteRevoke = new AtomicReference<>();
-                AtomicBoolean reserved = new AtomicBoolean(false);
-                statusListRepository.withEntityManagerInTransaction(em -> {
-                    StatusListMappingEntity latest = statusListRepository.lockLatestMapping(em, mapping.getRealmId());
-                    mapping.setStatusListId(statusListRepository.getNextStatusListId(latest, maxEntries));
-                    logger.debugf(
-                            "Booking next index for status list mapping: status_list_id=%s, userId=%s, tokenId=%s",
-                            mapping.getStatusListId(), mapping.getUserId(), mapping.getTokenId());
-                    StatusListMappingEntity needsRemotePublish =
-                            credentialIssuanceQuotaService.enforceWithinReservationTransaction(
-                                    em,
-                                    mapping.getRealmId(),
-                                    mapping.getUserId(),
-                                    mapping.getCredentialConfigurationId(),
-                                    maxCredentialsPerUser,
-                                    overflowPolicy,
-                                    mapping.getTokenId());
-                    if (needsRemotePublish != null) {
-                        pendingRemoteRevoke.set(needsRemotePublish);
-                        return;
-                    }
-                    persistInitialMapping(em, mapping);
-                    reserved.set(true);
-                });
-                if (reserved.get()) {
-                    return true;
-                }
-                credentialIssuanceQuotaService.publishOverflowRevocation(pendingRemoteRevoke.get());
+            // Status-list revokes are remote calls, so they run between the two reservation
+            // transactions instead of inside one that holds the realm lock.
+            ReservationOutcome outcome = tryReserve(mapping, maxCredentialsPerUser, overflowPolicy, maxEntries);
+            if (outcome.reserved()) {
+                return true;
             }
-            logger.error("Exceeded REVOKE_OLDEST reservation attempts");
-            throw CredentialIssuanceQuotaException.failClosed(
-                    CredentialIssuanceQuotaService.REVOKE_OLDEST_FAILED_MESSAGE);
+
+            credentialIssuanceQuotaService.revokeOldestForOverflow(outcome.toRevoke());
+
+            outcome = tryReserve(mapping, maxCredentialsPerUser, overflowPolicy, maxEntries);
+            if (outcome.reserved()) {
+                return true;
+            }
+
+            // Every selected revoke succeeded, so the slot was freed and then taken by a parallel
+            // issuance for the same holder and type. Report that as a plain limit conflict.
+            logger.warnf(
+                    "Freed slot was taken by a concurrent issuance: userId=%s, credentialConfigurationId=%s, pendingRevokes=%d",
+                    mapping.getUserId(),
+                    mapping.getCredentialConfigurationId(),
+                    outcome.toRevoke().size());
+            throw CredentialIssuanceQuotaException.limitReached(
+                    CredentialIssuanceQuotaService.FREED_SLOT_TAKEN_MESSAGE);
         } catch (RuntimeException e) {
             if (e instanceof CredentialIssuanceQuotaException) {
                 throw e;
             }
             logger.error("Failed to initiate index mapping", e);
             return false;
+        }
+    }
+
+    /**
+     * Either reserves an {@code INIT} row for {@code mapping}, or returns the oldest mappings that
+     * {@code REVOKE_OLDEST} must revoke before a reservation can succeed. {@code REJECT} throws.
+     */
+    private ReservationOutcome tryReserve(
+            StatusListMappingEntity mapping, int maxCredentialsPerUser, String overflowPolicy, int maxEntries) {
+        AtomicReference<ReservationOutcome> outcome = new AtomicReference<>();
+        statusListRepository.withEntityManagerInTransaction(em -> {
+            StatusListMappingEntity latest = statusListRepository.lockLatestMapping(em, mapping.getRealmId());
+            mapping.setStatusListId(statusListRepository.getNextStatusListId(latest, maxEntries));
+            logger.debugf(
+                    "Booking next index for status list mapping: status_list_id=%s, userId=%s, tokenId=%s",
+                    mapping.getStatusListId(), mapping.getUserId(), mapping.getTokenId());
+            List<StatusListMappingEntity> toRevoke = credentialIssuanceQuotaService.enforceWithinReservationTransaction(
+                    em,
+                    mapping.getRealmId(),
+                    mapping.getUserId(),
+                    mapping.getCredentialConfigurationId(),
+                    maxCredentialsPerUser,
+                    overflowPolicy,
+                    mapping.getTokenId());
+            if (!toRevoke.isEmpty()) {
+                outcome.set(ReservationOutcome.mustRevoke(toRevoke));
+                return;
+            }
+            persistInitialMapping(em, mapping);
+            outcome.set(ReservationOutcome.RESERVED);
+        });
+        return outcome.get();
+    }
+
+    private record ReservationOutcome(boolean reserved, List<StatusListMappingEntity> toRevoke) {
+        static final ReservationOutcome RESERVED = new ReservationOutcome(true, List.of());
+
+        static ReservationOutcome mustRevoke(List<StatusListMappingEntity> toRevoke) {
+            return new ReservationOutcome(false, toRevoke);
         }
     }
 

@@ -54,16 +54,28 @@ To enable the Status List protocol mapper, attach it to the client scope for the
 }
 ```
 
-<!-- TODO: Rework this section. Some sentences are hard to follow, and the behavior is under active reconsideration. -->
+`status-list-max-credentials-per-user` is optional. If you omit it or leave it blank, the plugin inherits the realm fallback. You can set it to `0` to leave this credential type unlimited.
 
-`status-list-max-credentials-per-user` is optional. Omit or blank to inherit the realm fallback; `0` leaves this type unlimited.
+A positive value limits how many credentials of that type a holder may keep at the same time. A credential issued by Keycloak counts toward the limit unless it has been revoked. In detail, it counts when any of these is true:
 
-A positive value caps live holdings of that type: `SUCCESS`/`FAILURE` mappings that still have an issued credential and are not `INVALID`. `FAILURE` counts because issuance continues when status-list is not mandatory — Keycloak still holds the credential, even if status publish never reached the server. `SUSPENDED` still occupies a slot; revoke frees one. `limits.activeCount` is that same count. In-flight `INIT` rows count only during reservation (not in `activeCount`) so concurrent requests cannot overshoot.
+- It has a status-list mapping with status `SUCCESS`, and the plugin has not marked it `INVALID`.
+- It has a mapping with status `FAILURE`. The plugin could not publish its status, but Keycloak may still have delivered the credential when the status list is not mandatory.
+- It has no mapping at all. This happens when an issuance attempt failed after Keycloak had already recorded the credential.
 
-When the cap is reached the plugin applies `status-list-overflow-policy`. The mapper value is used when present; otherwise the optional realm attribute, then `REJECT`:
+A `SUSPENDED` credential still counts; revoking it frees its slot. The `limits.activeCount` field in the listing endpoint uses the same count. While reserving a slot, the plugin also counts other issuance requests that are still in progress, so parallel requests cannot exceed the limit. Those in-progress requests are not part of `activeCount`.
 
-- `REJECT` — fail the new issuance (`409`, `credential_limit_reached`).
-- `REVOKE_OLDEST` — revoke the oldest occupying mapping for that holder and type, then continue. Prefers a `SUCCESS` mapping (status-list revoke); if only `FAILURE` rows occupy slots, marks the oldest `FAILURE` `INVALID` locally without calling the server. Issuance fails if the free cannot be completed (no silent over-limit). A completed free is kept even when a later publication step fails; a retry can use the freed slot.
+When the holder has reached the limit, the plugin applies `status-list-overflow-policy`. The plugin reads the policy from the mapper first, then from the optional realm attribute, and falls back to `REJECT`:
+
+- `REJECT` — The plugin refuses the new issuance with `409` and `credential_limit_reached`.
+- `REVOKE_OLDEST` — The plugin revokes the holder's oldest credentials of that type until the new credential fits, then continues with the issuance. If an administrator lowered the limit (for example from 5 to 3 while the holder had 5), the plugin revokes 3 credentials: 2 to get back under the new limit and 1 to make room for the new credential.
+
+With `REVOKE_OLDEST`, the plugin only revokes a credential through the status-list server. It marks the credential `INVALID` locally only after the server has accepted the revocation. A `FAILURE` credential or a credential without a mapping cannot be revoked that way. If such a credential is among the oldest ones that must go, the plugin refuses the issuance with `400` and `credential_limit_unresolved` rather than exceed the limit.
+
+A revocation that has succeeded is never undone. If the plugin revokes several credentials and one of them fails, the earlier ones stay revoked and the issuance fails. If the revocation succeeds but publishing the new credential fails afterwards, the old credential also stays revoked.
+
+Two parallel requests from the same holder may revoke the same oldest credential. Only one of them can take the freed slot. The other one fails with `409` and `credential_limit_reached`, and the holder can simply retry.
+
+Known limitation: a failed issuance attempt leaves behind a `FAILURE` or unmapped credential that still counts toward the limit and cannot be revoked. Under `REVOKE_OLDEST`, that holder cannot receive a new credential of that type until the leftover is removed.
 
 ## HTTP Endpoints
 
