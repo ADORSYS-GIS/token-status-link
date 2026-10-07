@@ -28,8 +28,6 @@ The plugin can be configured at the realm level with the following properties:
 | `status-list-token-issuer-prefix`               | Prefix for building the Token Issuer ID                                                                                                                                                                                            | `Generated UUID` |
 | `status-list-issuance-timeout`                  | Timeout in milliseconds for **issuance** operations (runtime). Non-positive values disable circuit breaker                                                                                                                         | `10000`          |
 | `status-list-registration-timeout`              | Timeout in milliseconds for **background registration** operations                                                                                                                                                                 | `30000`          |
-| `status-list-registration-retries`              | Maximum number of HTTP request retries for background registration operations                                                                                                                                                      | `1`              |
-| `status-list-registration-cooldown`             | Cooldown period in **milliseconds** between registration attempts for the same realm                                                                                                                                               | `60000`          |
 | `status-list-circuit-breaker-failure-threshold` | Number of failures/timeouts before opening the circuit breaker                                                                                                                                                                     | `5`              |
 | `status-list-mandatory`                         | If true, publication failures block issuance; if false, failures are logged and issuance continues without a status claim                                                                                                          | `false`          |
 | `status-list-max-entries`                       | Maximum number of entries to publish under the same status list                                                                                                                                                                    | `10000`          |
@@ -190,18 +188,20 @@ Each `limits` entry describes the holder's quota for one credential type:
 
 ## Performance Considerations
 
-<!-- TODO: Rework this section - see https://github.com/ADORSYS-GIS/token-status-link/issues/136. Much of it has fallen out of sync. -->
+### Issuance / revocation (runtime)
 
-- **Non-Blocking Registration**: Realm registration is performed **asynchronously** in background threads (
-  `status-list-registration`). This ensures that Keycloak startup and request processing are never blocked by status list
-  server latency.
-- **Retry & Cooldown**: Unregistered realms are retried by a scheduled reconciliation task at a fixed interval
-  (every 30 seconds), up to a maximum of 5 attempts per realm. A per-realm cooldown (default: 1 minute) is enforced
-  between registration attempts. Outbound HTTP requests additionally use exponential backoff (1s, 2s, 4s).
-- **On-Demand (Lazy) Trigger**: Registration is triggered on-demand when a realm's status list endpoints are first
-  accessed, but the trigger itself is non-blocking to the caller's thread.
-- **Configurable Timeouts**: Timeouts are configurable via `status-list-issuance-timeout` (default: 10s for runtime) and
-  `status-list-registration-timeout` (default: 30s for background).
+Runtime HTTP calls use a short timeout (`status-list-issuance-timeout`, default: 10s) and no retries, and are
+protected by a circuit breaker (5 failures within 60s opens it for 30s) so a failing status list server fails fast
+instead of stalling user-facing requests.
+
+### Registration (background)
+
+Realms are registered in the background on a dedicated thread (`status-list-registration`), so startup, realm creation,
+and request handling are never slowed down by the status list server. Registration is kicked off at startup, when a
+new realm is created, and whenever a realm's status list endpoints are first accessed. Failed registrations are
+retried with a linearly growing delay — 1s, then 10s, 20s, 30s — up to 3 retries; a realm that runs
+out of retries simply waits for the next trigger. Each attempt makes its HTTP requests exactly once and uses the
+`status-list-registration-timeout` (default: 30s).
 
 ## Proxy support
 
