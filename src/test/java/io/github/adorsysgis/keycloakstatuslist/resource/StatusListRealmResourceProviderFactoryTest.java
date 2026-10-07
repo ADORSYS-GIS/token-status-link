@@ -1,12 +1,13 @@
 package io.github.adorsysgis.keycloakstatuslist.resource;
 
+import static io.github.adorsysgis.keycloakstatuslist.config.StatusListConfig.STATUS_LIST_ENABLED;
+import static io.github.adorsysgis.keycloakstatuslist.config.StatusListConfig.STATUS_LIST_SERVER_URL;
+import static io.github.adorsysgis.keycloakstatuslist.service.RealmAsIssuerRegistrationService.BACKOFF_MULTIPLIER_MS;
+import static io.github.adorsysgis.keycloakstatuslist.service.RealmAsIssuerRegistrationService.DEFAULT_INITIAL_DELAY_MS;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doThrow;
@@ -16,399 +17,282 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockConstruction;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 import io.github.adorsysgis.keycloakstatuslist.config.StatusListConfig;
 import io.github.adorsysgis.keycloakstatuslist.exception.StatusListException;
-import io.github.adorsysgis.keycloakstatuslist.service.CircuitBreaker;
+import io.github.adorsysgis.keycloakstatuslist.helpers.MockKeycloakTest;
 import io.github.adorsysgis.keycloakstatuslist.service.CryptoIdentityService;
-import io.github.adorsysgis.keycloakstatuslist.service.CustomHttpClient;
+import io.github.adorsysgis.keycloakstatuslist.service.RealmAsIssuerRegistrationService;
 import io.github.adorsysgis.keycloakstatuslist.service.StatusListService;
-import jakarta.persistence.EntityManager;
-import java.io.IOException;
+import java.util.List;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
-import org.apache.hc.client5.http.classic.methods.HttpGet;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
-import org.apache.hc.client5.http.impl.classic.CloseableHttpResponse;
-import org.apache.hc.core5.http.io.HttpClientResponseHandler;
-import org.apache.hc.core5.http.io.entity.StringEntity;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.keycloak.common.ClientConnection;
-import org.keycloak.connections.jpa.JpaConnectionProvider;
 import org.keycloak.jose.jwk.JWK;
-import org.keycloak.models.KeycloakContext;
-import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
-import org.keycloak.models.KeycloakTransactionManager;
 import org.keycloak.models.RealmModel;
-import org.keycloak.models.RealmProvider;
 import org.keycloak.models.utils.PostMigrationEvent;
 import org.keycloak.provider.ProviderEventListener;
-import org.keycloak.timer.ScheduledTask;
-import org.keycloak.timer.TimerProvider;
 import org.mockito.ArgumentCaptor;
+import org.mockito.Mock;
 import org.mockito.MockedConstruction;
 import org.mockito.MockedStatic;
 
-class StatusListRealmResourceProviderFactoryTest {
+class StatusListRealmResourceProviderFactoryTest extends MockKeycloakTest {
 
-    private StatusListRealmResourceProviderFactory factory;
-    private KeycloakSessionFactory sessionFactory;
-    private KeycloakSession session;
-    private KeycloakTransactionManager transactionManager;
-    private RealmProvider realmProvider;
-    private RealmModel realm;
-    private TimerProvider timerProvider;
-    private JpaConnectionProvider jpaConnectionProvider;
-    private EntityManager entityManager;
+    @Mock
+    private ScheduledExecutorService recordingScheduler;
 
-    private MockedStatic<CryptoIdentityService> mockedRevocationService;
-    private MockedStatic<CustomHttpClient> mockedHttpClient;
-
+    private StatusListServiceStub statusListServiceStub;
+    private MockedStatic<CryptoIdentityService> mockedCryptoIdentityStatic;
     private MockedConstruction<StatusListService> mockedStatusListServiceConstruction;
     private MockedConstruction<CryptoIdentityService> mockedCryptoServiceConstruction;
-    private MockedStatic<CircuitBreaker> mockedCircuitBreaker;
+
+    private StatusListRealmResourceProviderFactory factory;
+    private RealmAsIssuerRegistrationService registrationService;
 
     @BeforeEach
     void setUp() {
-        mockedCircuitBreaker = mockStatic(CircuitBreaker.class);
-        mockedCircuitBreaker
-                .when(() -> CircuitBreaker.getInstance(any(), anyInt(), anyInt(), anyInt()))
-                .thenAnswer(inv -> mock(CircuitBreaker.class));
-        mockedCircuitBreaker
-                .when(() -> CircuitBreaker.getInstance(any(StatusListConfig.class)))
-                .thenReturn(mock(CircuitBreaker.class));
-
+        statusListServiceStub = service -> when(service.checkServerHealth()).thenReturn(true);
+        registrationService = new TestRegistrationService();
         factory = new StatusListRealmResourceProviderFactory() {
             @Override
-            protected void runAsync(Runnable runnable) {
-                runnable.run();
+            protected RealmAsIssuerRegistrationService createRegistrationService(KeycloakSessionFactory factory) {
+                return registrationService;
             }
         };
-        sessionFactory = mock(KeycloakSessionFactory.class);
-        session = mock(KeycloakSession.class);
-        KeycloakContext context1 = mock(KeycloakContext.class);
-        ClientConnection connection = mock(ClientConnection.class);
-        transactionManager = mock(KeycloakTransactionManager.class);
-        realmProvider = mock(RealmProvider.class);
-        realm = mock(RealmModel.class);
-        timerProvider = mock(TimerProvider.class);
-        jpaConnectionProvider = mock(JpaConnectionProvider.class);
-        entityManager = mock(EntityManager.class);
 
-        when(session.getContext()).thenReturn(context1);
-        lenient().when(context1.getRealm()).thenReturn(realm);
-        lenient().when(context1.getConnection()).thenReturn(connection);
+        lenient().when(session.realms()).thenReturn(realmProvider);
+        lenient().when(realmProvider.getRealmByName(TEST_REALM_NAME)).thenReturn(realm);
+        lenient().when(realm.getAttribute(STATUS_LIST_ENABLED)).thenReturn("true");
+        lenient().when(realm.getAttribute(STATUS_LIST_SERVER_URL)).thenReturn("http://localhost:8080");
 
-        when(sessionFactory.create()).thenReturn(session);
-        when(session.getKeycloakSessionFactory()).thenReturn(sessionFactory);
-        when(session.getTransactionManager()).thenReturn(transactionManager);
-        when(session.realms()).thenReturn(realmProvider);
-        when(session.getProvider(TimerProvider.class)).thenReturn(timerProvider);
-        when(session.getProvider(eq(JpaConnectionProvider.class))).thenReturn(jpaConnectionProvider);
-        when(jpaConnectionProvider.getEntityManager()).thenReturn(entityManager);
-        when(realmProvider.getRealmsStream()).thenAnswer(i -> Stream.of(realm));
-        lenient().when(realmProvider.getRealmByName("test-realm")).thenReturn(realm);
+        mockedCryptoIdentityStatic = mockStatic(CryptoIdentityService.class);
+        mockedCryptoIdentityStatic
+                .when(() -> CryptoIdentityService.getRealmKeyData(any(), any()))
+                .thenReturn(new CryptoIdentityService.KeyData(mock(JWK.class), "RS256"));
 
-        when(realm.getName()).thenReturn("test-realm");
-        when(realm.getAttribute("status-list-enabled")).thenReturn("true");
-        when(realm.getAttribute("status-list-server-url")).thenReturn("http://localhost:8080");
-
-        mockedRevocationService = mockStatic(CryptoIdentityService.class);
-        mockedHttpClient = mockStatic(CustomHttpClient.class);
-
-        mockedStatusListServiceConstruction =
-                mockConstruction(StatusListService.class, (mock, context) -> when(mock.checkServerHealth())
-                        .thenReturn(true));
         mockedCryptoServiceConstruction =
-                mockConstruction(CryptoIdentityService.class, (mock, context) -> when(mock.getJwtToken(any()))
+                mockConstruction(CryptoIdentityService.class, (self, selfContext) -> when(self.getJwtToken(any()))
                         .thenReturn("mock-token"));
 
-        JWK mockJwk = mock(JWK.class);
-        CryptoIdentityService.KeyData keyData = new CryptoIdentityService.KeyData(mockJwk, "RS256");
-        mockedRevocationService
-                .when(() -> CryptoIdentityService.getRealmKeyData(any(), any()))
-                .thenReturn(keyData);
+        mockedStatusListServiceConstruction =
+                mockConstruction(StatusListService.class, (self, selfContext) -> statusListServiceStub.configure(self));
     }
 
     @AfterEach
     void tearDown() {
-        if (mockedRevocationService != null) mockedRevocationService.close();
-        if (mockedHttpClient != null) mockedHttpClient.close();
-        if (mockedStatusListServiceConstruction != null) mockedStatusListServiceConstruction.close();
-        if (mockedCryptoServiceConstruction != null) mockedCryptoServiceConstruction.close();
-        if (mockedCircuitBreaker != null) mockedCircuitBreaker.close();
-
-        factory.close();
-    }
-
-    @Test
-    void testRealmResourceCreation() {
-        StatusListRealmResourceProvider provider = (StatusListRealmResourceProvider) factory.create(session);
-        assertNotNull(provider);
-        Object resource = provider.getResource();
-        assertNotNull(resource);
-        assertInstanceOf(StatusListRealmResourceProvider.class, resource);
-    }
-
-    @Test
-    void testPostInitRegistersListenerAndProcessesRealms() throws IOException {
-        CloseableHttpClient httpClient = mock(CloseableHttpClient.class);
-        CloseableHttpResponse httpResponse = mock(CloseableHttpResponse.class);
-
-        mockedHttpClient
-                .when(() -> CustomHttpClient.getRegistrationHttpClient(any(StatusListConfig.class)))
-                .thenReturn(httpClient);
-
-        when(httpClient.execute(
-                        any(HttpGet.class), org.mockito.ArgumentMatchers.<HttpClientResponseHandler<Boolean>>any()))
-                .thenAnswer(invocation -> {
-                    HttpClientResponseHandler<Boolean> handler = invocation.getArgument(1);
-                    when(httpResponse.getCode()).thenReturn(200);
-                    when(httpResponse.getEntity()).thenReturn(new StringEntity("OK"));
-                    return handler.handleResponse(httpResponse);
-                });
-
-        ArgumentCaptor<ProviderEventListener> listenerCaptor = ArgumentCaptor.forClass(ProviderEventListener.class);
-        factory.postInit(sessionFactory);
-
-        verify(sessionFactory, atLeastOnce()).register(listenerCaptor.capture());
-
-        listenerCaptor.getValue().onEvent(new PostMigrationEvent(sessionFactory));
-        runReconciliation();
-
-        verify(transactionManager, atLeastOnce()).begin();
-        verify(transactionManager).commit();
-
-        assertEquals(1, mockedStatusListServiceConstruction.constructed().size());
-        StatusListService mockService =
-                mockedStatusListServiceConstruction.constructed().get(0);
-
-        try {
-            verify(mockService).registerIssuer(argThat(arg -> arg.endsWith("::test-realm")), any());
-        } catch (StatusListException e) {
-            fail("Should not throw exception");
-        }
-    }
-
-    @Test
-    void testLazyRegistrationInResourceAccess() {
-        // Ensure not registered initially
-        StatusListRealmResourceProvider provider = (StatusListRealmResourceProvider) factory.create(session);
-        provider.getResource();
-
-        StatusListService lastMock = mockedStatusListServiceConstruction
-                .constructed()
-                .get(mockedStatusListServiceConstruction.constructed().size() - 1);
-        try {
-            verify(lastMock).registerIssuer(argThat(arg -> arg.endsWith("::test-realm")), any());
-        } catch (StatusListException e) {
-            fail("Should not throw exception");
-        }
-    }
-
-    @Test
-    void testLazyRegistration_RollsBackWhenRealmLookupFails() {
-        when(transactionManager.isActive()).thenReturn(true);
-        when(realmProvider.getRealmByName("test-realm")).thenThrow(new RuntimeException("realm lookup failed"));
-
-        assertDoesNotThrow(() -> {
-            StatusListRealmResourceProvider provider = (StatusListRealmResourceProvider) factory.create(session);
-            provider.getResource();
-        });
-
-        verify(transactionManager).rollback();
-        verify(transactionManager, never()).commit();
-    }
-
-    @Test
-    void testInitializeRealms_SkippedWhenDisabled() {
-        when(realm.getAttribute("status-list-enabled")).thenReturn("false");
-
-        triggerInitialization();
-        runReconciliation();
-
-        assertEquals(0, mockedStatusListServiceConstruction.constructed().size());
-        mockedHttpClient.verify(() -> CustomHttpClient.getRegistrationHttpClient(any(StatusListConfig.class)), never());
-    }
-
-    @Test
-    void testInitializeRealms_SkippedWhenHealthCheckFails() throws IOException {
-        // We need to override the default mock behavior for this test
+        mockedCryptoIdentityStatic.close();
+        mockedCryptoServiceConstruction.close();
         mockedStatusListServiceConstruction.close();
-        mockedStatusListServiceConstruction =
-                mockConstruction(StatusListService.class, (mock, context) -> when(mock.checkServerHealth())
-                        .thenReturn(false));
+    }
 
-        triggerInitialization();
-        runReconciliation();
+    private List<StatusListService> constructed() {
+        return mockedStatusListServiceConstruction.constructed();
+    }
 
-        // Service is constructed but registration is skipped
-        assertEquals(1, mockedStatusListServiceConstruction.constructed().size());
-        StatusListService mockService =
-                mockedStatusListServiceConstruction.constructed().get(0);
-
-        try {
-            verify(mockService, never()).registerIssuer(any(), any());
-        } catch (StatusListException e) {
-            fail("Should not throw exception");
-        }
+    private void triggerBackground(long initialDelay, int maxRetries) {
+        registrationService.triggerBackgroundRegistration(TEST_REALM_NAME, initialDelay, maxRetries);
     }
 
     @Test
-    void testInitializeRealms_SkippedWhenKeyExtractionFails() throws Exception {
-        setupSuccessfulHealthCheck();
+    void testCreateWithoutPostInitBuildsProviderWithoutScheduling() {
+        factory.create(session);
+        verifyNoSchedules();
+    }
 
-        mockedRevocationService
-                .when(() -> CryptoIdentityService.getRealmKeyData(session, realm))
+    @Test
+    void testPostMigrationEventSchedulesDefaultRegistrationForListedRealms() throws StatusListException {
+        RealmModel otherRealm = mock(RealmModel.class);
+        lenient().when(otherRealm.getName()).thenReturn("other-realm");
+        lenient().when(otherRealm.getAttribute(STATUS_LIST_ENABLED)).thenReturn("true");
+        lenient().when(otherRealm.getAttribute(STATUS_LIST_SERVER_URL)).thenReturn("http://localhost:8080");
+        lenient().when(realmProvider.getRealmByName("other-realm")).thenReturn(otherRealm);
+        lenient().when(realmProvider.getRealmsStream()).thenReturn(Stream.of(realm, otherRealm));
+
+        firePostInitEvent(new PostMigrationEvent(sessionFactory));
+
+        // Default trigger path: all listed realms are scheduled once with the 1s initial delay
+        verify(recordingScheduler, times(2))
+                .schedule(any(Runnable.class), eq(DEFAULT_INITIAL_DELAY_MS), eq(TimeUnit.MILLISECONDS));
+        runAllScheduledInDefaultDelay();
+        List<StatusListService> services = constructed();
+        assertEquals(2, services.size());
+        verify(services.get(0)).registerIssuer(argThat(issuerId -> issuerId.endsWith("::" + TEST_REALM_NAME)), any());
+        verify(services.get(1)).registerIssuer(argThat(issuerId -> issuerId.endsWith("::other-realm")), any());
+    }
+
+    @Test
+    void testRealmPostCreateEventTriggersDefaultRegistration() throws StatusListException {
+        RealmModel.RealmPostCreateEvent event = mock(RealmModel.RealmPostCreateEvent.class);
+        when(event.getCreatedRealm()).thenReturn(realm);
+
+        firePostInitEvent(event);
+
+        // New realm registration is triggered with the default 1s initial delay
+        verify(recordingScheduler, times(1))
+                .schedule(any(Runnable.class), eq(DEFAULT_INITIAL_DELAY_MS), eq(TimeUnit.MILLISECONDS));
+        runScheduled(DEFAULT_INITIAL_DELAY_MS);
+        StatusListService service = constructed().get(0);
+        verify(service).registerIssuer(argThat(issuerId -> issuerId.endsWith("::" + TEST_REALM_NAME)), any());
+    }
+
+    @Test
+    void testCreateSchedulesAndRunsImmediateRegistration() throws StatusListException {
+        factory.postInit(sessionFactory);
+        factory.create(session);
+
+        // Factory path: immediate trigger (0ms delay) for lazy on-request registration
+        verify(recordingScheduler, times(1)).schedule(any(Runnable.class), eq(0L), eq(TimeUnit.MILLISECONDS));
+        runScheduled(0L);
+
+        StatusListService service = constructed().get(0);
+        verify(service).checkServerHealth();
+        verify(service).registerIssuer(argThat(issuerId -> issuerId.endsWith("::" + TEST_REALM_NAME)), any());
+        // Successful attempt: no further retries are scheduled
+        verifyNoMoreInteractions(recordingScheduler);
+    }
+
+    @Test
+    void testLazyRegistrationStopsWhenRealmNoLongerExists() {
+        factory.postInit(sessionFactory);
+        factory.create(session);
+        lenient().when(realmProvider.getRealmByName(TEST_REALM_NAME)).thenReturn(null);
+
+        assertDoesNotThrow(() -> runScheduled(0L));
+        assertEquals(0, constructed().size());
+        verifyNoMoreInteractions(recordingScheduler);
+    }
+
+    @Test
+    void testFailedRegistrationIsRescheduledWithGrowingDelayWithinBudget() {
+        stubFailingRegistration();
+
+        // Re-trigger with a 2-retry budget: attempt 0 fails, retry in 10s; attempt 1 fails, in 20s
+        triggerBackground(30_000L, 2);
+        runScheduled(30_000L);
+        runScheduled(BACKOFF_MULTIPLIER_MS);
+        runScheduled(2 * BACKOFF_MULTIPLIER_MS); // attempt 2 exhausts the budget: no further scheduling happens
+
+        verify(recordingScheduler, times(3)).schedule(any(Runnable.class), any(Long.class), eq(TimeUnit.MILLISECONDS));
+        verifyNoMoreInteractions(recordingScheduler);
+    }
+
+    @Test
+    void testFailingRegistrationAfterBudgetIsPickedUpByNextTrigger() {
+        stubFailingRegistration();
+        factory.postInit(sessionFactory);
+        factory.create(session);
+
+        // Exhaust the 0-retry budget: no rescheduling after the failing attempt
+        runScheduled(0L);
+        verifyNoMoreInteractions(recordingScheduler);
+
+        // New trigger passes: a second registration run is scheduled
+        triggerBackground(0, 0);
+        runScheduled(0L);
+        assertEquals(2, constructed().size());
+    }
+
+    @Test
+    void testUnhealthyStatusListServerSkipsIssuerRegistration() throws StatusListException {
+        statusListServiceStub = service -> when(service.checkServerHealth()).thenReturn(false);
+        factory.postInit(sessionFactory);
+        factory.create(session);
+
+        runScheduled(0L);
+
+        StatusListService service = constructed().get(0);
+        verify(service).checkServerHealth();
+        verify(service, never()).registerIssuer(any(), any());
+    }
+
+    @Test
+    void testKeyExtractionFailureLeavesAttemptForgottenAfterBudget() {
+        factory.postInit(sessionFactory);
+        factory.create(session);
+        mockedCryptoIdentityStatic
+                .when(() -> CryptoIdentityService.getRealmKeyData(any(), any()))
                 .thenThrow(new StatusListException("Key not found"));
 
-        triggerInitialization();
-        runReconciliation();
-
-        assertEquals(0, mockedStatusListServiceConstruction.constructed().size());
+        runScheduled(0L);
+        assertEquals(0, constructed().size());
+        verifyNoMoreInteractions(recordingScheduler);
     }
 
     @Test
-    void testInitializeRealms_HandlesAlreadyRegisteredMap() {
-        setupSuccessfulHealthCheck();
-        CryptoIdentityService.KeyData keyData = new CryptoIdentityService.KeyData(mock(JWK.class), "RS256");
-        mockedRevocationService
-                .when(() -> CryptoIdentityService.getRealmKeyData(session, realm))
-                .thenReturn(keyData);
+    void testCloseDecommissionsScheduler() {
+        factory.postInit(sessionFactory);
+        factory.close();
 
-        triggerInitialization();
-        runReconciliation();
-        assertEquals(1, mockedStatusListServiceConstruction.constructed().size());
-
-        triggerInitialization();
-        runReconciliation();
-        assertEquals(1, mockedStatusListServiceConstruction.constructed().size());
+        verify(recordingScheduler).shutdownNow();
     }
 
-    @Test
-    void testInitializeRealms_GracefulFailureOnServiceException() {
-        setupSuccessfulHealthCheck();
-
-        mockedStatusListServiceConstruction.close();
-        mockedStatusListServiceConstruction = mockConstruction(StatusListService.class, (mock, context) -> {
-            when(mock.checkServerHealth()).thenReturn(true);
-            try {
-                doThrow(new RuntimeException("API Error")).when(mock).registerIssuer(any(), any());
-            } catch (StatusListException e) {
-                fail("Should not throw while configuring the mock");
-            }
-        });
-
-        CryptoIdentityService.KeyData keyData = new CryptoIdentityService.KeyData(mock(JWK.class), "RS256");
-        mockedRevocationService
-                .when(() -> CryptoIdentityService.getRealmKeyData(session, realm))
-                .thenReturn(keyData);
-
-        triggerInitialization();
-        assertDoesNotThrow(this::runReconciliation);
+    /** Runs the most recently scheduled attempt runnable whose delay matches the given one. */
+    private void runScheduled(long delayMs) {
+        ArgumentCaptor<Runnable> captor = ArgumentCaptor.forClass(Runnable.class);
+        verify(recordingScheduler, atLeastOnce()).schedule(captor.capture(), eq(delayMs), eq(TimeUnit.MILLISECONDS));
+        List<Runnable> all = captor.getAllValues();
+        all.get(all.size() - 1).run();
     }
 
-    @Test
-    void testRegistrationReconciliationRetriesRealmConfiguredAfterStartup() throws Exception {
-        setupSuccessfulHealthCheck();
-
-        when(session.getProvider(TimerProvider.class)).thenReturn(timerProvider);
-        when(realm.getAttribute("status-list-enabled")).thenReturn("false");
-
-        triggerInitialization();
-
-        ArgumentCaptor<ScheduledTask> taskCaptor = ArgumentCaptor.forClass(ScheduledTask.class);
-        verify(timerProvider)
-                .scheduleTask(
-                        taskCaptor.capture(),
-                        eq(1_000L),
-                        eq(30_000L),
-                        eq("status-list-realm-registration-reconciliation"));
-
-        assertEquals(0, mockedStatusListServiceConstruction.constructed().size());
-
-        when(realm.getAttribute("status-list-enabled")).thenReturn("true");
-        taskCaptor.getValue().run(session);
-
-        StatusListService mockService =
-                mockedStatusListServiceConstruction.constructed().get(0);
-        verify(mockService).registerIssuer(argThat(arg -> arg.endsWith("::test-realm")), any());
+    /** Runs every scheduled attempt runnable with the given delay, in scheduling order. */
+    private void runAllScheduledInDefaultDelay() {
+        ArgumentCaptor<Runnable> captor = ArgumentCaptor.forClass(Runnable.class);
+        verify(recordingScheduler, atLeastOnce())
+                .schedule(captor.capture(), eq(DEFAULT_INITIAL_DELAY_MS), eq(TimeUnit.MILLISECONDS));
+        captor.getAllValues().forEach(Runnable::run);
     }
 
-    @Test
-    void testRegistrationReconciliationStopsAfterFiveAttempts() throws Exception {
-        setupSuccessfulHealthCheck();
+    /** Runs postInit and dispatches the given event to the registered provider event listener. */
+    private void firePostInitEvent(org.keycloak.provider.ProviderEvent event) {
+        factory.postInit(sessionFactory);
+        ArgumentCaptor<ProviderEventListener> listenerCaptor = ArgumentCaptor.forClass(ProviderEventListener.class);
+        verify(sessionFactory, atLeastOnce()).register(listenerCaptor.capture());
+        assertDoesNotThrow(() -> listenerCaptor.getValue().onEvent(event));
+    }
 
-        mockedStatusListServiceConstruction.close();
-        mockedStatusListServiceConstruction = mockConstruction(StatusListService.class, (mock, context) -> {
-            when(mock.checkServerHealth()).thenReturn(true);
-            try {
-                doThrow(new StatusListException("registration failed"))
-                        .when(mock)
-                        .registerIssuer(any(), any());
-            } catch (StatusListException e) {
-                fail("Should not throw while configuring the mock");
-            }
-        });
+    private void stubFailingRegistration() {
+        statusListServiceStub = service -> {
+            when(service.checkServerHealth()).thenReturn(true);
+            doThrow(new StatusListException("registration failed"))
+                    .when(service)
+                    .registerIssuer(any(), any());
+        };
+    }
 
-        triggerInitialization();
-        ArgumentCaptor<ScheduledTask> taskCaptor = ArgumentCaptor.forClass(ScheduledTask.class);
-        verify(timerProvider)
-                .scheduleTask(
-                        taskCaptor.capture(),
-                        eq(1_000L),
-                        eq(30_000L),
-                        eq("status-list-realm-registration-reconciliation"));
+    private void verifyNoSchedules() {
+        verify(recordingScheduler, never()).schedule(any(Runnable.class), anyLong(), any(TimeUnit.class));
+        verifyNoMoreInteractions(recordingScheduler);
+    }
 
-        for (int attempt = 0; attempt < 6; attempt++) {
-            taskCaptor.getValue().run(session);
+    @FunctionalInterface
+    private interface StatusListServiceStub {
+        void configure(StatusListService service) throws StatusListException;
+    }
+
+    /** Test service: recordings instead of real background scheduling and HTTP clients. */
+    private class TestRegistrationService extends RealmAsIssuerRegistrationService {
+        TestRegistrationService() {
+            super(sessionFactory);
         }
 
-        assertEquals(5, mockedStatusListServiceConstruction.constructed().size());
-    }
+        @Override
+        protected ScheduledExecutorService createScheduler() {
+            return recordingScheduler;
+        }
 
-    private void triggerInitialization() {
-        ArgumentCaptor<ProviderEventListener> listenerCaptor = ArgumentCaptor.forClass(ProviderEventListener.class);
-        factory.postInit(sessionFactory);
-
-        verify(sessionFactory, atLeastOnce()).register(listenerCaptor.capture());
-
-        listenerCaptor.getValue().onEvent(new PostMigrationEvent(sessionFactory));
-    }
-
-    private void runReconciliation() {
-        ArgumentCaptor<ScheduledTask> taskCaptor = ArgumentCaptor.forClass(ScheduledTask.class);
-        verify(timerProvider)
-                .scheduleTask(
-                        taskCaptor.capture(),
-                        eq(1_000L),
-                        eq(30_000L),
-                        eq("status-list-realm-registration-reconciliation"));
-        taskCaptor.getValue().run(session);
-    }
-
-    private void setupSuccessfulHealthCheck() {
-        try {
-            CloseableHttpClient httpClient = mock(CloseableHttpClient.class);
-            CloseableHttpResponse httpResponse = mock(CloseableHttpResponse.class);
-            mockedHttpClient
-                    .when(() -> CustomHttpClient.getRegistrationHttpClient(any(StatusListConfig.class)))
-                    .thenReturn(httpClient);
-
-            when(httpClient.execute(
-                            any(HttpGet.class), org.mockito.ArgumentMatchers.<HttpClientResponseHandler<Boolean>>any()))
-                    .thenAnswer(invocation -> {
-                        HttpClientResponseHandler<Boolean> handler = invocation.getArgument(1);
-                        when(httpResponse.getCode()).thenReturn(200);
-                        when(httpResponse.getEntity()).thenReturn(new StringEntity("OK"));
-                        return handler.handleResponse(httpResponse);
-                    });
-        } catch (IOException e) {
-            throw new RuntimeException(e);
+        @Override
+        protected CloseableHttpClient registrationClient(StatusListConfig config) {
+            return httpClient;
         }
     }
 }

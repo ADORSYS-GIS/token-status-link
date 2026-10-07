@@ -1,295 +1,28 @@
 package io.github.adorsysgis.keycloakstatuslist.resource;
 
-import io.github.adorsysgis.keycloakstatuslist.client.ApacheHttpStatusListClient;
-import io.github.adorsysgis.keycloakstatuslist.client.StatusListHttpClient;
-import io.github.adorsysgis.keycloakstatuslist.config.StatusListConfig;
-import io.github.adorsysgis.keycloakstatuslist.exception.StatusListException;
-import io.github.adorsysgis.keycloakstatuslist.exception.StatusListServerException;
-import io.github.adorsysgis.keycloakstatuslist.service.CircuitBreaker;
 import io.github.adorsysgis.keycloakstatuslist.service.CredentialRevocationService;
-import io.github.adorsysgis.keycloakstatuslist.service.CryptoIdentityService;
-import io.github.adorsysgis.keycloakstatuslist.service.CustomHttpClient;
-import io.github.adorsysgis.keycloakstatuslist.service.StatusListService;
-import java.util.List;
-import java.util.Optional;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import io.github.adorsysgis.keycloakstatuslist.service.RealmAsIssuerRegistrationService;
 import org.jboss.logging.Logger;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
-import org.keycloak.models.KeycloakTransactionManager;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.utils.PostMigrationEvent;
 import org.keycloak.services.resource.RealmResourceProvider;
 import org.keycloak.services.resource.RealmResourceProviderFactory;
-import org.keycloak.timer.ScheduledTask;
-import org.keycloak.timer.TimerProvider;
 
 /**
  * Factory for {@link StatusListRealmResourceProvider}.
  *
- * <p>This factory also manages the registration of realms as "Issuers" on the external status list server.
- * Registration is handled in the background to ensure Keycloak startup and request threads remain responsive.
+ * <p>This factory hooks realm lifecycle events and delegates realm registration as "Issuers" on the
+ * external status list server to {@link RealmAsIssuerRegistrationService}.
  */
 public class StatusListRealmResourceProviderFactory implements RealmResourceProviderFactory {
 
-    public static final String PROVIDER_ID = "status-list";
-
     private static final Logger logger = Logger.getLogger(StatusListRealmResourceProviderFactory.class);
 
-    private final Set<String> registeredRealms = ConcurrentHashMap.newKeySet();
-    private final Set<String> inFlight = ConcurrentHashMap.newKeySet();
-    private final ConcurrentHashMap<String, Integer> reconciliationAttempts = new ConcurrentHashMap<>();
+    public static final String PROVIDER_ID = "status-list";
 
-    private static final ExecutorService executor =
-            Executors.newSingleThreadExecutor(r -> new Thread(r, "status-list-registration"));
-
-    private static final String REGISTRATION_RECONCILIATION_TASK_NAME = "status-list-realm-registration-reconciliation";
-    private static final long REGISTRATION_RECONCILIATION_INITIAL_DELAY_MS = 1_000L;
-    private static final long REGISTRATION_RECONCILIATION_INTERVAL_MS = 30_000L;
-    private static final int MAX_RECONCILIATION_ATTEMPTS = 5;
-
-    private volatile boolean initialized = false;
-
-    @Override
-    public RealmResourceProvider create(KeycloakSession session) {
-        CredentialRevocationService revocationService = new CredentialRevocationService(session);
-        return new StatusListRealmResourceProvider(session, revocationService, this);
-    }
-
-    /**
-     * Triggers a background registration task for the given realm if it's not already registered
-     * and not currently in progress.
-     *
-     * @param factory the KeycloakSessionFactory used to create new background sessions
-     * @param realmName the name of the realm to register
-     */
-    public void triggerBackgroundRegistration(KeycloakSessionFactory factory, String realmName) {
-        if (registeredRealms.contains(realmName)) {
-            return;
-        }
-
-        if (inFlight.add(realmName)) {
-            runAsync(() -> registerRealmInBackgroundSession(factory, realmName));
-        }
-    }
-
-    private void registerRealmInBackgroundSession(KeycloakSessionFactory factory, String realmName) {
-        // Background tasks MUST create their own session because the original request session
-        // from the endpoint will be closed or detached by the time this thread executes.
-        try (KeycloakSession bgSession = factory.create()) {
-            KeycloakTransactionManager transactionManager = bgSession.getTransactionManager();
-            transactionManager.begin();
-            runRegistrationTransaction(bgSession, realmName, transactionManager);
-        } catch (Exception e) {
-            logger.errorf("Error during background registration for realm %s: %s", realmName, e.getMessage(), e);
-        } finally {
-            inFlight.remove(realmName);
-        }
-    }
-
-    private void runRegistrationTransaction(
-            KeycloakSession bgSession, String realmName, KeycloakTransactionManager transactionManager) {
-        try {
-            RealmModel realm = bgSession.realms().getRealmByName(realmName);
-            if (realm != null) {
-                bgSession.getContext().setRealm(realm);
-                ensureRealmRegistered(bgSession, realm);
-            }
-            transactionManager.commit();
-        } catch (Exception e) {
-            rollbackIfActive(transactionManager);
-            throw e;
-        }
-    }
-
-    private void rollbackIfActive(KeycloakTransactionManager transactionManager) {
-        if (transactionManager.isActive()) {
-            transactionManager.rollback();
-        }
-    }
-
-    @Override
-    public void init(org.keycloak.Config.Scope config) {}
-
-    @Override
-    public void postInit(KeycloakSessionFactory factory) {
-        factory.register(event -> {
-            if (event instanceof PostMigrationEvent) {
-                logger.info("Startup/Migration detected. Initializing status list realms.");
-                initializeRealms(factory);
-            } else if (event instanceof RealmModel.RealmPostCreateEvent realmEvent) {
-                RealmModel realm = realmEvent.getCreatedRealm();
-                logger.infof("New realm created: %s. Triggering background registration.", realm.getName());
-                triggerBackgroundRegistration(factory, realm.getName());
-            }
-        });
-    }
-
-    private void initializeRealms(KeycloakSessionFactory factory) {
-        if (initialized) {
-            return;
-        }
-
-        initialized = true;
-        scheduleRegistrationReconciliation(factory);
-    }
-
-    private void scheduleRegistrationReconciliation(KeycloakSessionFactory factory) {
-        try (KeycloakSession session = factory.create()) {
-            TimerProvider timerProvider = session.getProvider(TimerProvider.class);
-            if (timerProvider == null) {
-                logger.warn("Keycloak timer provider is unavailable; relying on lazy realm registration.");
-                return;
-            }
-
-            timerProvider.scheduleTask(
-                    new ScheduledTask() {
-                        @Override
-                        public void run(KeycloakSession taskSession) {
-                            reconcileRealmRegistrations(taskSession);
-                        }
-
-                        @Override
-                        public String getTaskName() {
-                            return REGISTRATION_RECONCILIATION_TASK_NAME;
-                        }
-                    },
-                    REGISTRATION_RECONCILIATION_INITIAL_DELAY_MS,
-                    REGISTRATION_RECONCILIATION_INTERVAL_MS,
-                    REGISTRATION_RECONCILIATION_TASK_NAME);
-        } catch (Exception e) {
-            logger.error("Failed to schedule status list realm registration reconciliation", e);
-        }
-    }
-
-    private void reconcileRealmRegistrations(KeycloakSession session) {
-        List<String> realmNames =
-                session.realms().getRealmsStream().map(RealmModel::getName).toList();
-        for (String realmName : realmNames) {
-            RealmModel realm = session.realms().getRealmByName(realmName);
-            if (realm == null) {
-                continue;
-            }
-
-            if (registeredRealms.contains(realmName) || !new StatusListConfig(realm).isEnabled()) {
-                reconciliationAttempts.remove(realmName);
-                continue;
-            }
-
-            int attempt = reconciliationAttempts.merge(realmName, 1, Integer::sum);
-            if (attempt > MAX_RECONCILIATION_ATTEMPTS) {
-                continue;
-            }
-
-            if (attempt == MAX_RECONCILIATION_ATTEMPTS) {
-                logger.warnf(
-                        "Status list registration for realm %s reached the maximum of %d reconciliation attempts",
-                        realmName, MAX_RECONCILIATION_ATTEMPTS);
-            }
-            triggerBackgroundRegistration(session.getKeycloakSessionFactory(), realmName);
-        }
-    }
-
-    /**
-     * Helper to run a task asynchronously. Overridden in tests to run synchronously.
-     */
-    protected void runAsync(Runnable runnable) {
-        executor.execute(runnable);
-    }
-
-    /**
-     * Ensures the realm is registered as an issuer.
-     * Includes health checks and circuit breaker gating to prevent redundant or failing calls.
-     *
-     * @param session the KeycloakSession to use
-     * @param realm the realm to register
-     * @return true if successful or already registered
-     */
-    private boolean ensureRealmRegistered(KeycloakSession session, RealmModel realm) {
-        String realmName = realm.getName();
-
-        if (registeredRealms.contains(realmName)) {
-            return true;
-        }
-
-        StatusListConfig config = new StatusListConfig(realm);
-        if (!config.isEnabled()) {
-            return true;
-        }
-
-        CircuitBreaker cb = CircuitBreaker.getInstance(
-                "RegCooldown-" + realm.getId(), 1, 300, (int) (config.getRegistrationCooldownMs() / 1000));
-
-        try {
-            cb.checkState();
-            if (registerRealmAsIssuer(session, realm)) {
-                cb.recordSuccess();
-                return true;
-            }
-            cb.recordFailure();
-            return false;
-        } catch (CircuitBreaker.CircuitBreakerOpenException e) {
-            logger.debugf("Registration for realm %s skipped due to cooldown.", realmName);
-            return false;
-        }
-    }
-
-    private boolean registerRealmAsIssuer(KeycloakSession session, RealmModel realm) {
-        String realmName = realm.getName();
-        logger.info("Starting registration for realm: " + realmName);
-
-        try {
-            StatusListConfig config = new StatusListConfig(realm);
-
-            Optional<CryptoIdentityService.KeyData> keyData = getRealmKeyData(session, realm);
-            if (keyData.isEmpty()) {
-                return false;
-            }
-
-            CryptoIdentityService cryptoIdentityService = new CryptoIdentityService(session);
-
-            // Separate CircuitBreaker for HTTP calls vs. registration cooldown.
-            CircuitBreaker httpClientCB = CircuitBreaker.getInstance(config);
-
-            StatusListHttpClient httpClient = new ApacheHttpStatusListClient(
-                    config.getServerUrl(),
-                    cryptoIdentityService.getJwtToken(config),
-                    CustomHttpClient.getRegistrationHttpClient(config),
-                    httpClientCB);
-
-            StatusListService statusListService = new StatusListService(httpClient);
-
-            if (!statusListService.checkServerHealth()) {
-                logger.warn("Status list server health check failed for realm: " + realmName);
-                return false;
-            }
-            // Register the realm as an issuer using the retrieved public key
-            statusListService.registerIssuer(
-                    config.getTokenIssuerId(), keyData.get().jwk());
-
-            registeredRealms.add(realmName);
-            reconciliationAttempts.remove(realmName);
-            logger.info("Successfully registered realm as issuer: " + realmName);
-
-            return true;
-        } catch (StatusListServerException | StatusListException e) {
-            logger.error("Registration failed for realm: " + realmName + ". Error: " + e.getMessage(), e);
-            return false;
-        }
-    }
-
-    private Optional<CryptoIdentityService.KeyData> getRealmKeyData(KeycloakSession session, RealmModel realm) {
-        try {
-            return Optional.of(CryptoIdentityService.getRealmKeyData(session, realm));
-        } catch (StatusListException e) {
-            logger.warn(
-                    "Key extraction failed for realm: " + realm.getName() + ". Registration will be retried later.");
-            return Optional.empty();
-        }
-    }
+    private RealmAsIssuerRegistrationService registrationService;
 
     @Override
     public String getId() {
@@ -297,10 +30,48 @@ public class StatusListRealmResourceProviderFactory implements RealmResourceProv
     }
 
     @Override
+    public RealmResourceProvider create(KeycloakSession session) {
+        RealmModel realm = session.getContext().getRealm();
+        if (realm != null && registrationService != null) {
+            // For robustness, re-attempt realm registration to recover from a potentially
+            // unsuccessful previous run. Simply skipped if realm marked as registered yet.
+            registrationService.triggerBackgroundRegistration(realm.getName(), 0, 0);
+        }
+
+        CredentialRevocationService revocationService = new CredentialRevocationService(session);
+        return new StatusListRealmResourceProvider(session, revocationService);
+    }
+
+    @Override
+    public void init(org.keycloak.Config.Scope config) {}
+
+    @Override
+    public void postInit(KeycloakSessionFactory factory) {
+        registrationService = createRegistrationService(factory);
+        factory.register(event -> {
+            if (event instanceof PostMigrationEvent) {
+                logger.info("Initializing realms as issuers on status list server");
+                registrationService.triggerBackgroundRegistration();
+            } else if (event instanceof RealmModel.RealmPostCreateEvent realmEvent) {
+                RealmModel realm = realmEvent.getCreatedRealm();
+                logger.infof("New realm created: %s. Registering as issuer on status list server", realm.getName());
+                registrationService.triggerBackgroundRegistration(realm.getName());
+            }
+        });
+    }
+
+    @Override
     public void close() {
-        registeredRealms.clear();
-        inFlight.clear();
-        reconciliationAttempts.clear();
-        initialized = false;
+        if (registrationService != null) {
+            registrationService.close();
+        }
+    }
+
+    /**
+     * Creates the registration service; overridable in tests to inject a version whose
+     * scheduling and HTTP clients are observable.
+     */
+    protected RealmAsIssuerRegistrationService createRegistrationService(KeycloakSessionFactory factory) {
+        return new RealmAsIssuerRegistrationService(factory);
     }
 }
