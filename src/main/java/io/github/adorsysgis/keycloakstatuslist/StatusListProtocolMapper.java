@@ -1,5 +1,6 @@
 package io.github.adorsysgis.keycloakstatuslist;
 
+import static io.github.adorsysgis.keycloakstatuslist.config.StatusListConfig.OVERFLOW_POLICY_REVOKE_OLDEST;
 import static io.github.adorsysgis.keycloakstatuslist.jpa.entity.StatusListMappingEntity.MappingStatus;
 
 import io.github.adorsysgis.keycloakstatuslist.client.ApacheHttpStatusListClient;
@@ -8,6 +9,7 @@ import io.github.adorsysgis.keycloakstatuslist.config.StatusListConfig;
 import io.github.adorsysgis.keycloakstatuslist.config.StatusListEndpointUriResolver;
 import io.github.adorsysgis.keycloakstatuslist.exception.CredentialIssuanceQuotaException;
 import io.github.adorsysgis.keycloakstatuslist.exception.StatusListException;
+import io.github.adorsysgis.keycloakstatuslist.exception.StatusListServerException;
 import io.github.adorsysgis.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
 import io.github.adorsysgis.keycloakstatuslist.jpa.repository.StatusListRepository;
 import io.github.adorsysgis.keycloakstatuslist.model.Status;
@@ -15,6 +17,7 @@ import io.github.adorsysgis.keycloakstatuslist.model.StatusListClaim;
 import io.github.adorsysgis.keycloakstatuslist.model.TokenStatus;
 import io.github.adorsysgis.keycloakstatuslist.service.CircuitBreaker;
 import io.github.adorsysgis.keycloakstatuslist.service.CredentialIssuanceQuotaService;
+import io.github.adorsysgis.keycloakstatuslist.service.CredentialRevocationService;
 import io.github.adorsysgis.keycloakstatuslist.service.CryptoIdentityService;
 import io.github.adorsysgis.keycloakstatuslist.service.CustomHttpClient;
 import io.github.adorsysgis.keycloakstatuslist.service.IssuedCredentialIdResolver;
@@ -28,6 +31,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 import org.apache.commons.collections4.ListUtils;
 import org.apache.hc.core5.http.URIScheme;
 import org.jboss.logging.Logger;
@@ -62,6 +66,16 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         maxCredentialsPerUser.setType(ProviderConfigProperty.STRING_TYPE);
         maxCredentialsPerUser.setDefaultValue("0");
         CONFIG_PROPERTIES.add(maxCredentialsPerUser);
+
+        ProviderConfigProperty overflowPolicy = new ProviderConfigProperty();
+        overflowPolicy.setName(StatusListConfig.STATUS_LIST_OVERFLOW_POLICY);
+        overflowPolicy.setLabel("Overflow policy");
+        overflowPolicy.setHelpText(
+                "When the max credentials limit is reached: REJECT fails issuance; REVOKE_OLDEST revokes the oldest non-revoked credential of this type and continues. Defaults to REJECT. The mapper value is used when set; otherwise the realm setting applies.");
+        overflowPolicy.setType(ProviderConfigProperty.LIST_TYPE);
+        overflowPolicy.setOptions(List.of(StatusListConfig.DEFAULT_OVERFLOW_POLICY, OVERFLOW_POLICY_REVOKE_OLDEST));
+        overflowPolicy.setDefaultValue(StatusListConfig.DEFAULT_OVERFLOW_POLICY);
+        CONFIG_PROPERTIES.add(overflowPolicy);
     }
 
     private final KeycloakSession session;
@@ -90,7 +104,10 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         this.statusListService =
                 config.isEnabled() && isValidHttpUrl(config.getServerUrl()) ? createStatusListService(session) : null;
         this.issuedCredentialIdResolver = new IssuedCredentialIdResolver(session);
-        this.credentialIssuanceQuotaService = new CredentialIssuanceQuotaService(session, statusListRepository);
+        this.credentialIssuanceQuotaService = new CredentialIssuanceQuotaService(
+                session,
+                statusListRepository,
+                new CredentialRevocationService(session, statusListService, statusListRepository));
     }
 
     /**
@@ -140,7 +157,8 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         return """
                 Adds a status list claim to issued verifiable credentials.
                 The status list server URL is configured at the realm level.
-                Optionally limits how many non-revoked credentials of this type a holder may have.
+                Optionally limits how many non-revoked credentials of this type a holder may have,
+                and chooses whether to reject issuance or revoke the oldest credential when the limit is reached.
                 """;
     }
 
@@ -201,8 +219,9 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         String userId = resolveHolderUserId(userSessionModel);
         String credentialConfigurationId =
                 authorization.credentialConfigurationId().orElse(null);
-        int maxCredentialsPerUser = credentialIssuanceQuotaService.resolveMax(
-                mapperModel, session.getContext().getRealm());
+        RealmModel realm = session.getContext().getRealm();
+        int maxCredentialsPerUser = credentialIssuanceQuotaService.resolveMax(mapperModel, realm);
+        String overflowPolicy = credentialIssuanceQuotaService.resolveOverflowPolicy(mapperModel, realm);
         credentialIssuanceQuotaService.requireHolderAndTypeWhenLimited(
                 userId, credentialConfigurationId, maxCredentialsPerUser);
 
@@ -212,6 +231,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
                 tokenId,
                 credentialConfigurationId,
                 maxCredentialsPerUser,
+                overflowPolicy,
                 config.getStatusListMaxEntries());
 
         if (status == null) {
@@ -294,9 +314,10 @@ public class StatusListProtocolMapper extends OID4VCMapper {
             String tokenId,
             String credentialConfigurationId,
             int maxCredentialsPerUser,
+            String overflowPolicy,
             int maxEntries) {
         StatusListMappingEntity mapping = createInitialMapping(userId, tokenId, credentialConfigurationId);
-        if (!reserveIndex(mapping, maxCredentialsPerUser, maxEntries)) {
+        if (!reserveIndex(mapping, maxCredentialsPerUser, overflowPolicy, maxEntries)) {
             return null;
         }
 
@@ -321,30 +342,77 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         return mapping;
     }
 
-    private boolean reserveIndex(StatusListMappingEntity mapping, int maxCredentialsPerUser, int maxEntries) {
+    private boolean reserveIndex(
+            StatusListMappingEntity mapping, int maxCredentialsPerUser, String overflowPolicy, int maxEntries) {
         try {
-            statusListRepository.withEntityManagerInTransaction(em -> {
-                StatusListMappingEntity latest = statusListRepository.lockLatestMapping(em, mapping.getRealmId());
-                mapping.setStatusListId(statusListRepository.getNextStatusListId(latest, maxEntries));
-                logger.debugf(
-                        "Booking next index for status list mapping: status_list_id=%s, userId=%s, tokenId=%s",
-                        mapping.getStatusListId(), mapping.getUserId(), mapping.getTokenId());
-                credentialIssuanceQuotaService.enforceWithinReservationTransaction(
-                        em,
-                        mapping.getRealmId(),
-                        mapping.getUserId(),
-                        mapping.getCredentialConfigurationId(),
-                        maxCredentialsPerUser,
-                        mapping.getTokenId());
-                persistInitialMapping(em, mapping);
-            });
-            return true;
+            // Status-list revokes are remote calls, so they run between the two reservation
+            // transactions instead of inside one that holds the realm lock.
+            ReservationOutcome outcome = tryReserve(mapping, maxCredentialsPerUser, overflowPolicy, maxEntries);
+            if (outcome.reserved()) {
+                return true;
+            }
+
+            credentialIssuanceQuotaService.revokeOldestForOverflow(outcome.toRevoke());
+
+            outcome = tryReserve(mapping, maxCredentialsPerUser, overflowPolicy, maxEntries);
+            if (outcome.reserved()) {
+                return true;
+            }
+
+            // Every selected revoke succeeded, so the slot was freed and then taken by a parallel
+            // issuance for the same holder and type. Report that as a plain limit conflict.
+            logger.warnf(
+                    "Freed slot was taken by a concurrent issuance: userId=%s, credentialConfigurationId=%s, pendingRevokes=%d",
+                    mapping.getUserId(),
+                    mapping.getCredentialConfigurationId(),
+                    outcome.toRevoke().size());
+            throw CredentialIssuanceQuotaException.limitReached(
+                    CredentialIssuanceQuotaService.FREED_SLOT_TAKEN_MESSAGE);
         } catch (RuntimeException e) {
             if (e instanceof CredentialIssuanceQuotaException) {
                 throw e;
             }
             logger.error("Failed to initiate index mapping", e);
             return false;
+        }
+    }
+
+    /**
+     * Either reserves an {@code INIT} row for {@code mapping}, or returns the oldest mappings that
+     * {@code REVOKE_OLDEST} must revoke before a reservation can succeed. {@code REJECT} throws.
+     */
+    private ReservationOutcome tryReserve(
+            StatusListMappingEntity mapping, int maxCredentialsPerUser, String overflowPolicy, int maxEntries) {
+        AtomicReference<ReservationOutcome> outcome = new AtomicReference<>();
+        statusListRepository.withEntityManagerInTransaction(em -> {
+            StatusListMappingEntity latest = statusListRepository.lockLatestMapping(em, mapping.getRealmId());
+            mapping.setStatusListId(statusListRepository.getNextStatusListId(latest, maxEntries));
+            logger.debugf(
+                    "Booking next index for status list mapping: status_list_id=%s, userId=%s, tokenId=%s",
+                    mapping.getStatusListId(), mapping.getUserId(), mapping.getTokenId());
+            List<StatusListMappingEntity> toRevoke = credentialIssuanceQuotaService.enforceWithinReservationTransaction(
+                    em,
+                    mapping.getRealmId(),
+                    mapping.getUserId(),
+                    mapping.getCredentialConfigurationId(),
+                    maxCredentialsPerUser,
+                    overflowPolicy,
+                    mapping.getTokenId());
+            if (!toRevoke.isEmpty()) {
+                outcome.set(ReservationOutcome.mustRevoke(toRevoke));
+                return;
+            }
+            persistInitialMapping(em, mapping);
+            outcome.set(ReservationOutcome.RESERVED);
+        });
+        return outcome.get();
+    }
+
+    private record ReservationOutcome(boolean reserved, List<StatusListMappingEntity> toRevoke) {
+        static final ReservationOutcome RESERVED = new ReservationOutcome(true, List.of());
+
+        static ReservationOutcome mustRevoke(List<StatusListMappingEntity> toRevoke) {
+            return new ReservationOutcome(false, toRevoke);
         }
     }
 
@@ -365,7 +433,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
             sendStatusToServer(mapping.getIdx(), mapping.getStatusListId());
             mapping.setStatus(MappingStatus.SUCCESS);
             return new Status(new StatusListClaim(mapping.getIdx(), uri));
-        } catch (StatusListException | IOException e) {
+        } catch (StatusListException | StatusListServerException | IOException e) {
             logger.error("Failed to send token status", e);
             mapping.setStatus(MappingStatus.FAILURE);
             return null;

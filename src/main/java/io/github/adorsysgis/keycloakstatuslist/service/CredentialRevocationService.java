@@ -109,11 +109,7 @@ public class CredentialRevocationService {
 
         try {
             StatusListMappingEntity mapping = resolveMappingForRevocation(user, realm, credentialId);
-            StatusEntry statusEntry = new StatusEntry(mapping.getIdx(), TokenStatus.INVALID);
-            StatusListPayload revocationPayload =
-                    new StatusListPayload(mapping.getStatusListId(), List.of(statusEntry));
-            getStatusListService().updateStatusList(revocationPayload, requestId);
-            mapping.setTokenStatus(TokenStatus.INVALID);
+            publishRevocation(mapping, requestId);
             statusListRepository.save(mapping);
 
             Instant revokedAt = Instant.now();
@@ -137,6 +133,32 @@ public class CredentialRevocationService {
                     requestId, e.getMessage(), e);
             throw new StatusListException("Failed to process issued credential revocation: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Marks a status-list mapping INVALID on the status list server, then persists via
+     * {@link StatusListRepository}. Used by {@code REVOKE_OLDEST} overflow handling after the
+     * reservation transaction has committed; must not run inside a transaction that holds the
+     * reservation lock, because the save opens its own transaction.
+     */
+    public void revokeMapping(StatusListMappingEntity mapping) throws StatusListException {
+        if (statusListRepository == null) {
+            throw new StatusListException(
+                    "Status list mapping repository is not available", HttpStatus.SC_INTERNAL_SERVER_ERROR);
+        }
+        publishRevocation(mapping, UUID.randomUUID().toString());
+        statusListRepository.save(mapping);
+    }
+
+    private void publishRevocation(StatusListMappingEntity mapping, String requestId) throws StatusListException {
+        if (mapping == null) {
+            throw new IllegalArgumentException("Status list mapping is required");
+        }
+
+        StatusEntry statusEntry = new StatusEntry(mapping.getIdx(), TokenStatus.INVALID);
+        StatusListPayload revocationPayload = new StatusListPayload(mapping.getStatusListId(), List.of(statusEntry));
+        getStatusListService().updateStatusList(revocationPayload, requestId);
+        mapping.setTokenStatus(TokenStatus.INVALID);
     }
 
     /**
@@ -169,7 +191,7 @@ public class CredentialRevocationService {
                 .map(IssuedVerifiableCredentialModel::getId)
                 .filter(StringUtil::isNotBlank)
                 .toList();
-        List<IssuedCredentialLimit> limits = new CredentialIssuanceQuotaService(session, statusListRepository)
+        List<IssuedCredentialLimit> limits = new CredentialIssuanceQuotaService(session, statusListRepository, this)
                 .listLimits(realm, userId, issuedCredentials);
         Map<String, StatusListMappingEntity> mappings =
                 statusListRepository.findMappingsByTokenIds(realm.getId(), userId, credentialIds);

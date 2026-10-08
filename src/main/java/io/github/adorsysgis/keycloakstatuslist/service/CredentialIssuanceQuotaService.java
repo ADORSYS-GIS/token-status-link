@@ -5,6 +5,7 @@ import static io.github.adorsysgis.keycloakstatuslist.config.StatusListConfig.ST
 import io.github.adorsysgis.keycloakstatuslist.StatusListProtocolMapper;
 import io.github.adorsysgis.keycloakstatuslist.config.StatusListConfig;
 import io.github.adorsysgis.keycloakstatuslist.exception.CredentialIssuanceQuotaException;
+import io.github.adorsysgis.keycloakstatuslist.exception.StatusListException;
 import io.github.adorsysgis.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
 import io.github.adorsysgis.keycloakstatuslist.jpa.entity.StatusListMappingEntity.MappingStatus;
 import io.github.adorsysgis.keycloakstatuslist.jpa.repository.StatusListRepository;
@@ -13,10 +14,12 @@ import io.github.adorsysgis.keycloakstatuslist.model.TokenStatus;
 import jakarta.persistence.EntityManager;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import org.jboss.logging.Logger;
@@ -42,19 +45,36 @@ public class CredentialIssuanceQuotaService {
 
     private static final Logger logger = Logger.getLogger(CredentialIssuanceQuotaService.class);
 
+    /**
+     * Mapped credentials are ordered by mapping creation time; unmapped leftovers by Keycloak's
+     * {@code issuedAt}. Both are {@code Time.currentTimeMillis()} values, so they compare directly.
+     */
+    private static final Comparator<Occupant> OLDEST_OCCUPANT = Comparator.comparing(
+                    Occupant::occupiedSince, Comparator.nullsLast(Long::compareTo))
+            .thenComparing(Occupant::tieBreakId, Comparator.nullsLast(String::compareTo));
+
     public static final String LIMIT_REACHED_MESSAGE =
             "Issued credential limit reached for this user and credential type";
     public static final String FAIL_CLOSED_MESSAGE =
             "Issued credential limit is configured but holder or credential type could not be resolved";
-    public static final String OVERFLOW_POLICY_REJECT = "REJECT";
+    public static final String REVOKE_OLDEST_FAILED_MESSAGE =
+            "Failed to revoke the oldest credential to free an issuance slot";
+    public static final String FREED_SLOT_TAKEN_MESSAGE =
+            "Issued credential limit reached for this user and credential type: a concurrent issuance took the freed slot";
     static final long MIN_IN_FLIGHT_INIT_WINDOW_MS = 60_000L;
 
     private final KeycloakSession session;
     private final StatusListRepository statusListRepository;
+    private final CredentialRevocationService credentialRevocationService;
 
-    public CredentialIssuanceQuotaService(KeycloakSession session, StatusListRepository statusListRepository) {
+    public CredentialIssuanceQuotaService(
+            KeycloakSession session,
+            StatusListRepository statusListRepository,
+            CredentialRevocationService credentialRevocationService) {
         this.session = session;
         this.statusListRepository = statusListRepository;
+        this.credentialRevocationService =
+                Objects.requireNonNull(credentialRevocationService, "credentialRevocationService is required");
     }
 
     /**
@@ -68,6 +88,21 @@ public class CredentialIssuanceQuotaService {
         }
 
         return realm == null ? 0 : new StatusListConfig(realm).getMaxCredentialsPerUser();
+    }
+
+    /**
+     * Resolves the overflow policy. A mapper / client-scope value wins when present. If the mapper
+     * omits the key, the optional realm attribute is used. Defaults to {@code REJECT}.
+     */
+    public String resolveOverflowPolicy(ProtocolMapperModel mapperModel, RealmModel realm) {
+        Optional<String> mapperValue = mapperConfigValue(mapperModel, StatusListConfig.STATUS_LIST_OVERFLOW_POLICY);
+        if (mapperValue.isPresent()) {
+            return StatusListConfig.parseOverflowPolicy(mapperValue.get());
+        }
+
+        return realm == null
+                ? StatusListConfig.DEFAULT_OVERFLOW_POLICY
+                : new StatusListConfig(realm).getOverflowPolicy();
     }
 
     /**
@@ -117,33 +152,131 @@ public class CredentialIssuanceQuotaService {
      * Unmapped issued credentials occupy only when they predate this issuance ({@code issuedAt}), so
      * a leftover from a finished attempt still blocks while a concurrent Keycloak row does not
      * deadlock both requests. Displayed {@code activeCount} still counts every unmapped leftover.
+     *
+     * <p>For {@code REVOKE_OLDEST}, selects the oldest occupying credentials needed to free room for
+     * this issuance ({@code countTowardLimit - max + 1}). The caller revokes them after this
+     * transaction commits ({@link #revokeOldestForOverflow}); they are not marked {@code INVALID}
+     * here. Only {@code SUCCESS} mappings can be revoked on the status-list server, so if any
+     * credential that must be freed is a {@code FAILURE} mapping or an unmapped leftover, issuance
+     * fails closed.
+     *
+     * @return mappings that must be revoked remotely after commit (possibly more than one when the
+     *     holder is above the configured max), or an empty list when no remote revoke is required
      */
-    public void enforceWithinReservationTransaction(
+    public List<StatusListMappingEntity> enforceWithinReservationTransaction(
             EntityManager em,
             String realmId,
             String userId,
             String credentialConfigurationId,
             int max,
+            String overflowPolicy,
             String currentTokenId) {
         if (max <= 0) {
-            return;
+            return List.of();
         }
         requireHolderAndTypeWhenLimited(userId, credentialConfigurationId, max);
 
         List<IssuedVerifiableCredentialModel> issued = loadIssuedCredentials(userId);
         List<StatusListMappingEntity> holderMappings = statusListRepository.findMappingsByUser(em, realmId, userId);
         RealmModel realm = currentRealm();
-        long activeCount = countOccupying(
+        List<Occupant> occupants = collectOccupants(
                 issued, latestByTokenId(holderMappings), credentialConfigurationId, realm, currentTokenId);
         long inFlightSince = Time.currentTimeMillis() - inFlightInitWindowMs(realm);
         long inFlight = countInFlight(holderMappings, credentialConfigurationId, currentTokenId, inFlightSince);
-        long countTowardLimit = activeCount + inFlight;
-        if (countTowardLimit >= max) {
+        long countTowardLimit = occupants.size() + inFlight;
+        if (countTowardLimit < max) {
+            return List.of();
+        }
+
+        String policy = StatusListConfig.parseOverflowPolicy(overflowPolicy);
+        if (StatusListConfig.OVERFLOW_POLICY_REVOKE_OLDEST.equals(policy)) {
+            return selectOccupantsToRevoke(
+                    occupants, userId, credentialConfigurationId, max, countTowardLimit, inFlight);
+        }
+
+        logger.warnf(
+                "Rejecting issuance: userId=%s, credentialConfigurationId=%s, countTowardLimit=%d, max=%d",
+                userId, credentialConfigurationId, countTowardLimit, max);
+        throw CredentialIssuanceQuotaException.limitReached(LIMIT_REACHED_MESSAGE);
+    }
+
+    /**
+     * Revokes mappings selected by {@code REVOKE_OLDEST} after the reservation transaction that
+     * identified them has committed. Calls the status-list server first for each mapping, then
+     * persists local {@code INVALID}. That order prefers the safer mismatch (server revoked, local
+     * still valid) over freeing a quota slot while the credential remains accepted by verifiers.
+     *
+     * <p>Mappings are revoked one by one. If one fails, the ones already revoked stay revoked and
+     * issuance fails closed; a retry recomputes what still needs to be freed.
+     */
+    public void revokeOldestForOverflow(List<StatusListMappingEntity> mappings) {
+        for (StatusListMappingEntity mapping : mappings) {
+            try {
+                credentialRevocationService.revokeMapping(mapping);
+            } catch (StatusListException | RuntimeException e) {
+                logger.errorf(
+                        e,
+                        "Failed to revoke oldest credential for overflow: mappingId=%s, tokenId=%s",
+                        mapping.getId(),
+                        mapping.getTokenId());
+                throw CredentialIssuanceQuotaException.failClosed(REVOKE_OLDEST_FAILED_MESSAGE);
+            }
+        }
+    }
+
+    /**
+     * Selects the oldest occupants needed to bring the holder under {@code max} after this issuance
+     * ({@code countTowardLimit - max + 1}). If one that must be freed is not a revocable
+     * {@code SUCCESS} mapping, fails closed.
+     *
+     * @return {@code SUCCESS} mappings awaiting remote revoke
+     */
+    private List<StatusListMappingEntity> selectOccupantsToRevoke(
+            List<Occupant> occupants,
+            String userId,
+            String credentialConfigurationId,
+            int max,
+            long countTowardLimit,
+            long inFlight) {
+        long slotsToFree = countTowardLimit - max + 1;
+        List<Occupant> oldestFirst = new ArrayList<>(occupants);
+        oldestFirst.sort(OLDEST_OCCUPANT);
+
+        List<StatusListMappingEntity> toRevoke = new ArrayList<>();
+        for (Occupant occupant : oldestFirst) {
+            if (toRevoke.size() >= slotsToFree) {
+                break;
+            }
+            StatusListMappingEntity mapping = occupant.mapping();
+            if (mapping == null || mapping.getStatus() != MappingStatus.SUCCESS) {
+                logger.warnf(
+                        "Oldest occupying credential cannot be revoked on the status-list server: userId=%s, credentialConfigurationId=%s, credentialId=%s, mappingId=%s, mappingStatus=%s, slotsToFree=%d, countTowardLimit=%d, max=%d",
+                        userId,
+                        credentialConfigurationId,
+                        occupant.credential().getId(),
+                        mapping == null ? null : mapping.getId(),
+                        mapping == null ? "UNMAPPED" : mapping.getStatus(),
+                        slotsToFree,
+                        countTowardLimit,
+                        max);
+                throw CredentialIssuanceQuotaException.failClosed(REVOKE_OLDEST_FAILED_MESSAGE);
+            }
+            toRevoke.add(mapping);
+        }
+
+        if (toRevoke.size() < slotsToFree) {
+            // Every occupant is selected and the limit is still met, so the remaining slots are
+            // held by concurrent in-flight reservations. Nothing to revoke; reject like REJECT does.
             logger.warnf(
-                    "Rejecting issuance: userId=%s, credentialConfigurationId=%s, countTowardLimit=%d, max=%d",
-                    userId, credentialConfigurationId, countTowardLimit, max);
+                    "In-flight reservations fill the limit under REVOKE_OLDEST: userId=%s, credentialConfigurationId=%s, inFlight=%d, countTowardLimit=%d, max=%d",
+                    userId, credentialConfigurationId, inFlight, countTowardLimit, max);
             throw CredentialIssuanceQuotaException.limitReached(LIMIT_REACHED_MESSAGE);
         }
+
+        logger.infof(
+                "Selected %d oldest occupying mapping(s) for overflow revoke: userId=%s, credentialConfigurationId=%s, slotsToFree=%d, countTowardLimit=%d, max=%d",
+                toRevoke.size(), userId, credentialConfigurationId, slotsToFree, countTowardLimit, max);
+        return List.copyOf(toRevoke);
     }
 
     /**
@@ -196,8 +329,9 @@ public class CredentialIssuanceQuotaService {
         }
 
         long activeCount = activeCounts.getOrDefault(credentialConfigurationId, 0L);
+        String overflowPolicy = resolveOverflowPolicy(mapper, realm);
         return Optional.of(new IssuedCredentialLimit(
-                credentialConfigurationId, max, activeCount, Math.max(0L, max - activeCount), OVERFLOW_POLICY_REJECT));
+                credentialConfigurationId, max, activeCount, Math.max(0L, max - activeCount), overflowPolicy));
     }
 
     private List<IssuedVerifiableCredentialModel> loadIssuedCredentials(String userId) {
@@ -232,17 +366,18 @@ public class CredentialIssuanceQuotaService {
         return ids;
     }
 
-    private long countOccupying(
+    /** The holder's credentials of {@code credentialConfigurationId} that occupy a quota slot. */
+    private List<Occupant> collectOccupants(
             Collection<IssuedVerifiableCredentialModel> issuedCredentials,
             Map<String, StatusListMappingEntity> mappings,
             String credentialConfigurationId,
             RealmModel realm,
             String currentTokenId) {
+        List<Occupant> occupants = new ArrayList<>();
         if (issuedCredentials == null || StringUtil.isBlank(credentialConfigurationId)) {
-            return 0L;
+            return occupants;
         }
         IssuedVerifiableCredentialModel current = findIssued(issuedCredentials, currentTokenId);
-        long count = 0L;
         for (IssuedVerifiableCredentialModel credential : issuedCredentials) {
             if (credential == null || StringUtil.isBlank(credential.getId())) {
                 continue;
@@ -255,10 +390,10 @@ public class CredentialIssuanceQuotaService {
                 continue;
             }
             if (occupiesQuota(mapping) && (mapping != null || isPriorLeftover(credential, current))) {
-                count++;
+                occupants.add(new Occupant(credential, mapping));
             }
         }
-        return count;
+        return occupants;
     }
 
     private Map<String, Long> countOccupyingByType(
@@ -407,5 +542,15 @@ public class CredentialIssuanceQuotaService {
 
         String value = mapperModel.getConfig().get(key);
         return StringUtil.isBlank(value) ? Optional.empty() : Optional.of(value);
+    }
+
+    private record Occupant(IssuedVerifiableCredentialModel credential, StatusListMappingEntity mapping) {
+        Long occupiedSince() {
+            return mapping != null ? mapping.getCreatedTimestamp() : credential.getIssuedAt();
+        }
+
+        String tieBreakId() {
+            return mapping != null ? mapping.getId() : credential.getId();
+        }
     }
 }

@@ -34,6 +34,7 @@ The plugin can be configured at the realm level with the following properties:
 | `status-list-mandatory`                         | If true, publication failures block issuance; if false, failures are logged and issuance continues without a status claim                                                                                                          | `false`          |
 | `status-list-max-entries`                       | Maximum number of entries to publish under the same status list                                                                                                                                                                    | `10000`          |
 | `status-list-max-credentials-per-user`          | Optional realm fallback for the maximum number of non-revoked credentials per holder and credential type. Mapper config takes precedence. Absent or `0` means unlimited. Non-numeric or negative values are rejected (fail closed) | `0`              |
+| `status-list-overflow-policy`                   | Optional realm fallback for overflow behavior when the max is reached: `REJECT` or `REVOKE_OLDEST`. Mapper config takes precedence. Defaults to `REJECT`                                                                           | `REJECT`         |
 | `status-list-tls-trust-all`                     | Instructs the status-list http-client to trust all TLS certificates. **DO NOT USE IN PRODUCTION**                                                                                                                                  | `false`          |
 | `status-list-tls-ca-cert-path`                  | Path to a PEM-encoded CA certificate to be trusted by the status-list http-client, in addition to the JVM defaults                                                                                                                 | `null`           |
 
@@ -47,16 +48,34 @@ To enable the Status List protocol mapper, attach it to the client scope for the
   "protocol": "oid4vc",
   "protocolMapper": "oid4vc-status-list-claim-mapper",
   "config": {
-    "status-list-max-credentials-per-user": "3"
+    "status-list-max-credentials-per-user": "3",
+    "status-list-overflow-policy": "REJECT"
   }
 }
 ```
 
-<!-- TODO: Rework this section. Some sentences are hard to follow, and the behavior is under active reconsideration. -->
+`status-list-max-credentials-per-user` is optional. If you omit it or leave it blank, the plugin inherits the realm fallback. You can set it to `0` to leave this credential type unlimited.
 
-`status-list-max-credentials-per-user` is optional. Omit or blank to inherit the realm fallback; `0` leaves this type unlimited.
+A positive value limits how many credentials of that type a holder may keep at the same time. A credential issued by Keycloak counts toward the limit unless it has been revoked. In detail, it counts when any of these is true:
 
-A positive value caps live holdings of that type: `SUCCESS`/`FAILURE` mappings that still have an issued credential and are not `INVALID`. `FAILURE` counts because issuance continues when status-list is not mandatory. `SUSPENDED` still occupies a slot; revoke frees one. `limits.activeCount` is that same count. In-flight `INIT` rows count only during reservation (not in `activeCount`) so concurrent requests cannot overshoot.
+- It has a status-list mapping with status `SUCCESS`, and the plugin has not marked it `INVALID`.
+- It has a mapping with status `FAILURE`. The plugin could not publish its status, but Keycloak may still have delivered the credential when the status list is not mandatory.
+- It has no mapping at all. This happens when an issuance attempt failed after Keycloak had already recorded the credential.
+
+A `SUSPENDED` credential still counts; revoking it frees its slot. The `limits.activeCount` field in the listing endpoint uses the same count. While reserving a slot, the plugin also counts other issuance requests that are still in progress, so parallel requests cannot exceed the limit. Those in-progress requests are not part of `activeCount`.
+
+When the holder has reached the limit, the plugin applies `status-list-overflow-policy`. The plugin reads the policy from the mapper first, then from the optional realm attribute, and falls back to `REJECT`:
+
+- `REJECT` — The plugin refuses the new issuance with `409` and `credential_limit_reached`.
+- `REVOKE_OLDEST` — The plugin revokes the holder's oldest credentials of that type until the new credential fits, then continues with the issuance. If an administrator lowered the limit (for example from 5 to 3 while the holder had 5), the plugin revokes 3 credentials: 2 to get back under the new limit and 1 to make room for the new credential.
+
+With `REVOKE_OLDEST`, the plugin only revokes a credential through the status-list server. It marks the credential `INVALID` locally only after the server has accepted the revocation. A `FAILURE` credential or a credential without a mapping cannot be revoked that way. If such a credential is among the oldest ones that must go, the plugin refuses the issuance with `400` and `credential_limit_unresolved` rather than exceed the limit.
+
+A revocation that has succeeded is never undone. If the plugin revokes several credentials and one of them fails, the earlier ones stay revoked and the issuance fails. If the revocation succeeds but publishing the new credential fails afterwards, the old credential also stays revoked.
+
+Two parallel requests from the same holder may revoke the same oldest credential. Only one of them can take the freed slot. The other one fails with `409` and `credential_limit_reached`, and the holder can simply retry.
+
+Known limitation: a failed issuance attempt leaves behind a `FAILURE` or unmapped credential that still counts toward the limit and cannot be revoked. Under `REVOKE_OLDEST`, that holder cannot receive a new credential of that type until the leftover is removed.
 
 ## HTTP Endpoints
 
@@ -185,8 +204,8 @@ Each `limits` entry describes the holder's quota for one credential type:
 | `credentialConfigurationId` | string | Credential type the cap applies to                                                                                        |
 | `max`                       | number | Configured maximum of non-revoked credentials of this type                                                                |
 | `activeCount`               | number | `SUCCESS`/`FAILURE` mappings that still have an issued credential (not `INVALID`). In-flight `INIT` rows are not included |
-| `remaining`                 | number | Slots left before issuance of this type is rejected                                                                       |
-| `overflowPolicy`            | string | Currently always `REJECT`                                                                                                 |
+| `remaining`                 | number | Slots left before the overflow policy applies                                                                             |
+| `overflowPolicy`            | string | Configured overflow behavior: `REJECT` or `REVOKE_OLDEST`                                                                 |
 
 ## Performance Considerations
 
