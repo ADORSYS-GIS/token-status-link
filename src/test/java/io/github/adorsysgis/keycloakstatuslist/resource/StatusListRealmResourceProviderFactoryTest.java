@@ -103,10 +103,9 @@ class StatusListRealmResourceProviderFactoryTest extends MockKeycloakTest {
         registrationService.triggerBackgroundRegistration(TEST_REALM_NAME, initialDelay, maxRetries);
     }
 
-    @Test
-    void testCreateWithoutPostInitBuildsProviderWithoutScheduling() {
-        factory.create(session);
-        verifyNoSchedules();
+    /** Immediate trigger: the attempt runnable can be observed right away on the test thread. */
+    private void triggerImmediate() {
+        triggerBackground(0L, 0);
     }
 
     @Test
@@ -146,12 +145,10 @@ class StatusListRealmResourceProviderFactoryTest extends MockKeycloakTest {
     }
 
     @Test
-    void testCreateSchedulesAndRunsImmediateRegistration() throws StatusListException {
+    void testSuccessfulImmediateTrigger() throws StatusListException {
         factory.postInit(sessionFactory);
-        factory.create(session);
+        triggerImmediate();
 
-        // Factory path: immediate trigger (0ms delay) for lazy on-request registration
-        verify(recordingScheduler, times(1)).schedule(any(Runnable.class), eq(0L), eq(TimeUnit.MILLISECONDS));
         runScheduled(0L);
 
         StatusListService service = constructed().get(0);
@@ -162,12 +159,11 @@ class StatusListRealmResourceProviderFactoryTest extends MockKeycloakTest {
     }
 
     @Test
-    void testLazyRegistrationStopsWhenRealmNoLongerExists() {
-        factory.postInit(sessionFactory);
-        factory.create(session);
+    void testRegistrationStopsWhenRealmNoLongerExists() {
+        triggerImmediate();
         lenient().when(realmProvider.getRealmByName(TEST_REALM_NAME)).thenReturn(null);
 
-        assertDoesNotThrow(() -> runScheduled(0L));
+        runScheduled(0L);
         assertEquals(0, constructed().size());
         verifyNoMoreInteractions(recordingScheduler);
     }
@@ -182,22 +178,21 @@ class StatusListRealmResourceProviderFactoryTest extends MockKeycloakTest {
         runScheduled(BACKOFF_MULTIPLIER_MS);
         runScheduled(2 * BACKOFF_MULTIPLIER_MS); // attempt 2 exhausts the budget: no further scheduling happens
 
-        verify(recordingScheduler, times(3)).schedule(any(Runnable.class), any(Long.class), eq(TimeUnit.MILLISECONDS));
+        verify(recordingScheduler, times(3)).schedule(any(Runnable.class), anyLong(), eq(TimeUnit.MILLISECONDS));
         verifyNoMoreInteractions(recordingScheduler);
     }
 
     @Test
     void testFailingRegistrationAfterBudgetIsPickedUpByNextTrigger() {
         stubFailingRegistration();
-        factory.postInit(sessionFactory);
-        factory.create(session);
 
         // Exhaust the 0-retry budget: no rescheduling after the failing attempt
+        triggerImmediate();
         runScheduled(0L);
         verifyNoMoreInteractions(recordingScheduler);
 
-        // New trigger passes: a second registration run is scheduled
-        triggerBackground(0, 0);
+        // New trigger passes: a second registration run is scheduled (budget was exhausted)
+        triggerImmediate();
         runScheduled(0L);
         assertEquals(2, constructed().size());
     }
@@ -205,8 +200,7 @@ class StatusListRealmResourceProviderFactoryTest extends MockKeycloakTest {
     @Test
     void testUnhealthyStatusListServerSkipsIssuerRegistration() throws StatusListException {
         statusListServiceStub = service -> when(service.checkServerHealth()).thenReturn(false);
-        factory.postInit(sessionFactory);
-        factory.create(session);
+        triggerImmediate();
 
         runScheduled(0L);
 
@@ -217,8 +211,7 @@ class StatusListRealmResourceProviderFactoryTest extends MockKeycloakTest {
 
     @Test
     void testKeyExtractionFailureLeavesAttemptForgottenAfterBudget() {
-        factory.postInit(sessionFactory);
-        factory.create(session);
+        triggerImmediate();
         mockedCryptoIdentityStatic
                 .when(() -> CryptoIdentityService.getRealmKeyData(any(), any()))
                 .thenThrow(new StatusListException("Key not found"));
@@ -267,11 +260,6 @@ class StatusListRealmResourceProviderFactoryTest extends MockKeycloakTest {
                     .when(service)
                     .registerIssuer(any(), any());
         };
-    }
-
-    private void verifyNoSchedules() {
-        verify(recordingScheduler, never()).schedule(any(Runnable.class), anyLong(), any(TimeUnit.class));
-        verifyNoMoreInteractions(recordingScheduler);
     }
 
     @FunctionalInterface

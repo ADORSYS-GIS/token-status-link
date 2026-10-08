@@ -31,13 +31,6 @@ public class StatusListRealmResourceProviderFactory implements RealmResourceProv
 
     @Override
     public RealmResourceProvider create(KeycloakSession session) {
-        RealmModel realm = session.getContext().getRealm();
-        if (realm != null && registrationService != null) {
-            // For robustness, re-attempt realm registration to recover from a potentially
-            // unsuccessful previous run. Simply skipped if realm marked as registered yet.
-            registrationService.triggerBackgroundRegistration(realm.getName(), 0, 0);
-        }
-
         CredentialRevocationService revocationService = new CredentialRevocationService(session);
         return new StatusListRealmResourceProvider(session, revocationService);
     }

@@ -232,5 +232,5 @@ public class RealmAsIssuerRegistrationService {
      * Progress marker threaded through the scheduler:
      * which realm, which attempt no. (counted from 0), within which retry budget.
      */
-    private record Attempt(String realmName, int attempt, int maxRetries) {}
+    public record Attempt(String realmName, int attempt, int maxRetries) {}
 }
