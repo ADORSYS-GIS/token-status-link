@@ -78,24 +78,13 @@ public class CustomHttpClient {
     }
 
     /**
-     * Creates an HTTP client for registration operations (background).
-     * Can have longer timeouts and more retries since it doesn't block user threads.
-     *
-     * @param config the status list configuration
-     * @return configured HTTP client
-     */
-    public static CloseableHttpClient getRegistrationHttpClient(StatusListConfig config) {
-        return createHttpClient(config.getRegistrationTimeout(), config.getRegistrationRetries(), config);
-    }
-
-    /**
      * Legacy method for backward compatibility - defaults to issuance policy.
      */
     public static CloseableHttpClient getHttpClient(StatusListConfig config) {
         return getIssuanceHttpClient(config);
     }
 
-    private static CloseableHttpClient createHttpClient(int timeoutMs, int maxRetries, StatusListConfig config) {
+    static CloseableHttpClient createHttpClient(int timeoutMs, int maxRetries, StatusListConfig config) {
         if (timeoutMs <= 0) {
             timeoutMs = DEFAULT_CONNECT_TIMEOUT;
         }
@@ -324,18 +313,18 @@ public class CustomHttpClient {
             @Override
             public boolean retryRequest(
                     HttpRequest httpRequest, IOException e, int execCount, HttpContext httpContext) {
-                logger.warnf("[Attempt %d/%d] Error sending status: %s", execCount, maxRetries, e.getMessage());
+                logger.warnf("[Attempt %d/%d] Error sending status: %s", execCount, maxRetries + 1, e.getMessage());
                 return execCount <= maxRetries;
             }
 
             @Override
             public boolean retryRequest(HttpResponse response, int execCount, HttpContext context) {
                 int status = response.getCode();
-                Boolean isRetriable = status >= HttpStatus.SC_INTERNAL_SERVER_ERROR;
+                boolean isRetriable = status >= HttpStatus.SC_INTERNAL_SERVER_ERROR;
                 if (isRetriable) {
                     logger.warnf(
                             "[Attempt %d/%d] Failed to send status. Response: %d %s",
-                            execCount, maxRetries, status, response.getReasonPhrase());
+                            execCount, maxRetries + 1, status, response.getReasonPhrase());
                 }
                 return execCount <= maxRetries && isRetriable;
             }

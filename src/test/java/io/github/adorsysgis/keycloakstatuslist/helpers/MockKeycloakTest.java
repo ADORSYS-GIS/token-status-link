@@ -33,6 +33,7 @@ import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.models.KeycloakTransactionManager;
 import org.keycloak.models.RealmModel;
+import org.keycloak.models.RealmProvider;
 import org.keycloak.models.UserSessionModel;
 import org.keycloak.util.JsonSerialization;
 import org.mockito.Mock;
@@ -66,6 +67,9 @@ public class MockKeycloakTest {
 
     @Mock
     protected KeycloakContext context;
+
+    @Mock
+    protected RealmProvider realmProvider;
 
     @Mock
     protected RealmModel realm;
