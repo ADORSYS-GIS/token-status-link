@@ -127,7 +127,7 @@ URL. Here is a sample `config.override.yaml` for a local 26.7 demo:
 
 ```yaml
 keycloak:
-  version: "26.7.2"
+  version: "26.8.0"
   enable_preauth_code: true
   enable_rest_credential_offer: true
   enable_credential_offer_create: true
@@ -152,7 +152,7 @@ For reference, these versions of Keycloak and the plugins have been successfully
 
 | Component           | Version | Source                                                                    |
 | ------------------- | ------- | ------------------------------------------------------------------------- |
-| Keycloak            | 26.7.2  | https://www.keycloak.org/archive/downloads-26.7.2.html                    |
+| Keycloak            | 26.8.0  | https://www.keycloak.org/archive/downloads-26.8.0.html                    |
 | Token Status plugin | 0.4.0   | https://github.com/ADORSYS-GIS/token-status-link/releases/tag/v0.4.0      |
 | OpenID4VP plugin    | 1.3.8   | https://github.com/ADORSYS-GIS/keycloak-oid4vp-plugin/releases/tag/v1.3.8 |
 
