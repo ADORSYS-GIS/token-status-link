@@ -18,7 +18,7 @@ This plugin has been tested and verified to work with:
 
 | Component | Version |
 | --------- | ------- |
-| Keycloak  | 26.7.2  |
+| Keycloak  | 26.8.0  |
 
 It works with any status list server that implements both the
 [OAuth 2.0 Status List](https://datatracker.ietf.org/doc/draft-ietf-oauth-status-list) format and the management API

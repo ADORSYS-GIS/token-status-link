@@ -119,12 +119,18 @@
   "components": {
     "org.keycloak.keys.KeyProvider": [
       {
-        "name": "ecdsa-generated",
-        "providerId": "ecdsa-generated",
+        "name": "java-keystore",
+        "providerId": "java-keystore",
         "config": {
           "algorithm": ["ES256"],
-          "ecdsaEllipticCurveKey": ["P-256"],
-          "ecGenerateCertificate": ["true"]
+          "active": ["true"],
+          "enabled": ["true"],
+          "priority": ["100"],
+          "keystore": ["keystore.p12"],
+          "keystorePassword": ["password"],
+          "keystoreType": ["PKCS12"],
+          "keyAlias": ["oid4vci-issuer"],
+          "keyPassword": ["password"]
         }
       }
     ]

@@ -24,12 +24,15 @@ import org.keycloak.representations.idm.RoleRepresentation;
 import org.keycloak.representations.idm.UserRepresentation;
 import org.keycloak.util.JsonSerialization;
 import org.testcontainers.Testcontainers;
+import org.testcontainers.utility.MountableFile;
 
 abstract class BaseKeycloakIntegrationTest {
 
-    private static final String DEFAULT_KEYCLOAK_VERSION = "26.7.2";
+    private static final String DEFAULT_KEYCLOAK_VERSION = "26.8.0";
     private static final String KEYCLOAK_IMAGE = "quay.io/keycloak/keycloak:";
     static final String REALM = "oid4vc-it";
+    private static final String KEYSTORE_FILE_NAME = "keystore.p12";
+    private static final String KEYSTORE_CONTAINER_PATH = "/opt/keycloak/data/" + REALM + "/" + KEYSTORE_FILE_NAME;
     static final String PASSWORD = "password";
     static final String CLIENT_ID = "openid4vc-rest-api";
     static final String CLIENT_SECRET = "secret";
@@ -51,6 +54,8 @@ abstract class BaseKeycloakIntegrationTest {
                 .withDefaultProviderClasses()
                 .withProviderLibsFrom(providerLibs())
                 .withRealmImportFiles("/realms/oid4vc-it-realm.json")
+                .withCopyToContainer(
+                        MountableFile.forClasspathResource("/keystores/" + KEYSTORE_FILE_NAME), KEYSTORE_CONTAINER_PATH)
                 .withFeaturesEnabled("oid4vc-vci", "oid4vc-vci-rest-credential-offer", "oid4vc-vci-preauth-code")
                 .withEnv("KC_LOG_LEVEL", "INFO,io.github.adorsysgis.keycloakstatuslist:DEBUG")
                 .withEnv("JAVA_OPTS_APPEND", "-Xms512m -Xmx1536m");
