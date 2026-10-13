@@ -178,7 +178,10 @@ public class StatusListProtocolMapper extends OID4VCMapper {
 
     @Override
     public void close() {
-        // No resources to close
+        // Release the HTTP client created for this session when the Keycloak session ends.
+        if (statusListService != null) {
+            statusListService.close();
+        }
     }
 
     @Override

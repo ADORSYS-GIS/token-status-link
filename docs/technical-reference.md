@@ -183,29 +183,31 @@ for credential types that have a configured maximum:
 }
 ```
 
-| Field                    | Type   | Description                                                                                                                |
-| ------------------------ | ------ | -------------------------------------------------------------------------------------------------------------------------- |
-| `credentialId`           | string | Internal ID of the issued credential record in Keycloak, created per issuance; used for status list mapping and revocation |
-| `verifiableCredentialId` | string | ID of the holder's verifiable credential (the OID4VCI credential identifier), stable per holder and credential type        |
-| `credentialType`         | string | Credential configuration/type (client-scope name)                                                                          |
-| `issuedAt`               | number | Issuance timestamp as recorded by Keycloak, in Unix epoch milliseconds                                                     |
-| `expiresAt`              | number | Expiration timestamp as recorded by Keycloak, in Unix epoch milliseconds; `null` if not set                                |
-| `clientId`               | string | Internal id of the client that requested the credential                                                                    |
-| `clientName`             | string | Display name of that client, falling back to its public client id                                                          |
-| `revision`               | string | Credential revision                                                                                                        |
-| `status`                 | string | `VALID`, `INVALID`, `SUSPENDED`, or `UNKNOWN` when no mapping exists                                                       |
-| `userId`                 | string | Keycloak user id of the credential holder                                                                                  |
-| `username`               | string | Username of the credential holder                                                                                          |
+| Field                    | Type    | Description                                                                                                                                                  |
+| ------------------------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `credentialId`           | string  | Internal ID of the issued credential record in Keycloak, created per issuance; used for status list mapping and revocation                                   |
+| `verifiableCredentialId` | string  | ID of the holder's verifiable credential (the OID4VCI credential identifier), stable per holder and credential type                                          |
+| `credentialType`         | string  | Credential configuration/type (client-scope name)                                                                                                            |
+| `issuedAt`               | number  | Issuance timestamp as recorded by Keycloak, in Unix epoch milliseconds                                                                                       |
+| `expiresAt`              | number  | Expiration timestamp as recorded by Keycloak, in Unix epoch milliseconds; `null` if not set                                                                  |
+| `clientId`               | string  | Internal id of the client that requested the credential                                                                                                      |
+| `clientName`             | string  | Display name of that client, falling back to its public client id                                                                                            |
+| `revision`               | string  | Credential revision                                                                                                                                          |
+| `status`                 | string  | `VALID`, `INVALID`, `SUSPENDED`, or `UNKNOWN` when no mapping exists                                                                                         |
+| `userId`                 | string  | Keycloak user id of the credential holder                                                                                                                    |
+| `username`               | string  | Username of the credential holder                                                                                                                            |
+| `mappingStatus`          | string  | Status-list mapping state for the credential: `INIT`, `SUCCESS`, `FAILURE`, or `null` when the credential has no mapping                                     |
+| `countsTowardQuota`      | boolean | Whether the credential occupies a slot of the holder's per-type limit (`true` when it has no mapping or a `SUCCESS`/`FAILURE` mapping that is not `INVALID`) |
 
 Each `limits` entry describes the holder's quota for one credential type:
 
-| Field                       | Type   | Description                                                                                                               |
-| --------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------- |
-| `credentialConfigurationId` | string | Credential type the cap applies to                                                                                        |
-| `max`                       | number | Configured maximum of non-revoked credentials of this type                                                                |
-| `activeCount`               | number | `SUCCESS`/`FAILURE` mappings that still have an issued credential (not `INVALID`). In-flight `INIT` rows are not included |
-| `remaining`                 | number | Slots left before the overflow policy applies                                                                             |
-| `overflowPolicy`            | string | Configured overflow behavior: `REJECT` or `REVOKE_OLDEST`                                                                 |
+| Field                       | Type   | Description                                                                                                                                                                                             |
+| --------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `credentialConfigurationId` | string | Credential type the cap applies to                                                                                                                                                                      |
+| `max`                       | number | Configured maximum of non-revoked credentials of this type                                                                                                                                              |
+| `activeCount`               | number | Issued credentials of this type that still occupy a slot: those with no mapping (unmapped leftover) or with a `SUCCESS`/`FAILURE` mapping that is not `INVALID`. In-flight `INIT` rows are not included |
+| `remaining`                 | number | Slots left before the overflow policy applies                                                                                                                                                           |
+| `overflowPolicy`            | string | Configured overflow behavior: `REJECT` or `REVOKE_OLDEST`                                                                                                                                               |
 
 ## Performance Considerations
 
