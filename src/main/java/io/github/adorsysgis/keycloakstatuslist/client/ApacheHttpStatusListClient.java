@@ -188,6 +188,20 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
         }
     }
 
+    /**
+     * Closes the underlying HTTP client.
+     */
+    @Override
+    public void close() {
+        if (httpClient != null) {
+            try {
+                httpClient.close();
+            } catch (IOException e) {
+                logger.errorf(e, "Failed to close HTTP client for server: %s", uriResolver.getServerUrl());
+            }
+        }
+    }
+
     private String statusEntriesJson(StatusListPayload payload) throws IOException {
         List<StatusEntryPayload> statusEntries = new ArrayList<>();
         for (StatusListPayload.StatusEntry statusEntry : payload.status()) {
