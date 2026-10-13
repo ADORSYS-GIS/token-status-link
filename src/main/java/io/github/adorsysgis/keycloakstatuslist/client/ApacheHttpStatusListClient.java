@@ -9,6 +9,7 @@ import io.github.adorsysgis.keycloakstatuslist.service.StatusListService.StatusL
 import java.io.IOException;
 import java.io.InterruptedIOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 import org.apache.hc.client5.http.auth.StandardAuthScheme;
@@ -86,7 +87,7 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
                     configureJsonRequest(httpPost, requestId, jsonPayload);
 
                     httpClient.execute(httpPost, response -> {
-                        String responseHeaders = response.getHeaders().toString();
+                        String responseHeaders = Arrays.toString(response.getHeaders());
                         logger.debugf(
                                 "Request ID: %s, Received response: Status code: %d, Headers: %s, Body: %s",
                                 requestId,
