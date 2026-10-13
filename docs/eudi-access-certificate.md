@@ -89,7 +89,7 @@ curl --fail --silent --show-error \
   --output realm.json
 
 jq --arg info "[{\"format\":\"registration_cert\",\"data\":\"$REGISTRATION_CERT_JWT\"}]" \
-  '.attributes["oid4vci.issuer_info"] = [$info]' \
+  '.attributes["oid4vci.issuer_info"] = $info' \
   realm.json \
   | curl --fail --silent --show-error \
       -H "Authorization: Bearer $ADMIN_TOKEN" \
@@ -99,7 +99,7 @@ jq --arg info "[{\"format\":\"registration_cert\",\"data\":\"$REGISTRATION_CERT_
       --data @-
 ```
 
-Realm attributes are stored as lists of strings, hence the single-element array around the JSON string.
+The realm attribute holds the serialized JSON array as a single string.
 
 An invalid value is logged and the claim is omitted from the metadata; it does not break the metadata endpoint.
 
