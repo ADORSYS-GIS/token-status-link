@@ -123,8 +123,10 @@ public class StatusListConfig {
      * @return the timeout in milliseconds
      */
     public int getIssuanceTimeout() {
-        String value = realm.getAttribute(STATUS_LIST_ISSUANCE_TIMEOUT);
-        return value != null ? Integer.parseInt(value) : DEFAULT_ISSUANCE_TIMEOUT;
+        return intAttribute(
+                STATUS_LIST_ISSUANCE_TIMEOUT,
+                realm.getAttribute(STATUS_LIST_ISSUANCE_TIMEOUT),
+                DEFAULT_ISSUANCE_TIMEOUT);
     }
 
     /**
@@ -133,8 +135,10 @@ public class StatusListConfig {
      * @return the timeout in milliseconds
      */
     public int getRegistrationTimeout() {
-        String value = realm.getAttribute(STATUS_LIST_REGISTRATION_TIMEOUT);
-        return value != null ? Integer.parseInt(value) : DEFAULT_REGISTRATION_TIMEOUT;
+        return intAttribute(
+                STATUS_LIST_REGISTRATION_TIMEOUT,
+                realm.getAttribute(STATUS_LIST_REGISTRATION_TIMEOUT),
+                DEFAULT_REGISTRATION_TIMEOUT);
     }
 
     /**
@@ -143,8 +147,10 @@ public class StatusListConfig {
      * @return the maximum number of retries
      */
     public int getRegistrationRetries() {
-        String value = realm.getAttribute(STATUS_LIST_REGISTRATION_RETRIES);
-        return value != null ? Integer.parseInt(value) : DEFAULT_REGISTRATION_RETRIES;
+        return intAttribute(
+                STATUS_LIST_REGISTRATION_RETRIES,
+                realm.getAttribute(STATUS_LIST_REGISTRATION_RETRIES),
+                DEFAULT_REGISTRATION_RETRIES);
     }
 
     /**
@@ -153,8 +159,10 @@ public class StatusListConfig {
      * @return the cooldown period in milliseconds
      */
     public long getRegistrationCooldownMs() {
-        String value = realm.getAttribute(STATUS_LIST_REGISTRATION_COOLDOWN);
-        return value != null ? Long.parseLong(value) : DEFAULT_REGISTRATION_COOLDOWN;
+        return longAttribute(
+                STATUS_LIST_REGISTRATION_COOLDOWN,
+                realm.getAttribute(STATUS_LIST_REGISTRATION_COOLDOWN),
+                DEFAULT_REGISTRATION_COOLDOWN);
     }
 
     /**
@@ -164,8 +172,50 @@ public class StatusListConfig {
      * @return the number of failures/timeouts before opening the circuit
      */
     public int getCircuitBreakerFailureThreshold() {
-        String value = realm.getAttribute(STATUS_LIST_CIRCUIT_BREAKER_FAILURE_THRESHOLD);
-        return value != null ? Integer.parseInt(value) : DEFAULT_FAILURE_THRESHOLD;
+        return intAttribute(
+                STATUS_LIST_CIRCUIT_BREAKER_FAILURE_THRESHOLD,
+                realm.getAttribute(STATUS_LIST_CIRCUIT_BREAKER_FAILURE_THRESHOLD),
+                DEFAULT_FAILURE_THRESHOLD);
+    }
+
+    /**
+     * Parses an integer realm attribute, falling back to {@code defaultValue} when the value is
+     * absent or malformed. Malformed values are logged instead of throwing a raw
+     * {@link NumberFormatException}.
+     *
+     * @param propertyName the realm attribute name, used in the warning message
+     * @param value the raw attribute value (may be null)
+     * @param defaultValue the documented default
+     */
+    private int intAttribute(String propertyName, String value, int defaultValue) {
+        if (value == null) {
+            return defaultValue;
+        }
+        try {
+            return Integer.parseInt(value.trim());
+        } catch (NumberFormatException e) {
+            logger.warnf(
+                    "Invalid %s value '%s' for realm %s. Using default: %d",
+                    propertyName, value, realm.getName(), defaultValue);
+            return defaultValue;
+        }
+    }
+
+    /**
+     * Long variant of {@link #intAttribute(String, String, int)} for {@code long} attributes.
+     */
+    private long longAttribute(String propertyName, String value, long defaultValue) {
+        if (value == null) {
+            return defaultValue;
+        }
+        try {
+            return Long.parseLong(value.trim());
+        } catch (NumberFormatException e) {
+            logger.warnf(
+                    "Invalid %s value '%s' for realm %s. Using default: %d",
+                    propertyName, value, realm.getName(), defaultValue);
+            return defaultValue;
+        }
     }
 
     /**
