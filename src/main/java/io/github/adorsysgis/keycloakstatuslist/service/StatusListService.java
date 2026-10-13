@@ -80,6 +80,13 @@ public class StatusListService {
         return httpClient.checkServerHealth();
     }
 
+    /**
+     * Closes the underlying HTTP client.
+     */
+    public void close() {
+        httpClient.close();
+    }
+
     public record StatusListPayload(String listId, List<StatusEntry> status) {
         public record StatusEntry(long index, TokenStatus status) {}
     }
