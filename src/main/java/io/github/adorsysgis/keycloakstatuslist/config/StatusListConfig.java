@@ -271,7 +271,8 @@ public class StatusListConfig {
     public int getStatusListMaxEntries() {
         String value = realm.getAttribute(STATUS_LIST_MAX_ENTRIES);
         if (value == null) {
-            logger.warnf(
+            // Unset is the documented default; DEBUG so issuance does not warn on every credential.
+            logger.debugf(
                     "No max entries value configured for realm %s. Using default: %d",
                     realm.getName(), DEFAULT_MAX_ENTRIES);
             return DEFAULT_MAX_ENTRIES;
