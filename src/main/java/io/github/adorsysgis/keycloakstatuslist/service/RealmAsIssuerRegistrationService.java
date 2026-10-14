@@ -132,8 +132,6 @@ public class RealmAsIssuerRegistrationService {
             KeycloakModelUtils.runJobInTransaction(factory, session -> {
                 RealmModel realm = session.realms().getRealmByName(realmName);
                 if (realm == null) {
-                    // Realm vanished: drop the entry so a same-named realm can register again.
-                    registrationStatuses.remove(realmName);
                     return;
                 }
 
@@ -160,16 +158,13 @@ public class RealmAsIssuerRegistrationService {
 
     /**
      * Performs one registration attempt for the realm and records its outcome directly in the
-     * {@link #registrationStatuses} map: COMPLETED on success, RUNNING when it will be retried
-     * (missing key, unhealthy server or failed HTTP call), and entry removal when retry should
-     * not be scheduled — realm disabled.
+     * {@link #registrationStatuses} map: COMPLETED on success, and unchanged from RUNNING when
+     * it will be retried (realm disabled, missing key, unhealthy server or failed HTTP call).
      */
     private void registerRealmAsIssuer(KeycloakSession session, RealmModel realm) {
         String realmName = realm.getName();
         StatusListConfig config = new StatusListConfig(realm);
         if (!config.isEnabled()) {
-            // Realm is disabled: drop the entry so a later enablement can register again.
-            registrationStatuses.remove(realmName);
             return;
         }
 

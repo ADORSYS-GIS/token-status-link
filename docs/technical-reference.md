@@ -219,12 +219,11 @@ instead of stalling user-facing requests.
 
 ### Registration (background)
 
-Realms are registered in the background on a dedicated thread (`status-list-registration`), so startup, realm creation,
-and request handling are never slowed down by the status list server. Registration is kicked off at startup, when a
-new realm is created, and whenever a realm's status list endpoints are first accessed. Failed registrations are
-retried with a linearly growing delay — 1s, then 10s, 20s, 30s — up to 3 retries; a realm that runs
-out of retries simply waits for the next trigger. Each attempt makes its HTTP requests exactly once and uses the
-`status-list-registration-timeout` (default: 30s).
+Realms are registered in the background on a dedicated thread (`status-list-registration`), so processes
+are never slowed down by the status list server. Registration is kicked off at startup and when a new realm
+is created. Failed registrations are retried with a linearly growing delay — 1s, then 10s, 20s, 30s — up to 3
+retries; a realm that runs out of retries simply waits for the next trigger. Each attempt makes its HTTP requests
+exactly once and uses the `status-list-registration-timeout` (default: 30s).
 
 ## Proxy support
 

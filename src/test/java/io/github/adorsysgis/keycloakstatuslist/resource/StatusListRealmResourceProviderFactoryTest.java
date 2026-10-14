@@ -159,13 +159,23 @@ class StatusListRealmResourceProviderFactoryTest extends MockKeycloakTest {
     }
 
     @Test
-    void testRegistrationStopsWhenRealmNoLongerExists() {
-        triggerImmediate();
+    void testRealmNotYetAvailableIsRescheduledForRetryUntilItExists() throws StatusListException {
+        // Realm is not found on the first attempt (e.g. its creation transaction has not committed).
+        triggerBackground(0L, 2);
         lenient().when(realmProvider.getRealmByName(TEST_REALM_NAME)).thenReturn(null);
 
         runScheduled(0L);
         assertEquals(0, constructed().size());
-        verifyNoMoreInteractions(recordingScheduler);
+        // Missing realm keeps the realm RUNNING, so a retry is scheduled.
+        verify(recordingScheduler, times(1))
+                .schedule(any(Runnable.class), eq(BACKOFF_MULTIPLIER_MS), eq(TimeUnit.MILLISECONDS));
+
+        // Realm becomes available before the retry runs: the next attempt registers it as issuer.
+        lenient().when(realmProvider.getRealmByName(TEST_REALM_NAME)).thenReturn(realm);
+        runScheduled(BACKOFF_MULTIPLIER_MS);
+
+        StatusListService service = constructed().get(0);
+        verify(service).registerIssuer(argThat(issuerId -> issuerId.endsWith("::" + TEST_REALM_NAME)), any());
     }
 
     @Test
@@ -219,6 +229,25 @@ class StatusListRealmResourceProviderFactoryTest extends MockKeycloakTest {
         runScheduled(0L);
         assertEquals(0, constructed().size());
         verifyNoMoreInteractions(recordingScheduler);
+    }
+
+    @Test
+    void testDisabledRealmKeepsScheduledForRetryUntilEnabled() throws StatusListException {
+        // Realm is disabled on the first attempt: registration is skipped but a retry is scheduled.
+        lenient().when(realm.getAttribute(STATUS_LIST_ENABLED)).thenReturn("false");
+        triggerBackground(0L, 2);
+
+        runScheduled(0L);
+        // Disabled attempt leaves the realm RUNNING, so it is rescheduled for retry.
+        verify(recordingScheduler, times(1))
+                .schedule(any(Runnable.class), eq(BACKOFF_MULTIPLIER_MS), eq(TimeUnit.MILLISECONDS));
+
+        // Enable the realm before the retry runs: the next attempt registers it as issuer.
+        lenient().when(realm.getAttribute(STATUS_LIST_ENABLED)).thenReturn("true");
+        runScheduled(BACKOFF_MULTIPLIER_MS);
+
+        StatusListService service = constructed().get(0);
+        verify(service).registerIssuer(argThat(issuerId -> issuerId.endsWith("::" + TEST_REALM_NAME)), any());
     }
 
     @Test
