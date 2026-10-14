@@ -168,7 +168,9 @@ for credential types that have a configured maximum:
       "revision": "1",
       "status": "VALID",
       "userId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-      "username": "alice"
+      "username": "alice",
+      "mappingStatus": "SUCCESS",
+      "countsTowardQuota": true
     }
   ],
   "limits": [
