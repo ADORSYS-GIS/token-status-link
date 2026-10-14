@@ -126,6 +126,9 @@ public class MockKeycloakTest {
                 throw new RuntimeException(e);
             }
         }
+        // Fail fast so broken test setup does not silently skip stubbing.
+        throw new IllegalArgumentException("Field '" + fieldName + "' not found on "
+                + target.getClass().getName() + " or any of its superclasses");
     }
 
     @BeforeEach
