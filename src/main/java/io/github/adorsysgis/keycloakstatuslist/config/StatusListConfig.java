@@ -188,7 +188,7 @@ public class StatusListConfig {
      * @param defaultValue the documented default
      */
     private int intAttribute(String propertyName, String value, int defaultValue) {
-        if (value == null) {
+        if (value == null || value.isBlank()) {
             return defaultValue;
         }
         try {
@@ -205,7 +205,7 @@ public class StatusListConfig {
      * Long variant of {@link #intAttribute(String, String, int)} for {@code long} attributes.
      */
     private long longAttribute(String propertyName, String value, long defaultValue) {
-        if (value == null) {
+        if (value == null || value.isBlank()) {
             return defaultValue;
         }
         try {
