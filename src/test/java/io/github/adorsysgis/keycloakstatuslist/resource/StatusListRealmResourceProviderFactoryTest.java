@@ -22,6 +22,7 @@ import static org.mockito.Mockito.when;
 import io.github.adorsysgis.keycloakstatuslist.config.StatusListConfig;
 import io.github.adorsysgis.keycloakstatuslist.exception.StatusListException;
 import io.github.adorsysgis.keycloakstatuslist.service.CircuitBreaker;
+import io.github.adorsysgis.keycloakstatuslist.service.CredentialRevocationService;
 import io.github.adorsysgis.keycloakstatuslist.service.CryptoIdentityService;
 import io.github.adorsysgis.keycloakstatuslist.service.CustomHttpClient;
 import io.github.adorsysgis.keycloakstatuslist.service.StatusListService;
@@ -152,6 +153,17 @@ class StatusListRealmResourceProviderFactoryTest {
         Object resource = provider.getResource();
         assertNotNull(resource);
         assertInstanceOf(StatusListRealmResourceProvider.class, resource);
+    }
+
+    @Test
+    void close_closesRevocationService() {
+        CredentialRevocationService revocationService = mock(CredentialRevocationService.class);
+        StatusListRealmResourceProvider provider =
+                new StatusListRealmResourceProvider(session, revocationService, factory);
+
+        provider.close();
+
+        verify(revocationService).close();
     }
 
     @Test

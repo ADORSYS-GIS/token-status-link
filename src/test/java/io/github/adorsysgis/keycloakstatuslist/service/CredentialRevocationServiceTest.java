@@ -1,5 +1,6 @@
 package io.github.adorsysgis.keycloakstatuslist.service;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -14,10 +15,13 @@ import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockConstruction;
+import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import io.github.adorsysgis.keycloakstatuslist.config.StatusListConfig;
 import io.github.adorsysgis.keycloakstatuslist.exception.StatusListException;
 import io.github.adorsysgis.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
 import io.github.adorsysgis.keycloakstatuslist.jpa.repository.StatusListRepository;
@@ -28,6 +32,7 @@ import io.github.adorsysgis.keycloakstatuslist.model.TokenStatus;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Stream;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -45,6 +50,8 @@ import org.keycloak.models.UserVerifiableCredentialModel;
 import org.keycloak.services.managers.AuthenticationManager.AuthResult;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
+import org.mockito.MockedConstruction;
+import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 @ExtendWith(MockitoExtension.class)
@@ -99,6 +106,47 @@ class CredentialRevocationServiceTest {
     void constructor_withSessionOnly_createsService() {
         CredentialRevocationService s = new CredentialRevocationService(session);
         assertNotNull(s);
+    }
+
+    @Test
+    void close_doesNotCloseInjectedStatusListService() {
+        service.close();
+
+        verify(statusListService, never()).close();
+    }
+
+    @Test
+    void close_withoutStatusListService_isSafeNoOp() {
+        CredentialRevocationService s = new CredentialRevocationService(session);
+
+        assertDoesNotThrow(s::close);
+    }
+
+    @Test
+    void close_closesLazilyCreatedStatusListService() throws Exception {
+        try (MockedStatic<CustomHttpClient> httpClientStatic = mockStatic(CustomHttpClient.class);
+                MockedStatic<CircuitBreaker> circuitBreakerStatic = mockStatic(CircuitBreaker.class);
+                MockedConstruction<CryptoIdentityService> cryptoServiceConstruction =
+                        mockConstruction(CryptoIdentityService.class, (mock, ctx) -> when(mock.getJwtToken(any()))
+                                .thenReturn("token"));
+                MockedConstruction<StatusListService> statusListServiceConstruction =
+                        mockConstruction(StatusListService.class)) {
+
+            httpClientStatic
+                    .when(() -> CustomHttpClient.getHttpClient(any(StatusListConfig.class)))
+                    .thenReturn(mock(CloseableHttpClient.class));
+            circuitBreakerStatic
+                    .when(() -> CircuitBreaker.getInstance(any(StatusListConfig.class)))
+                    .thenReturn(mock(CircuitBreaker.class));
+            when(realm.getAttribute(StatusListConfig.STATUS_LIST_SERVER_URL)).thenReturn("https://example.com");
+
+            CredentialRevocationService s = new CredentialRevocationService(session, null, statusListRepository);
+            s.revokeMapping(statusListMapping("list-1", 7L));
+
+            s.close();
+
+            verify(statusListServiceConstruction.constructed().get(0)).close();
+        }
     }
 
     @Test

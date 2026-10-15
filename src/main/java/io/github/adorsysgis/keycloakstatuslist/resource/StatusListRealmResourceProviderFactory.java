@@ -241,6 +241,7 @@ public class StatusListRealmResourceProviderFactory implements RealmResourceProv
         String realmName = realm.getName();
         logger.info("Starting registration for realm: " + realmName);
 
+        StatusListService statusListService = null;
         try {
             StatusListConfig config = new StatusListConfig(realm);
 
@@ -260,7 +261,7 @@ public class StatusListRealmResourceProviderFactory implements RealmResourceProv
                     CustomHttpClient.getRegistrationHttpClient(config),
                     httpClientCB);
 
-            StatusListService statusListService = new StatusListService(httpClient);
+            statusListService = new StatusListService(httpClient);
 
             if (!statusListService.checkServerHealth()) {
                 logger.warn("Status list server health check failed for realm: " + realmName);
@@ -278,6 +279,11 @@ public class StatusListRealmResourceProviderFactory implements RealmResourceProv
         } catch (StatusListServerException | StatusListException e) {
             logger.error("Registration failed for realm: " + realmName + ". Error: " + e.getMessage(), e);
             return false;
+        } finally {
+            // Release the pooled HTTP client created for this registration attempt on every path.
+            if (statusListService != null) {
+                statusListService.close();
+            }
         }
     }
 

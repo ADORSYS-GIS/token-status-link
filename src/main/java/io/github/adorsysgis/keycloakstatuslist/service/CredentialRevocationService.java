@@ -46,6 +46,7 @@ public class CredentialRevocationService {
     private final KeycloakSession session;
     private final StatusListRepository statusListRepository;
     private StatusListService statusListService;
+    private boolean ownsStatusListService;
 
     public CredentialRevocationService(KeycloakSession session, StatusListService statusListService) {
         this(session, statusListService, session == null ? null : new StatusListRepository(session));
@@ -56,6 +57,8 @@ public class CredentialRevocationService {
         this.session = session;
         this.statusListService = statusListService;
         this.statusListRepository = statusListRepository;
+        // An injected service is owned by its creator; only lazily-created services are closed here.
+        this.ownsStatusListService = false;
     }
 
     public CredentialRevocationService(KeycloakSession session) {
@@ -79,8 +82,20 @@ public class CredentialRevocationService {
                     CustomHttpClient.getHttpClient(config),
                     circuitBreaker);
             this.statusListService = new StatusListService(httpClient);
+            this.ownsStatusListService = true;
         }
         return statusListService;
+    }
+
+    /**
+     * Closes the status list service (and its underlying HTTP client) only when this instance
+     * created it lazily during this session. An injected service is owned by its creator and is
+     * therefore never closed here, so each owner closes a shared client exactly once.
+     */
+    public void close() {
+        if (ownsStatusListService && statusListService != null) {
+            statusListService.close();
+        }
     }
 
     /**
