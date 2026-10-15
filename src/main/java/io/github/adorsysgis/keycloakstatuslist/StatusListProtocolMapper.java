@@ -83,6 +83,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
     private final StatusListRepository statusListRepository;
     private final IssuedCredentialIdResolver issuedCredentialIdResolver;
     private final CredentialIssuanceQuotaService credentialIssuanceQuotaService;
+    private final CredentialRevocationService credentialRevocationService;
 
     public StatusListProtocolMapper() {
         // An empty mapper constructor is required by Keycloak
@@ -91,6 +92,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         this.statusListRepository = null;
         this.issuedCredentialIdResolver = null;
         this.credentialIssuanceQuotaService = null;
+        this.credentialRevocationService = null;
     }
 
     public StatusListProtocolMapper(KeycloakSession session) {
@@ -104,10 +106,10 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         this.statusListService =
                 config.isEnabled() && isValidHttpUrl(config.getServerUrl()) ? createStatusListService(session) : null;
         this.issuedCredentialIdResolver = new IssuedCredentialIdResolver(session);
-        this.credentialIssuanceQuotaService = new CredentialIssuanceQuotaService(
-                session,
-                statusListRepository,
-                new CredentialRevocationService(session, statusListService, statusListRepository));
+        this.credentialRevocationService =
+                new CredentialRevocationService(session, statusListService, statusListRepository);
+        this.credentialIssuanceQuotaService =
+                new CredentialIssuanceQuotaService(session, statusListRepository, credentialRevocationService);
     }
 
     /**
@@ -178,9 +180,13 @@ public class StatusListProtocolMapper extends OID4VCMapper {
 
     @Override
     public void close() {
-        // Release the HTTP client created for this session when the Keycloak session ends.
+        // Release the session's HTTP client(s); the nested revocation service may hold its own
+        // lazily-created client when statusListService is null.
         if (statusListService != null) {
             statusListService.close();
+        }
+        if (credentialRevocationService != null) {
+            credentialRevocationService.close();
         }
     }
 
