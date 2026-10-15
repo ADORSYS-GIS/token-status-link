@@ -46,9 +46,14 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
     /**
      * Creates a new Apache HTTP client for status list operations.
      *
+     * <p>This instance takes ownership of the supplied {@link CloseableHttpClient} and releases it
+     * via {@link #close()} when the owning session ends. Callers must not share the same
+     * {@code CloseableHttpClient} across multiple {@link ApacheHttpStatusListClient} instances, as
+     * closing one will release the shared connection pool.
+     *
      * @param serverUrl the status list server URL
      * @param authToken the authentication token
-     * @param httpClient the HTTP client to use
+     * @param httpClient the HTTP client to use; this instance takes ownership and will close it
      * @param circuitBreaker optional circuit breaker (can be null to disable)
      */
     public ApacheHttpStatusListClient(
