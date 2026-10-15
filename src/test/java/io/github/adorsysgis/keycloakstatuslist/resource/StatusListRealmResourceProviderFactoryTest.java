@@ -100,7 +100,7 @@ class StatusListRealmResourceProviderFactoryTest extends MockKeycloakTest {
     }
 
     private void triggerBackground(long initialDelay, int maxRetries) {
-        registrationService.triggerBackgroundRegistration(TEST_REALM_NAME, initialDelay, maxRetries);
+        registrationService.triggerBackgroundRegistration(realm, initialDelay, maxRetries);
     }
 
     /** Immediate trigger: the attempt runnable can be observed right away on the test thread. */
@@ -112,9 +112,9 @@ class StatusListRealmResourceProviderFactoryTest extends MockKeycloakTest {
     void testPostMigrationEventSchedulesDefaultRegistrationForListedRealms() throws StatusListException {
         RealmModel otherRealm = mock(RealmModel.class);
         lenient().when(otherRealm.getName()).thenReturn("other-realm");
+        lenient().when(otherRealm.getId()).thenReturn("other-realm-id");
         lenient().when(otherRealm.getAttribute(STATUS_LIST_ENABLED)).thenReturn("true");
         lenient().when(otherRealm.getAttribute(STATUS_LIST_SERVER_URL)).thenReturn("http://localhost:8080");
-        lenient().when(realmProvider.getRealmByName("other-realm")).thenReturn(otherRealm);
         lenient().when(realmProvider.getRealmsStream()).thenReturn(Stream.of(realm, otherRealm));
 
         firePostInitEvent(new PostMigrationEvent(sessionFactory));
@@ -156,26 +156,6 @@ class StatusListRealmResourceProviderFactoryTest extends MockKeycloakTest {
         verify(service).registerIssuer(argThat(issuerId -> issuerId.endsWith("::" + TEST_REALM_NAME)), any());
         // Successful attempt: no further retries are scheduled
         verifyNoMoreInteractions(recordingScheduler);
-    }
-
-    @Test
-    void testRealmNotYetAvailableIsRescheduledForRetryUntilItExists() throws StatusListException {
-        // Realm is not found on the first attempt (e.g. its creation transaction has not committed).
-        triggerBackground(0L, 2);
-        lenient().when(realmProvider.getRealmByName(TEST_REALM_NAME)).thenReturn(null);
-
-        runScheduled(0L);
-        assertEquals(0, constructed().size());
-        // Missing realm keeps the realm RUNNING, so a retry is scheduled.
-        verify(recordingScheduler, times(1))
-                .schedule(any(Runnable.class), eq(BACKOFF_MULTIPLIER_MS), eq(TimeUnit.MILLISECONDS));
-
-        // Realm becomes available before the retry runs: the next attempt registers it as issuer.
-        lenient().when(realmProvider.getRealmByName(TEST_REALM_NAME)).thenReturn(realm);
-        runScheduled(BACKOFF_MULTIPLIER_MS);
-
-        StatusListService service = constructed().get(0);
-        verify(service).registerIssuer(argThat(issuerId -> issuerId.endsWith("::" + TEST_REALM_NAME)), any());
     }
 
     @Test

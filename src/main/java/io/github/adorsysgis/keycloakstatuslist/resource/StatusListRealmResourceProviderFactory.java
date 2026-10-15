@@ -48,7 +48,7 @@ public class StatusListRealmResourceProviderFactory implements RealmResourceProv
             } else if (event instanceof RealmModel.RealmPostCreateEvent realmEvent) {
                 RealmModel realm = realmEvent.getCreatedRealm();
                 logger.infof("New realm created: %s. Registering as issuer on status list server", realm.getName());
-                registrationService.triggerBackgroundRegistration(realm.getName());
+                registrationService.triggerBackgroundRegistration(realm);
             }
         });
     }

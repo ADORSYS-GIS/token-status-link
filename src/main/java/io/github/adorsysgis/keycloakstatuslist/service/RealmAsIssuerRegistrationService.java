@@ -37,6 +37,10 @@ public class RealmAsIssuerRegistrationService {
 
     private final KeycloakSessionFactory factory;
     private final ScheduledExecutorService scheduler = createScheduler();
+
+    /**
+     * Per-realm registration state, keyed by realm {@link RealmModel#getId() id}
+     */
     private final ConcurrentHashMap<String, RegistrationStatus> registrationStatuses = new ConcurrentHashMap<>();
 
     public RealmAsIssuerRegistrationService(KeycloakSessionFactory factory) {
@@ -74,10 +78,9 @@ public class RealmAsIssuerRegistrationService {
      */
     public void triggerBackgroundRegistration() {
         try {
-            KeycloakModelUtils.runJobInTransaction(factory, session -> session.realms()
-                    .getRealmsStream()
-                    .map(RealmModel::getName)
-                    .forEach(this::triggerBackgroundRegistration));
+            KeycloakModelUtils.runJobInTransaction(
+                    factory,
+                    session -> session.realms().getRealmsStream().forEach(this::triggerBackgroundRegistration));
         } catch (Exception e) {
             logger.errorf(e, "Failed to list realms for background status list registration");
         }
@@ -86,8 +89,8 @@ public class RealmAsIssuerRegistrationService {
     /**
      * Triggers background registration for the given realm.
      */
-    public void triggerBackgroundRegistration(String realmName) {
-        triggerBackgroundRegistration(realmName, DEFAULT_INITIAL_DELAY_MS, DEFAULT_MAX_RETRIES);
+    public void triggerBackgroundRegistration(RealmModel realm) {
+        triggerBackgroundRegistration(realm, DEFAULT_INITIAL_DELAY_MS, DEFAULT_MAX_RETRIES);
     }
 
     /**
@@ -95,21 +98,19 @@ public class RealmAsIssuerRegistrationService {
      * given initial delay; failures are retried with a linearly growing delay,
      * up to the given number of retries.
      *
-     * @param realmName name of the realm to register
+     * @param realm the realm to register
      * @param initialDelayMs delay before the first attempt
      * @param maxRetries maximum number of retries after the initial attempt
      */
-    public void triggerBackgroundRegistration(String realmName, long initialDelayMs, int maxRetries) {
+    public void triggerBackgroundRegistration(RealmModel realm, long initialDelayMs, int maxRetries) {
         // Skip if the realm was already registered or registration was already started for the realm
-        if (registrationStatuses.putIfAbsent(realmName, RegistrationStatus.RUNNING) != null) {
+        if (registrationStatuses.putIfAbsent(realm.getId(), RegistrationStatus.RUNNING) != null) {
             return;
         }
 
         // Schedule first attempt at registering the realm after `initialDelayMs`
         scheduler.schedule(
-                () -> runRegistrationAttempt(new Attempt(realmName, 0, maxRetries)),
-                initialDelayMs,
-                TimeUnit.MILLISECONDS);
+                () -> runRegistrationAttempt(new Attempt(realm, 0, maxRetries)), initialDelayMs, TimeUnit.MILLISECONDS);
     }
 
     /**
@@ -119,10 +120,10 @@ public class RealmAsIssuerRegistrationService {
      * while the retry budget lasts.
      */
     protected void runRegistrationAttempt(Attempt attempt) {
-        String realmName = attempt.realmName();
+        RealmModel realm = attempt.realm();
 
         // It is a no-op if the realm was already registered.
-        if (registrationStatuses.get(realmName) == RegistrationStatus.COMPLETED) {
+        if (registrationStatuses.get(realm.getId()) == RegistrationStatus.COMPLETED) {
             return;
         }
 
@@ -130,28 +131,23 @@ public class RealmAsIssuerRegistrationService {
         // request scope, on the background thread.
         try {
             KeycloakModelUtils.runJobInTransaction(factory, session -> {
-                RealmModel realm = session.realms().getRealmByName(realmName);
-                if (realm == null) {
-                    return;
-                }
-
                 session.getContext().setRealm(realm);
                 registerRealmAsIssuer(session, realm);
             });
         } catch (Exception e) {
-            logger.errorf(e, "Error during registration for realm %s: %s", realmName, e.getMessage());
+            logger.errorf(e, "Error during registration for realm %s: %s", realm.getName(), e.getMessage());
         }
 
         // Schedule a new attempt if necessary
-        if (registrationStatuses.get(realmName) == RegistrationStatus.RUNNING) {
+        if (registrationStatuses.get(realm.getId()) == RegistrationStatus.RUNNING) {
             if (attempt.attempt() >= attempt.maxRetries()) {
-                registrationStatuses.remove(realmName);
+                registrationStatuses.remove(realm.getId());
                 return;
             }
 
-            Attempt next = new Attempt(realmName, attempt.attempt() + 1, attempt.maxRetries());
+            Attempt next = new Attempt(realm, attempt.attempt() + 1, attempt.maxRetries());
             long delayMs = BACKOFF_MULTIPLIER_MS * next.attempt();
-            logger.infof("Scheduling registration retry for realm %s in %d ms", realmName, delayMs);
+            logger.infof("Scheduling registration retry for realm %s in %d ms", realm.getName(), delayMs);
             scheduler.schedule(() -> runRegistrationAttempt(next), delayMs, TimeUnit.MILLISECONDS);
         }
     }
@@ -182,7 +178,7 @@ public class RealmAsIssuerRegistrationService {
 
             service.service().registerIssuer(config.getTokenIssuerId(), service.jwk());
             logger.info("Successfully registered realm as issuer: " + realmName);
-            registrationStatuses.put(realmName, RegistrationStatus.COMPLETED);
+            registrationStatuses.put(realm.getId(), RegistrationStatus.COMPLETED);
         } catch (StatusListServerException | StatusListException | IOException e) {
             logger.errorf(e, "Registration failed for realm: %s", realmName);
         }
@@ -227,5 +223,5 @@ public class RealmAsIssuerRegistrationService {
      * Progress marker threaded through the scheduler:
      * which realm, which attempt no. (counted from 0), within which retry budget.
      */
-    public record Attempt(String realmName, int attempt, int maxRetries) {}
+    public record Attempt(RealmModel realm, int attempt, int maxRetries) {}
 }
