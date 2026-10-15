@@ -11,7 +11,9 @@ import static org.hamcrest.Matchers.not;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.keycloak.OID4VCConstants.OPENID_CREDENTIAL;
@@ -127,6 +129,24 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
     @Test
     void testGetMetadataAttributePath() {
         assertEquals(List.of("credentialSubject", Constants.STATUS_CLAIM_KEY), mapper.getMetadataAttributePath());
+    }
+
+    @Test
+    void create_reusesSessionBoundInstance() {
+        ProtocolMapper created = mapper.create(session);
+
+        assertSame(mapper, created);
+    }
+
+    @Test
+    void create_onFactoryInstance_createsNewSessionBoundMapper() {
+        when(realm.getAttribute(StatusListConfig.STATUS_LIST_ENABLED)).thenReturn("false");
+        StatusListProtocolMapper factory = new StatusListProtocolMapper();
+
+        ProtocolMapper created = factory.create(session);
+
+        assertNotSame(factory, created);
+        assertInstanceOf(StatusListProtocolMapper.class, created);
     }
 
     @Test
