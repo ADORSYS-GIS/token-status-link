@@ -83,4 +83,30 @@ class StatusListConfigTest {
 
         assertEquals("REVOKE_OLDEST", new StatusListConfig(realm).getOverflowPolicy());
     }
+
+    @Test
+    void getStatusListMaxEntries_blankOrUnsetMeansDefault() {
+        when(realm.getAttribute(StatusListConfig.STATUS_LIST_MAX_ENTRIES)).thenReturn(null);
+        assertEquals(StatusListConfig.DEFAULT_MAX_ENTRIES, new StatusListConfig(realm).getStatusListMaxEntries());
+
+        when(realm.getAttribute(StatusListConfig.STATUS_LIST_MAX_ENTRIES)).thenReturn("");
+        assertEquals(StatusListConfig.DEFAULT_MAX_ENTRIES, new StatusListConfig(realm).getStatusListMaxEntries());
+
+        when(realm.getAttribute(StatusListConfig.STATUS_LIST_MAX_ENTRIES)).thenReturn("  ");
+        assertEquals(StatusListConfig.DEFAULT_MAX_ENTRIES, new StatusListConfig(realm).getStatusListMaxEntries());
+    }
+
+    @Test
+    void getStatusListMaxEntries_acceptsNumericValue() {
+        when(realm.getAttribute(StatusListConfig.STATUS_LIST_MAX_ENTRIES)).thenReturn("5000");
+
+        assertEquals(5000, new StatusListConfig(realm).getStatusListMaxEntries());
+    }
+
+    @Test
+    void getStatusListMaxEntries_invalidValueFallsBackToDefault() {
+        when(realm.getAttribute(StatusListConfig.STATUS_LIST_MAX_ENTRIES)).thenReturn("abc");
+
+        assertEquals(StatusListConfig.DEFAULT_MAX_ENTRIES, new StatusListConfig(realm).getStatusListMaxEntries());
+    }
 }
