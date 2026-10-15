@@ -84,6 +84,17 @@ public class CredentialRevocationService {
     }
 
     /**
+     * Closes the lazily-created status list service (and its underlying HTTP client) if one was
+     * built during this session. Safe to call even when the service was never created or when it is
+     * shared with the caller, since closing an already-closed HTTP client is a no-op.
+     */
+    public void close() {
+        if (statusListService != null) {
+            statusListService.close();
+        }
+    }
+
+    /**
      * Revokes a Keycloak-tracked issued credential. The caller must own the credential, or hold the
      * realm role {@code credential-offer-create} to revoke another user's credential in the same realm.
      */
