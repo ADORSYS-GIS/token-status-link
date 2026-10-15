@@ -1,5 +1,6 @@
 package io.github.adorsysgis.keycloakstatuslist.service;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -99,6 +100,20 @@ class CredentialRevocationServiceTest {
     void constructor_withSessionOnly_createsService() {
         CredentialRevocationService s = new CredentialRevocationService(session);
         assertNotNull(s);
+    }
+
+    @Test
+    void close_closesInjectedStatusListService() {
+        service.close();
+
+        verify(statusListService).close();
+    }
+
+    @Test
+    void close_withoutStatusListService_isSafeNoOp() {
+        CredentialRevocationService s = new CredentialRevocationService(session);
+
+        assertDoesNotThrow(s::close);
     }
 
     @Test

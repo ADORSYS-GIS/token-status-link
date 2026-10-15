@@ -41,5 +41,10 @@ public class StatusListRealmResourceProvider implements RealmResourceProvider {
     }
 
     @Override
-    public void close() {}
+    public void close() {
+        // Release the HTTP client lazily created by the revocation service for this session.
+        if (revocationService != null) {
+            revocationService.close();
+        }
+    }
 }

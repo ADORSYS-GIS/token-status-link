@@ -25,6 +25,7 @@ import static org.mockito.Mockito.when;
 import io.github.adorsysgis.keycloakstatuslist.config.StatusListConfig;
 import io.github.adorsysgis.keycloakstatuslist.exception.StatusListException;
 import io.github.adorsysgis.keycloakstatuslist.helpers.MockKeycloakTest;
+import io.github.adorsysgis.keycloakstatuslist.service.CredentialRevocationService;
 import io.github.adorsysgis.keycloakstatuslist.service.CryptoIdentityService;
 import io.github.adorsysgis.keycloakstatuslist.service.RealmAsIssuerRegistrationService;
 import io.github.adorsysgis.keycloakstatuslist.service.StatusListService;
@@ -106,6 +107,17 @@ class StatusListRealmResourceProviderFactoryTest extends MockKeycloakTest {
     /** Immediate trigger: the attempt runnable can be observed right away on the test thread. */
     private void triggerImmediate() {
         triggerBackground(0L, 0);
+    }
+
+    @Test
+    void close_closesRevocationService() {
+        CredentialRevocationService revocationService = mock(CredentialRevocationService.class);
+        StatusListRealmResourceProvider provider =
+                new StatusListRealmResourceProvider(session, revocationService);
+
+        provider.close();
+
+        verify(revocationService).close();
     }
 
     @Test
