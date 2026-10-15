@@ -141,6 +141,10 @@ public class StatusListProtocolMapper extends OID4VCMapper {
 
     @Override
     public ProtocolMapper create(KeycloakSession session) {
+        // Reuse when already session-bound so the OID4VC re-create path does not build a second client.
+        if (this.session != null) {
+            return this;
+        }
         return new StatusListProtocolMapper(session);
     }
 
