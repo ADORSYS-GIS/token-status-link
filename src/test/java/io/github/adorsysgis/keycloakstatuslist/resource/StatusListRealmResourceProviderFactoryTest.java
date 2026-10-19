@@ -112,8 +112,7 @@ class StatusListRealmResourceProviderFactoryTest extends MockKeycloakTest {
     @Test
     void close_closesRevocationService() {
         CredentialRevocationService revocationService = mock(CredentialRevocationService.class);
-        StatusListRealmResourceProvider provider =
-                new StatusListRealmResourceProvider(session, revocationService);
+        StatusListRealmResourceProvider provider = new StatusListRealmResourceProvider(session, revocationService);
 
         provider.close();
 
