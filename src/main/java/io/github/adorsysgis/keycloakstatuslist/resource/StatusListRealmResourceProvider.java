@@ -42,9 +42,6 @@ public class StatusListRealmResourceProvider implements RealmResourceProvider {
 
     @Override
     public void close() {
-        // Release the HTTP client lazily created by the revocation service for this session.
-        if (revocationService != null) {
-            revocationService.close();
-        }
+        // The session owns the shared HTTP client; nothing to release here.
     }
 }

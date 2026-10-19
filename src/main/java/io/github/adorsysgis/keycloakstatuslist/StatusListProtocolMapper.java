@@ -3,8 +3,6 @@ package io.github.adorsysgis.keycloakstatuslist;
 import static io.github.adorsysgis.keycloakstatuslist.config.StatusListConfig.OVERFLOW_POLICY_REVOKE_OLDEST;
 import static io.github.adorsysgis.keycloakstatuslist.jpa.entity.StatusListMappingEntity.MappingStatus;
 
-import io.github.adorsysgis.keycloakstatuslist.client.ApacheHttpStatusListClient;
-import io.github.adorsysgis.keycloakstatuslist.client.StatusListHttpClient;
 import io.github.adorsysgis.keycloakstatuslist.config.StatusListConfig;
 import io.github.adorsysgis.keycloakstatuslist.config.StatusListEndpointUriResolver;
 import io.github.adorsysgis.keycloakstatuslist.exception.CredentialIssuanceQuotaException;
@@ -15,14 +13,12 @@ import io.github.adorsysgis.keycloakstatuslist.jpa.repository.StatusListReposito
 import io.github.adorsysgis.keycloakstatuslist.model.Status;
 import io.github.adorsysgis.keycloakstatuslist.model.StatusListClaim;
 import io.github.adorsysgis.keycloakstatuslist.model.TokenStatus;
-import io.github.adorsysgis.keycloakstatuslist.service.CircuitBreaker;
 import io.github.adorsysgis.keycloakstatuslist.service.CredentialIssuanceQuotaService;
 import io.github.adorsysgis.keycloakstatuslist.service.CredentialRevocationService;
-import io.github.adorsysgis.keycloakstatuslist.service.CryptoIdentityService;
-import io.github.adorsysgis.keycloakstatuslist.service.CustomHttpClient;
 import io.github.adorsysgis.keycloakstatuslist.service.IssuedCredentialIdResolver;
 import io.github.adorsysgis.keycloakstatuslist.service.IssuedCredentialIdResolver.OpenidCredentialAuthorization;
 import io.github.adorsysgis.keycloakstatuslist.service.StatusListService;
+import io.github.adorsysgis.keycloakstatuslist.service.StatusListServiceHolder;
 import jakarta.persistence.EntityManager;
 import java.io.IOException;
 import java.net.URI;
@@ -79,7 +75,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
     }
 
     private final KeycloakSession session;
-    private final StatusListService statusListService;
+    final StatusListService statusListService;
     private final StatusListRepository statusListRepository;
     private final IssuedCredentialIdResolver issuedCredentialIdResolver;
     private final CredentialIssuanceQuotaService credentialIssuanceQuotaService;
@@ -96,15 +92,17 @@ public class StatusListProtocolMapper extends OID4VCMapper {
     }
 
     public StatusListProtocolMapper(KeycloakSession session) {
+        this(session, createStatusListService(session));
+    }
+
+    /**
+     * Binds a mapper to the session, reusing the shared {@link StatusListService} so
+     * {@link #create(KeycloakSession)} does not build a second HTTP client.
+     */
+    StatusListProtocolMapper(KeycloakSession session, StatusListService statusListService) {
         this.session = session;
+        this.statusListService = statusListService;
         this.statusListRepository = new StatusListRepository(session);
-        // Only build the status list client when the feature is explicitly opted in for the realm and a
-        // usable server URL is configured. This keeps the mapper constructible for realms where the feature
-        // is disabled (the default) or misconfigured, so it never blocks credential-issuer metadata discovery.
-        // Misconfiguration is instead reported on the issuance path, honoring status-list-mandatory.
-        StatusListConfig config = new StatusListConfig(session.getContext().getRealm());
-        this.statusListService =
-                config.isEnabled() && isValidHttpUrl(config.getServerUrl()) ? createStatusListService(session) : null;
         this.issuedCredentialIdResolver = new IssuedCredentialIdResolver(session);
         this.credentialRevocationService =
                 new CredentialRevocationService(session, statusListService, statusListRepository);
@@ -113,25 +111,15 @@ public class StatusListProtocolMapper extends OID4VCMapper {
     }
 
     /**
-     * Builds a StatusListService for the given session (config, circuit breaker, HTTP client).
-     * Wiring lives here so StatusListService stays agnostic of the concrete HTTP client implementation.
+     * Returns the session's shared {@link StatusListService}, or {@code null} when the feature is
+     * disabled or no usable server URL is configured.
      */
     private static StatusListService createStatusListService(KeycloakSession session) {
         StatusListConfig config = new StatusListConfig(session.getContext().getRealm());
-        CryptoIdentityService cryptoIdentityService = new CryptoIdentityService(session);
-
-        CircuitBreaker circuitBreaker = null;
-        if (config.getIssuanceTimeout() > 0) {
-            circuitBreaker = CircuitBreaker.getInstance(config);
+        if (!config.isEnabled() || !isValidHttpUrl(config.getServerUrl())) {
+            return null;
         }
-
-        StatusListHttpClient httpClient = new ApacheHttpStatusListClient(
-                config.getServerUrl(),
-                cryptoIdentityService.getJwtToken(config),
-                CustomHttpClient.getHttpClient(config),
-                circuitBreaker);
-
-        return new StatusListService(httpClient);
+        return StatusListServiceHolder.getOrCreate(session);
     }
 
     @Override
@@ -141,9 +129,9 @@ public class StatusListProtocolMapper extends OID4VCMapper {
 
     @Override
     public ProtocolMapper create(KeycloakSession session) {
-        // Reuse when already session-bound so the OID4VC re-create path does not build a second client.
-        if (this.session != null) {
-            return this;
+        // New instance per call (Keycloak contract), sharing the session's single client.
+        if (this.statusListService != null) {
+            return new StatusListProtocolMapper(session, this.statusListService);
         }
         return new StatusListProtocolMapper(session);
     }
@@ -184,14 +172,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
 
     @Override
     public void close() {
-        // Release the session's HTTP client(s); the nested revocation service may hold its own
-        // lazily-created client when statusListService is null.
-        if (statusListService != null) {
-            statusListService.close();
-        }
-        if (credentialRevocationService != null) {
-            credentialRevocationService.close();
-        }
+        // The session closes the shared HTTP client; nothing to release here.
     }
 
     @Override
@@ -265,7 +246,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         logger.warn("Status list publication failed; proceeding without status claim");
     }
 
-    private boolean isValidHttpUrl(String url) {
+    private static boolean isValidHttpUrl(String url) {
         if (url == null) {
             return false;
         }

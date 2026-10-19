@@ -132,14 +132,17 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
     }
 
     @Test
-    void create_reusesSessionBoundInstance() {
+    void createReturnsFreshInstanceSharingSessionBoundService() {
         ProtocolMapper created = mapper.create(session);
 
-        assertSame(mapper, created);
+        // New instance per call (Keycloak contract), sharing the session's single client.
+        assertNotSame(mapper, created);
+        assertInstanceOf(StatusListProtocolMapper.class, created);
+        assertSame(mapper.statusListService, ((StatusListProtocolMapper) created).statusListService);
     }
 
     @Test
-    void create_onFactoryInstance_createsNewSessionBoundMapper() {
+    void createOnFactoryInstanceCreatesNewSessionBoundMapper() {
         when(realm.getAttribute(StatusListConfig.STATUS_LIST_ENABLED)).thenReturn("false");
         StatusListProtocolMapper factory = new StatusListProtocolMapper();
 
@@ -147,6 +150,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
         assertNotSame(factory, created);
         assertInstanceOf(StatusListProtocolMapper.class, created);
+        assertNull(((StatusListProtocolMapper) created).statusListService);
     }
 
     @Test

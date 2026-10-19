@@ -1,6 +1,5 @@
 package io.github.adorsysgis.keycloakstatuslist.service;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -109,21 +108,7 @@ class CredentialRevocationServiceTest {
     }
 
     @Test
-    void close_doesNotCloseInjectedStatusListService() {
-        service.close();
-
-        verify(statusListService, never()).close();
-    }
-
-    @Test
-    void close_withoutStatusListService_isSafeNoOp() {
-        CredentialRevocationService s = new CredentialRevocationService(session);
-
-        assertDoesNotThrow(s::close);
-    }
-
-    @Test
-    void close_closesLazilyCreatedStatusListService() throws Exception {
+    void revokeMappingWithoutInjectedServiceUsesSessionSharedService() throws Exception {
         try (MockedStatic<CustomHttpClient> httpClientStatic = mockStatic(CustomHttpClient.class);
                 MockedStatic<CircuitBreaker> circuitBreakerStatic = mockStatic(CircuitBreaker.class);
                 MockedConstruction<CryptoIdentityService> cryptoServiceConstruction =
@@ -138,19 +123,22 @@ class CredentialRevocationServiceTest {
             circuitBreakerStatic
                     .when(() -> CircuitBreaker.getInstance(any(StatusListConfig.class)))
                     .thenReturn(mock(CircuitBreaker.class));
-            when(realm.getAttribute(StatusListConfig.STATUS_LIST_SERVER_URL)).thenReturn("https://example.com");
+            lenient()
+                    .when(realm.getAttribute(StatusListConfig.STATUS_LIST_SERVER_URL))
+                    .thenReturn("https://example.com");
 
             CredentialRevocationService s = new CredentialRevocationService(session, null, statusListRepository);
             s.revokeMapping(statusListMapping("list-1", 7L));
 
-            s.close();
-
-            verify(statusListServiceConstruction.constructed().get(0)).close();
+            StatusListService shared =
+                    statusListServiceConstruction.constructed().get(0);
+            verify(shared).updateStatusList(any(StatusListService.StatusListPayload.class), anyString());
+            verify(statusListRepository).save(any());
         }
     }
 
     @Test
-    void revokeIssuedCredential_success_updatesStatusListAndKeepsIssuedCredential() throws Exception {
+    void revokeIssuedCredentialSuccessUpdatesStatusListAndKeepsIssuedCredential() throws Exception {
         CredentialRevocationRequest request = issuedRevocationRequest("issued-1", "User requested revocation");
         AuthResult authResult = new AuthResult(user, null, null, null);
         StatusListMappingEntity mapping = statusListMapping("list-1", 7L);
