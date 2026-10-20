@@ -1,10 +1,12 @@
 package io.github.adorsysgis.keycloakstatuslist.client;
 
+import io.github.adorsysgis.keycloakstatuslist.config.StatusListConfig;
 import io.github.adorsysgis.keycloakstatuslist.config.StatusListEndpointUriResolver;
 import io.github.adorsysgis.keycloakstatuslist.exception.StatusListException;
 import io.github.adorsysgis.keycloakstatuslist.exception.StatusListServerException;
 import io.github.adorsysgis.keycloakstatuslist.model.IssuerRegistrationPayload;
 import io.github.adorsysgis.keycloakstatuslist.service.CircuitBreaker;
+import io.github.adorsysgis.keycloakstatuslist.service.CustomHttpClient;
 import io.github.adorsysgis.keycloakstatuslist.service.StatusListService.StatusListPayload;
 import java.io.IOException;
 import java.io.InterruptedIOException;
@@ -42,21 +44,47 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
     private final String authToken;
     private final CloseableHttpClient httpClient;
     private final CircuitBreaker circuitBreaker;
+    private final boolean ownsHttpClient;
 
     /**
-     * Creates a new Apache HTTP client for status list operations.
+     * Creates an Apache HTTP client that owns the supplied {@link CloseableHttpClient} and closes
+     * it via {@link #close()} when the session ends. Do not share the same client across instances.
      *
      * @param serverUrl the status list server URL
      * @param authToken the authentication token
-     * @param httpClient the HTTP client to use
+     * @param config the realm configuration used to build the HTTP client
+     * @param circuitBreaker optional circuit breaker (can be null to disable)
+     */
+    public ApacheHttpStatusListClient(
+            String serverUrl, String authToken, StatusListConfig config, CircuitBreaker circuitBreaker) {
+        this(serverUrl, authToken, CustomHttpClient.getHttpClient(config), circuitBreaker, true);
+    }
+
+    /**
+     * Creates an Apache HTTP client wrapping a caller-supplied {@link CloseableHttpClient}. The
+     * caller retains ownership and must close it; {@link #close()} will not release it.
+     *
+     * @param serverUrl the status list server URL
+     * @param authToken the authentication token
+     * @param httpClient the HTTP client to use; the caller keeps ownership and must close it
      * @param circuitBreaker optional circuit breaker (can be null to disable)
      */
     public ApacheHttpStatusListClient(
             String serverUrl, String authToken, CloseableHttpClient httpClient, CircuitBreaker circuitBreaker) {
+        this(serverUrl, authToken, httpClient, circuitBreaker, false);
+    }
+
+    private ApacheHttpStatusListClient(
+            String serverUrl,
+            String authToken,
+            CloseableHttpClient httpClient,
+            CircuitBreaker circuitBreaker,
+            boolean ownsHttpClient) {
         this.uriResolver = new StatusListEndpointUriResolver(serverUrl);
         this.authToken = authToken;
         this.httpClient = httpClient;
         this.circuitBreaker = circuitBreaker;
+        this.ownsHttpClient = ownsHttpClient;
 
         logger.infof(
                 "Initialized ApacheHttpStatusListClient with serverUrl: %s, circuitBreaker: %s",
@@ -185,6 +213,21 @@ public class ApacheHttpStatusListClient implements StatusListHttpClient {
         } catch (IOException e) {
             logger.errorf(e, "Request ID: %s, Error during server health check", requestId);
             return false;
+        }
+    }
+
+    /**
+     * Closes the HTTP client only when this instance created it itself; an injected client stays
+     * owned by the caller.
+     */
+    @Override
+    public void close() {
+        if (ownsHttpClient && httpClient != null) {
+            try {
+                httpClient.close();
+            } catch (IOException e) {
+                logger.errorf(e, "Failed to close HTTP client for server: %s", uriResolver.getServerUrl());
+            }
         }
     }
 

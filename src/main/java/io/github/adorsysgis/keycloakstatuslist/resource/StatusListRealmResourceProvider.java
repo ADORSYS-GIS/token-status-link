@@ -41,5 +41,7 @@ public class StatusListRealmResourceProvider implements RealmResourceProvider {
     }
 
     @Override
-    public void close() {}
+    public void close() {
+        // The session owns the shared HTTP client; nothing to release here.
+    }
 }

@@ -6,14 +6,17 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import io.github.adorsysgis.keycloakstatuslist.config.StatusListConfig;
 import io.github.adorsysgis.keycloakstatuslist.exception.StatusListException;
 import io.github.adorsysgis.keycloakstatuslist.exception.StatusListServerException;
 import io.github.adorsysgis.keycloakstatuslist.model.TokenStatus;
 import io.github.adorsysgis.keycloakstatuslist.service.CircuitBreaker;
+import io.github.adorsysgis.keycloakstatuslist.service.CustomHttpClient;
 import io.github.adorsysgis.keycloakstatuslist.service.StatusListService;
 import java.io.IOException;
 import java.io.InterruptedIOException;
@@ -32,6 +35,7 @@ import org.apache.hc.core5.http.io.entity.StringEntity;
 import org.junit.jupiter.api.Test;
 import org.keycloak.jose.jwk.JWK;
 import org.mockito.ArgumentCaptor;
+import org.mockito.MockedStatic;
 
 @SuppressWarnings("unchecked")
 class ApacheHttpStatusListClientTest {
@@ -194,6 +198,35 @@ class ApacheHttpStatusListClientTest {
         assertEquals(
                 "https://status.example.com/api/v1/status-lists/list%2Fchild/statuses",
                 captor.getValue().getUri().toString());
+    }
+
+    @Test
+    void closeSelfOwnedClientClosesIt() throws Exception {
+        try (MockedStatic<CustomHttpClient> clientStatic = mockStatic(CustomHttpClient.class)) {
+            CloseableHttpClient httpClient = mock(CloseableHttpClient.class);
+            clientStatic
+                    .when(() -> CustomHttpClient.getHttpClient(any(StatusListConfig.class)))
+                    .thenReturn(httpClient);
+            StatusListConfig config = mock(StatusListConfig.class);
+
+            ApacheHttpStatusListClient client =
+                    new ApacheHttpStatusListClient("https://status.example.com", "token", config, null);
+
+            client.close();
+
+            verify(httpClient).close();
+        }
+    }
+
+    @Test
+    void closeInjectedClientIsNotClosed() throws Exception {
+        CloseableHttpClient httpClient = mock(CloseableHttpClient.class);
+        ApacheHttpStatusListClient client =
+                new ApacheHttpStatusListClient("https://status.example.com", "token", httpClient, null);
+
+        client.close();
+
+        verify(httpClient, never()).close();
     }
 
     private void mockGetResponse(CloseableHttpClient httpClient, int statusCode, String body) throws Exception {

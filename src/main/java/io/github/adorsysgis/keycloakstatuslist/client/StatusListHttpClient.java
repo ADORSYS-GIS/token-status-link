@@ -42,4 +42,11 @@ public interface StatusListHttpClient {
      * @return true if the server is healthy, false otherwise
      */
     boolean checkServerHealth();
+
+    /**
+     * Releases the underlying {@code CloseableHttpClient} if this client owns one.
+     */
+    default void close() {
+        // No-op by default; clients that own a CloseableHttpClient override this.
+    }
 }

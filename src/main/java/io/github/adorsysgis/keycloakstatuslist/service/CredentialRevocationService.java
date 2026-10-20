@@ -3,9 +3,6 @@ package io.github.adorsysgis.keycloakstatuslist.service;
 import static io.github.adorsysgis.keycloakstatuslist.service.StatusListService.StatusListPayload;
 import static io.github.adorsysgis.keycloakstatuslist.service.StatusListService.StatusListPayload.StatusEntry;
 
-import io.github.adorsysgis.keycloakstatuslist.client.ApacheHttpStatusListClient;
-import io.github.adorsysgis.keycloakstatuslist.client.StatusListHttpClient;
-import io.github.adorsysgis.keycloakstatuslist.config.StatusListConfig;
 import io.github.adorsysgis.keycloakstatuslist.exception.StatusListException;
 import io.github.adorsysgis.keycloakstatuslist.exception.StatusListServerException;
 import io.github.adorsysgis.keycloakstatuslist.jpa.entity.StatusListMappingEntity;
@@ -63,22 +60,11 @@ public class CredentialRevocationService {
     }
 
     /**
-     * Gets or creates the StatusListService instance.
+     * Gets the session's shared {@link StatusListService}, creating it lazily when none was injected.
      */
     private StatusListService getStatusListService() {
         if (statusListService == null) {
-            RealmModel realm = session.getContext().getRealm();
-            StatusListConfig config = new StatusListConfig(realm);
-            CryptoIdentityService cryptoIdentityService = new CryptoIdentityService(session);
-
-            CircuitBreaker circuitBreaker = CircuitBreaker.getInstance(config);
-
-            StatusListHttpClient httpClient = new ApacheHttpStatusListClient(
-                    config.getServerUrl(),
-                    cryptoIdentityService.getJwtToken(config),
-                    CustomHttpClient.getHttpClient(config),
-                    circuitBreaker);
-            this.statusListService = new StatusListService(httpClient);
+            statusListService = StatusListServiceHolder.getOrCreate(session);
         }
         return statusListService;
     }
