@@ -402,7 +402,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
                 outcome.set(ReservationOutcome.mustRevoke(toRevoke));
                 return;
             }
-            persistInitialMapping(em, mapping);
+            persistInitialMapping(em, mapping, latest, maxEntries);
             outcome.set(ReservationOutcome.RESERVED);
         });
         return outcome.get();
@@ -416,8 +416,13 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         }
     }
 
-    private void persistInitialMapping(EntityManager entityManager, StatusListMappingEntity mapping) {
-        Long idx = statusListRepository.getNextIndex(entityManager, mapping.getStatusListId());
+    private void persistInitialMapping(
+            EntityManager entityManager,
+            StatusListMappingEntity mapping,
+            StatusListMappingEntity latest,
+            int maxEntries) {
+        mapping.assignCreatedTimestamp(latest == null ? null : latest.getCreatedTimestamp());
+        Long idx = statusListRepository.bookNextIndex(entityManager, mapping, maxEntries);
         logger.debugf("Next available index is: %d", idx);
 
         mapping.setIdx(idx);

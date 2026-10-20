@@ -54,7 +54,8 @@ public class StatusListRepository {
     public Long getNextIndex(EntityManager em, String statusListId) {
         String q = """
                 SELECT m FROM StatusListMappingEntity m
-                WHERE m.statusListId = :listId ORDER BY m.idx DESC
+                WHERE m.statusListId = :listId
+                ORDER BY m.idx DESC, m.id DESC
                 """;
 
         TypedQuery<StatusListMappingEntity> query = em.createQuery(q, StatusListMappingEntity.class);
@@ -67,32 +68,87 @@ public class StatusListRepository {
     }
 
     /**
-     * Locks the latest mapping for the realm so list-id choice, quota check, and index reservation
-     * share one serialized window. When the table is empty, {@code SELECT … FOR UPDATE} would lock
-     * nothing, so this takes {@code PESSIMISTIC_WRITE} on the existing Keycloak realm row and
-     * re-reads. Must run inside an open transaction.
+     * Books the next index on {@code mapping}'s list. If that index would exceed {@code maxEntries}
+     * (last-slot race after a stale list choice), switches to a new list at index 0. Must run inside
+     * an open transaction, typically after {@link #lockLatestMapping} and {@link #getNextStatusListId}.
      */
-    public StatusListMappingEntity lockLatestMapping(EntityManager em, String realmId) {
-        StatusListMappingEntity latest = findLatestMappingForUpdate(em, realmId);
-        if (latest != null) {
-            return latest;
+    public Long bookNextIndex(EntityManager em, StatusListMappingEntity mapping, int maxEntries) {
+        Long idx = getNextIndex(em, mapping.getStatusListId());
+        if (idx < maxEntries) {
+            return idx;
         }
 
-        lockRealmForFirstMapping(em, realmId);
-        return findLatestMappingForUpdate(em, realmId);
+        logger.debugf(
+                "Next index %d reaches max entries %d for list %s; rolling over to a new list",
+                idx.longValue(), maxEntries, mapping.getStatusListId());
+        mapping.setStatusListId(KeycloakModelUtils.generateId());
+        return getNextIndex(em, mapping.getStatusListId());
+    }
+
+    /**
+     * Locks the latest mapping for the realm so list-id choice, quota check, and index reservation
+     * share one serialized window. When the table is empty, locks the Keycloak realm row instead.
+     * After acquiring a lock, re-reads and follows any newer committed tip (MVCC waiters otherwise
+     * resume on a stale row). Must run inside an open transaction.
+     */
+    public StatusListMappingEntity lockLatestMapping(EntityManager em, String realmId) {
+        StatusListMappingEntity latestMapping = findLatestMappingForUpdate(em, realmId);
+        if (latestMapping == null) {
+            lockRealmForFirstMapping(em, realmId);
+            latestMapping = findLatestMappingForUpdate(em, realmId);
+            if (latestMapping == null) {
+                return null;
+            }
+        }
+
+        return lockRowCommittedWhileWaiting(em, realmId, latestMapping);
+    }
+
+    /** Re-reads and locks newer tips until the locked row is the latest committed mapping. */
+    private StatusListMappingEntity lockRowCommittedWhileWaiting(
+            EntityManager em, String realmId, StatusListMappingEntity latestMapping) {
+        StatusListMappingEntity current = latestMapping;
+        while (true) {
+            StatusListMappingEntity committed = findLatestMapping(em, realmId);
+            if (committed == null || committed.getId() == null || sameMapping(current, committed)) {
+                return current;
+            }
+
+            StatusListMappingEntity refreshed =
+                    em.find(StatusListMappingEntity.class, committed.getId(), LockModeType.PESSIMISTIC_WRITE);
+            if (refreshed == null) {
+                return current;
+            }
+            current = refreshed;
+        }
+    }
+
+    private static boolean sameMapping(StatusListMappingEntity latestMapping, StatusListMappingEntity committed) {
+        return latestMapping == committed
+                || (latestMapping.getId() != null && latestMapping.getId().equals(committed.getId()));
     }
 
     private StatusListMappingEntity findLatestMappingForUpdate(EntityManager em, String realmId) {
+        return findLatestMapping(em, realmId, true);
+    }
+
+    private StatusListMappingEntity findLatestMapping(EntityManager em, String realmId) {
+        return findLatestMapping(em, realmId, false);
+    }
+
+    private StatusListMappingEntity findLatestMapping(EntityManager em, String realmId, boolean lock) {
         String q = """
                 SELECT m FROM StatusListMappingEntity m
                 WHERE m.realmId = :realmId
-                ORDER BY m.createdTimestamp DESC
+                ORDER BY m.createdTimestamp DESC, m.id DESC
                 """;
 
         TypedQuery<StatusListMappingEntity> query = em.createQuery(q, StatusListMappingEntity.class);
         query.setParameter("realmId", realmId);
         query.setMaxResults(1);
-        query.setLockMode(LockModeType.PESSIMISTIC_WRITE);
+        if (lock) {
+            query.setLockMode(LockModeType.PESSIMISTIC_WRITE);
+        }
 
         List<StatusListMappingEntity> result = query.getResultList();
         StatusListMappingEntity latest = result.isEmpty() ? null : result.get(0);

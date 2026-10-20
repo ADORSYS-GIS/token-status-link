@@ -52,8 +52,9 @@ public class StatusListMappingEntity {
     @Column(name = "token_status", nullable = false)
     private TokenStatus tokenStatus = TokenStatus.VALID;
 
+    /** Assigned under the reservation lock so waiting inserts sort after the tip they followed. */
     @Column(name = "created_timestamp", nullable = false, updatable = false)
-    private final Long createdTimestamp = Time.currentTimeMillis();
+    private Long createdTimestamp = Time.currentTimeMillis();
 
     public String getId() {
         return id;
@@ -130,6 +131,18 @@ public class StatusListMappingEntity {
 
     public Long getCreatedTimestamp() {
         return createdTimestamp;
+    }
+
+    /** Sets {@code createdTimestamp} to at least {@code previousCreatedTimestamp + 1}, or now if later. */
+    public void assignCreatedTimestamp(Long previousCreatedTimestamp) {
+        long now = Time.currentTimeMillis();
+        if (previousCreatedTimestamp == null) {
+            createdTimestamp = now;
+            return;
+        }
+
+        long afterPrevious = previousCreatedTimestamp == Long.MAX_VALUE ? Long.MAX_VALUE : previousCreatedTimestamp + 1;
+        createdTimestamp = Math.max(now, afterPrevious);
     }
 
     @Override
