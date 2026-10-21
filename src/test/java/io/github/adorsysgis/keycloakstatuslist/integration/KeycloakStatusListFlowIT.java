@@ -2,6 +2,7 @@ package io.github.adorsysgis.keycloakstatuslist.integration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -330,6 +331,73 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
         }
     }
 
+    @Test
+    void concurrentIssuanceStaysWithinStatusListAndSharesRollover() throws Exception {
+        int maxEntries = 3;
+        setMaxEntries(Integer.toString(maxEntries));
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            TestUser holder = credentialHolder("list-size-race");
+
+            // One free slot: two issuances must not book an index past the list size.
+            IssuedCredentialFixture oneFreeSlot = issueUntilIndex(holder, maxEntries, maxEntries - 2L);
+            List<IssuedCredentialFixture> lastSlotRace = raceTwo(executor, holder);
+            assertIndexesWithinList(lastSlotRace, maxEntries);
+            long keptOnCurrentList = lastSlotRace.stream()
+                    .filter(issued -> oneFreeSlot.statusListId().equals(issued.statusListId()))
+                    .count();
+            assertEquals(
+                    1, keptOnCurrentList, "one issuance takes the last slot, the other rolls over: " + lastSlotRace);
+
+            // Already full: both issuances must share the new list instead of opening one each.
+            IssuedCredentialFixture fullList = issueUntilIndex(holder, maxEntries, maxEntries - 1L);
+            List<IssuedCredentialFixture> rolloverRace = raceTwo(executor, holder);
+            assertIndexesWithinList(rolloverRace, maxEntries);
+            assertEquals(
+                    rolloverRace.get(0).statusListId(),
+                    rolloverRace.get(1).statusListId(),
+                    "concurrent rollover must share one new list: " + rolloverRace);
+            assertNotEquals(fullList.statusListId(), rolloverRace.get(0).statusListId());
+        } finally {
+            executor.shutdownNow();
+            setMaxEntries(null);
+        }
+    }
+
+    private static IssuedCredentialFixture issueUntilIndex(TestUser holder, int maxEntries, long targetIndex)
+            throws Exception {
+        IssuedCredentialFixture issued = null;
+        for (int i = 0; i < maxEntries + 2; i++) {
+            issued = oid4vci.issueCredential(holder.username(), holder.accessToken());
+            assertTrue(
+                    issued.statusIndex() >= 0 && issued.statusIndex() < maxEntries,
+                    "setup booked past max entries: idx=" + issued.statusIndex() + " list=" + issued.statusListId());
+            if (issued.statusIndex() == targetIndex) {
+                return issued;
+            }
+        }
+        throw new AssertionError("did not reach status index " + targetIndex + ", last=" + issued);
+    }
+
+    private static List<IssuedCredentialFixture> raceTwo(ExecutorService executor, TestUser holder) throws Exception {
+        Callable<IssuedCredentialFixture> attempt =
+                () -> oid4vci.issuedCredential(oid4vci.tryIssueCredential(holder.username(), holder.accessToken()));
+        Future<IssuedCredentialFixture> first = executor.submit(attempt);
+        Future<IssuedCredentialFixture> second = executor.submit(attempt);
+        return List.of(first.get(60, TimeUnit.SECONDS), second.get(60, TimeUnit.SECONDS));
+    }
+
+    private static void assertIndexesWithinList(List<IssuedCredentialFixture> issued, int maxEntries) {
+        for (IssuedCredentialFixture credential : issued) {
+            assertTrue(
+                    credential.statusIndex() >= 0 && credential.statusIndex() < maxEntries,
+                    "status index must stay within the list size: idx="
+                            + credential.statusIndex()
+                            + " list="
+                            + credential.statusListId());
+        }
+    }
+
     private static void assertRejectedIssuanceIsListedWithoutMapping(
             String holderAccessToken, String credentialAccessToken, String listedCredentialId) throws Exception {
         String rejectedId = oid4vci.issuedCredentialId(credentialAccessToken);
@@ -432,6 +500,12 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
      * through the admin API can drop the client scope from credential-configuration lookup and later
      * issuances then fail with HTTP 409 Duplicate resource.
      */
+    private static void setMaxEntries(String maxEntries) {
+        RealmRepresentation realm = realm().toRepresentation();
+        putOrRemoveAttribute(realm, StatusListConfig.STATUS_LIST_MAX_ENTRIES, maxEntries);
+        realm().update(realm);
+    }
+
     private static void setIssuanceQuota(String max, String overflowPolicy) {
         RealmRepresentation realm = realm().toRepresentation();
         putOrRemoveAttribute(realm, StatusListConfig.STATUS_LIST_MAX_CREDENTIALS_PER_USER, max);

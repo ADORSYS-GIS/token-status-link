@@ -302,7 +302,14 @@ public class StatusListConfig {
         }
 
         try {
-            return Integer.parseInt(value);
+            int parsed = Integer.parseInt(value);
+            if (parsed <= 0) {
+                logger.warnf(
+                        "Non-positive max entries value '%s' for realm %s. Using default: %d",
+                        value, realm.getName(), DEFAULT_MAX_ENTRIES);
+                return DEFAULT_MAX_ENTRIES;
+            }
+            return parsed;
         } catch (NumberFormatException e) {
             logger.warnf(
                     "Invalid max entries value '%s' for realm %s. Using default: %d",

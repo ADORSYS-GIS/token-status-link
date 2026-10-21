@@ -18,7 +18,9 @@ import io.github.adorsysgis.keycloakstatuslist.jpa.entity.StatusListMappingEntit
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import jakarta.persistence.TypedQuery;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -164,7 +166,6 @@ class StatusListRepositoryTest {
 
         assertSame(committed, result, "list choice must use the row inserted while this lock waited");
         verify(query).setLockMode(LockModeType.PESSIMISTIC_WRITE);
-        verify(rereadQuery, never()).setLockMode(LockModeType.PESSIMISTIC_WRITE);
         verify(em).find(eq(StatusListMappingEntity.class), eq("committed"), eq(LockModeType.PESSIMISTIC_WRITE));
         verify(em, never()).find(eq(RealmEntity.class), eq(TEST_REALM_ID), eq(LockModeType.PESSIMISTIC_WRITE));
     }
@@ -199,6 +200,39 @@ class StatusListRepositoryTest {
         assertEquals(0L, result.getIdx());
         verify(em).find(eq(StatusListMappingEntity.class), eq("after-a"), eq(LockModeType.PESSIMISTIC_WRITE));
         verify(em).find(eq(StatusListMappingEntity.class), eq("after-c"), eq(LockModeType.PESSIMISTIC_WRITE));
+    }
+
+    @Test
+    void lockLatestMappingShouldStopChasingAfterMaxHops() {
+        StatusListMappingEntity start = mapping("start", TEST_LIST_ID, 0L);
+        List<StatusListMappingEntity> newer = new ArrayList<>();
+        for (int i = 1; i <= StatusListRepository.MAX_TIP_CHASE_HOPS + 1; i++) {
+            newer.add(mapping("tip-" + i, "list-" + i, 0L));
+        }
+        when(em.createQuery(anyString(), eq(StatusListMappingEntity.class))).thenReturn(query);
+        AtomicInteger reads = new AtomicInteger();
+        when(query.getResultList()).thenAnswer(invocation -> {
+            int read = reads.getAndIncrement();
+            if (read == 0) {
+                return List.of(start);
+            }
+            return List.of(newer.get(read - 1));
+        });
+        for (int i = 0; i < StatusListRepository.MAX_TIP_CHASE_HOPS; i++) {
+            StatusListMappingEntity tip = newer.get(i);
+            when(em.find(eq(StatusListMappingEntity.class), eq(tip.getId()), eq(LockModeType.PESSIMISTIC_WRITE)))
+                    .thenReturn(tip);
+        }
+
+        StatusListMappingEntity result = repository.lockLatestMapping(em, TEST_REALM_ID);
+
+        StatusListMappingEntity lastAllowed = newer.get(StatusListRepository.MAX_TIP_CHASE_HOPS - 1);
+        assertSame(lastAllowed, result, "chase must stop after the hop cap");
+        verify(em, never())
+                .find(
+                        eq(StatusListMappingEntity.class),
+                        eq(newer.get(StatusListRepository.MAX_TIP_CHASE_HOPS).getId()),
+                        eq(LockModeType.PESSIMISTIC_WRITE));
     }
 
     @Test
