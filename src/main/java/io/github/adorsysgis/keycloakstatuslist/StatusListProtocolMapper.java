@@ -380,7 +380,12 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         AtomicReference<ReservationOutcome> outcome = new AtomicReference<>();
         statusListRepository.withEntityManagerInTransaction(em -> {
             StatusListMappingEntity latest = statusListRepository.lockLatestMapping(em, mapping.getRealmId());
-            mapping.setStatusListId(statusListRepository.getNextStatusListId(latest, maxEntries));
+            // A full tip is read again so a list opened while this reservation waited is reused.
+            if (latest != null && !statusListRepository.hasRoom(latest, maxEntries)) {
+                StatusListMappingEntity refreshed = statusListRepository.lockLatestMapping(em, mapping.getRealmId());
+                latest = statusListRepository.hasRoom(refreshed, maxEntries) ? refreshed : null;
+            }
+            statusListRepository.bookNextIndex(mapping, latest, maxEntries);
             logger.debugf(
                     "Booking next index for status list mapping: status_list_id=%s, userId=%s, tokenId=%s",
                     mapping.getStatusListId(), mapping.getUserId(), mapping.getTokenId());
@@ -411,10 +416,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
     }
 
     private void persistInitialMapping(EntityManager entityManager, StatusListMappingEntity mapping) {
-        Long idx = statusListRepository.getNextIndex(entityManager, mapping.getStatusListId());
-        logger.debugf("Next available index is: %d", idx);
-
-        mapping.setIdx(idx);
+        logger.debugf("Next available index is: %d", mapping.getIdx());
         mapping.setStatus(MappingStatus.INIT);
 
         entityManager.persist(mapping);
