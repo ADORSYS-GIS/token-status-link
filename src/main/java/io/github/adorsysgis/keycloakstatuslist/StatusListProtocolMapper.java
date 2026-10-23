@@ -386,7 +386,12 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         AtomicReference<ReservationOutcome> outcome = new AtomicReference<>();
         statusListRepository.withEntityManagerInTransaction(em -> {
             StatusListMappingEntity latest = statusListRepository.lockLatestMapping(em, mapping.getRealmId());
-            mapping.setStatusListId(statusListRepository.getNextStatusListId(latest, maxEntries));
+            // A full tip is read again so a list opened while this reservation waited is reused.
+            if (latest != null && !statusListRepository.hasRoom(latest, maxEntries)) {
+                StatusListMappingEntity refreshed = statusListRepository.lockLatestMapping(em, mapping.getRealmId());
+                latest = statusListRepository.hasRoom(refreshed, maxEntries) ? refreshed : null;
+            }
+            statusListRepository.bookNextIndex(mapping, latest, maxEntries);
             logger.debugf(
                     "Booking next index for status list mapping: status_list_id=%s, userId=%s, tokenId=%s",
                     mapping.getStatusListId(), mapping.getUserId(), mapping.getTokenId());
@@ -402,7 +407,7 @@ public class StatusListProtocolMapper extends OID4VCMapper {
                 outcome.set(ReservationOutcome.mustRevoke(toRevoke));
                 return;
             }
-            persistInitialMapping(em, mapping, latest, maxEntries);
+            persistInitialMapping(em, mapping);
             outcome.set(ReservationOutcome.RESERVED);
         });
         return outcome.get();
@@ -416,16 +421,8 @@ public class StatusListProtocolMapper extends OID4VCMapper {
         }
     }
 
-    private void persistInitialMapping(
-            EntityManager entityManager,
-            StatusListMappingEntity mapping,
-            StatusListMappingEntity latest,
-            int maxEntries) {
-        mapping.assignCreatedTimestamp(latest == null ? null : latest.getCreatedTimestamp());
-        Long idx = statusListRepository.bookNextIndex(entityManager, mapping, maxEntries);
-        logger.debugf("Next available index is: %d", idx);
-
-        mapping.setIdx(idx);
+    private void persistInitialMapping(EntityManager entityManager, StatusListMappingEntity mapping) {
+        logger.debugf("Next available index is: %d", mapping.getIdx());
         mapping.setStatus(MappingStatus.INIT);
 
         entityManager.persist(mapping);

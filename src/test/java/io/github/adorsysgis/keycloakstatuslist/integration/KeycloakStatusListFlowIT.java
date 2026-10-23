@@ -332,24 +332,43 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
     }
 
     @Test
-    void concurrentIssuanceStaysWithinStatusListAndSharesRollover() throws Exception {
+    void concurrentIssuanceStaysWithinStatusList() throws Exception {
         int maxEntries = 3;
         setMaxEntries(Integer.toString(maxEntries));
         ExecutorService executor = Executors.newFixedThreadPool(2);
         try {
             TestUser holder = credentialHolder("list-size-race");
 
-            // One free slot: two issuances must not book an index past the list size.
+            // Room left on the list: overlapping issuances stay on it and take different indexes.
+            IssuedCredentialFixture openList = issueUntilIndex(holder, maxEntries, 0L);
+            List<IssuedCredentialFixture> roomRace = raceTwo(executor, holder);
+            assertIndexesWithinList(roomRace, maxEntries);
+            assertEquals(
+                    openList.statusListId(),
+                    roomRace.get(0).statusListId(),
+                    "both issuances stay on the open list: " + roomRace);
+            assertEquals(
+                    openList.statusListId(),
+                    roomRace.get(1).statusListId(),
+                    "both issuances stay on the open list: " + roomRace);
+            assertNotEquals(openList.statusIndex(), roomRace.get(0).statusIndex(), roomRace.toString());
+            assertNotEquals(openList.statusIndex(), roomRace.get(1).statusIndex(), roomRace.toString());
+            assertNotEquals(
+                    roomRace.get(0).statusIndex(),
+                    roomRace.get(1).statusIndex(),
+                    "overlapping issuances must book different indexes: " + roomRace);
+
+            // One free slot: the last index of the current list is booked at most once.
             IssuedCredentialFixture oneFreeSlot = issueUntilIndex(holder, maxEntries, maxEntries - 2L);
-            List<IssuedCredentialFixture> lastSlotRace = raceTwo(executor, holder);
+            List<IssuedCredentialFixture> lastSlotRace = successfulIssuances(raceTwoAttempts(executor, holder));
+            assertFalse(lastSlotRace.isEmpty(), "at least one issuance should take the last slot");
             assertIndexesWithinList(lastSlotRace, maxEntries);
             long keptOnCurrentList = lastSlotRace.stream()
                     .filter(issued -> oneFreeSlot.statusListId().equals(issued.statusListId()))
                     .count();
-            assertEquals(
-                    1, keptOnCurrentList, "one issuance takes the last slot, the other rolls over: " + lastSlotRace);
+            assertEquals(1, keptOnCurrentList, "the current list's last slot is booked once: " + lastSlotRace);
 
-            // Already full: both issuances must share the new list instead of opening one each.
+            // Already full: both issuances share the list opened by the winner.
             IssuedCredentialFixture fullList = issueUntilIndex(holder, maxEntries, maxEntries - 1L);
             List<IssuedCredentialFixture> rolloverRace = raceTwo(executor, holder);
             assertIndexesWithinList(rolloverRace, maxEntries);
@@ -377,6 +396,27 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
             }
         }
         throw new AssertionError("did not reach status index " + targetIndex + ", last=" + issued);
+    }
+
+    private static List<Oid4vciTestClient.CredentialIssuanceAttempt> raceTwoAttempts(
+            ExecutorService executor, TestUser holder) throws Exception {
+        Callable<Oid4vciTestClient.CredentialIssuanceAttempt> attempt =
+                () -> oid4vci.tryIssueCredential(holder.username(), holder.accessToken());
+        Future<Oid4vciTestClient.CredentialIssuanceAttempt> first = executor.submit(attempt);
+        Future<Oid4vciTestClient.CredentialIssuanceAttempt> second = executor.submit(attempt);
+        return List.of(first.get(60, TimeUnit.SECONDS), second.get(60, TimeUnit.SECONDS));
+    }
+
+    private static List<IssuedCredentialFixture> successfulIssuances(
+            List<Oid4vciTestClient.CredentialIssuanceAttempt> attempts) throws Exception {
+        List<IssuedCredentialFixture> issued = new ArrayList<>();
+        for (Oid4vciTestClient.CredentialIssuanceAttempt attempt : attempts) {
+            int status = attempt.response().statusCode();
+            if (status >= 200 && status < 300) {
+                issued.add(oid4vci.issuedCredential(attempt));
+            }
+        }
+        return issued;
     }
 
     private static List<IssuedCredentialFixture> raceTwo(ExecutorService executor, TestUser holder) throws Exception {
