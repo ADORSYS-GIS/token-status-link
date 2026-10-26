@@ -79,18 +79,15 @@ public class StatusListRepository {
     /**
      * Locks the latest mapping for the realm so list-id choice, quota check, and index reservation
      * share one serialized window. When the table is empty, {@code SELECT … FOR UPDATE} would lock
-     * nothing, so this takes {@code PESSIMISTIC_WRITE} on the existing Keycloak realm row and
-     * re-reads. Under the database default, READ COMMITTED, a waiter can be returned the row it
-     * waited on after a newer tip has committed. Callers that find the tip full call once more.
-     * Must run inside an open transaction.
+     * nothing, so this takes {@code PESSIMISTIC_WRITE} on the existing Keycloak realm row.
+     * Under the database default, READ COMMITTED, a waiter can be returned the row it waited on
+     * after a newer tip has committed, even when that row still has room. This reads once more
+     * and returns that tip. Must run inside an open transaction.
      */
     public StatusListMappingEntity lockLatestMapping(EntityManager em, String realmId) {
-        StatusListMappingEntity latest = findLatestMappingForUpdate(em, realmId);
-        if (latest != null) {
-            return latest;
+        if (findLatestMappingForUpdate(em, realmId) == null) {
+            lockRealmForFirstMapping(em, realmId);
         }
-
-        lockRealmForFirstMapping(em, realmId);
         return findLatestMappingForUpdate(em, realmId);
     }
 

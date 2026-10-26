@@ -230,18 +230,15 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
                 hasItem(containsString(String.format(
                         "Running status list has reached max entries (%d), generating new list ID",
                         StatusListConfig.DEFAULT_MAX_ENTRIES))));
-        verify(statusListRepository, times(2)).lockLatestMapping(any(), anyString());
+        verify(statusListRepository, times(1)).lockLatestMapping(any(), anyString());
     }
 
     @Test
-    void shouldReuseListOpenedWhileLockedMappingWasFull() {
-        StatusListMappingEntity full = new StatusListMappingEntity();
-        full.setStatusListId(TEST_LIST_ID);
-        full.setIdx((long) StatusListConfig.DEFAULT_MAX_ENTRIES - 1);
+    void shouldExtendTheListReturnedByTheSingleLock() {
         StatusListMappingEntity opened = new StatusListMappingEntity();
         opened.setStatusListId("list-opened-while-waiting");
         opened.setIdx(0L);
-        doReturn(full).doReturn(opened).when(statusListRepository).lockLatestMapping(any(), anyString());
+        doReturn(opened).when(statusListRepository).lockLatestMapping(any(), anyString());
 
         mapper.setClaim(claims, userSession);
 
@@ -249,7 +246,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         verify(entityManager).persist(entityCaptor.capture());
         assertEquals("list-opened-while-waiting", entityCaptor.getValue().getStatusListId());
         assertEquals(1L, entityCaptor.getValue().getIdx());
-        verify(statusListRepository, times(2)).lockLatestMapping(any(), anyString());
+        verify(statusListRepository, times(1)).lockLatestMapping(any(), anyString());
     }
 
     @Test
