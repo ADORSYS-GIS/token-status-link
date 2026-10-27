@@ -109,4 +109,13 @@ class StatusListConfigTest {
 
         assertEquals(StatusListConfig.DEFAULT_MAX_ENTRIES, new StatusListConfig(realm).getStatusListMaxEntries());
     }
+
+    @Test
+    void getStatusListMaxEntries_nonPositiveFallsBackToDefault() {
+        when(realm.getAttribute(StatusListConfig.STATUS_LIST_MAX_ENTRIES)).thenReturn("0");
+        assertEquals(StatusListConfig.DEFAULT_MAX_ENTRIES, new StatusListConfig(realm).getStatusListMaxEntries());
+
+        when(realm.getAttribute(StatusListConfig.STATUS_LIST_MAX_ENTRIES)).thenReturn("-1");
+        assertEquals(StatusListConfig.DEFAULT_MAX_ENTRIES, new StatusListConfig(realm).getStatusListMaxEntries());
+    }
 }

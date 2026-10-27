@@ -94,7 +94,10 @@ final class Oid4vciTestClient {
     }
 
     IssuedCredentialFixture issueCredential(String username, String userAccessToken) throws Exception {
-        CredentialIssuanceAttempt attempt = tryIssueCredential(username, userAccessToken);
+        return issuedCredential(tryIssueCredential(username, userAccessToken));
+    }
+
+    IssuedCredentialFixture issuedCredential(CredentialIssuanceAttempt attempt) throws Exception {
         assertTrue(
                 attempt.response().statusCode() >= 200 && attempt.response().statusCode() < 300,
                 "credential endpoint must succeed, got HTTP "

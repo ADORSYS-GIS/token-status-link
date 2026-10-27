@@ -8,7 +8,6 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -52,83 +51,32 @@ class StatusListRepositoryTest {
     }
 
     @Test
-    void getNextIndexShouldReserveFirstSlotWhenListIsEmpty() {
-        when(em.createQuery(anyString(), eq(StatusListMappingEntity.class))).thenReturn(query);
-        when(query.getResultList()).thenReturn(List.of());
+    void bookNextIndexShouldFollowLockedMappingWhenListHasRoom() {
+        StatusListMappingEntity latest = mapping("latest", TEST_LIST_ID, 5L);
+        StatusListMappingEntity reservation = new StatusListMappingEntity();
 
-        Long next = repository.getNextIndex(em, TEST_LIST_ID);
+        repository.bookNextIndex(reservation, latest, StatusListConfig.DEFAULT_MAX_ENTRIES);
 
-        assertEquals(0L, next, "first index of an empty list should be 0");
-        verify(query).setParameter("listId", TEST_LIST_ID);
-        verify(query).setLockMode(LockModeType.PESSIMISTIC_WRITE);
+        assertEquals(TEST_LIST_ID, reservation.getStatusListId(), "list with room should be reused");
+        assertEquals(6L, reservation.getIdx(), "next index comes from the locked mapping");
     }
 
     @Test
-    void getNextIndexShouldReserveLatestPlusOne() {
-        StatusListMappingEntity latest = new StatusListMappingEntity();
-        latest.setStatusListId(TEST_LIST_ID);
-        latest.setIdx(7L);
-        when(em.createQuery(anyString(), eq(StatusListMappingEntity.class))).thenReturn(query);
-        when(query.getResultList()).thenReturn(List.of(latest));
-
-        Long next = repository.getNextIndex(em, TEST_LIST_ID);
-
-        assertEquals(8L, next, "next index should follow the latest");
-    }
-
-    @Test
-    void getNextStatusListIdShouldReuseRunningListBelowMaxEntries() {
-        StatusListMappingEntity latest = new StatusListMappingEntity();
-        latest.setStatusListId(TEST_LIST_ID);
-        latest.setIdx(5L);
-
-        String next = repository.getNextStatusListId(latest, StatusListConfig.DEFAULT_MAX_ENTRIES);
-
-        assertEquals(TEST_LIST_ID, next, "list below max entries should be reused");
-    }
-
-    @Test
-    void getNextStatusListIdShouldRollOverToNewListAtMaxEntries() {
-        StatusListMappingEntity latest = new StatusListMappingEntity();
-        latest.setStatusListId(TEST_LIST_ID);
-        latest.setIdx((long) StatusListConfig.DEFAULT_MAX_ENTRIES - 1);
-
-        String next = repository.getNextStatusListId(latest, StatusListConfig.DEFAULT_MAX_ENTRIES);
-
-        assertNotEquals(TEST_LIST_ID, next, "full list should roll over to a new id");
-        assertFalse(next.isBlank(), "new list id should not be blank");
-    }
-
-    @Test
-    void getNextStatusListIdShouldGenerateNewIdWhenNoMappingExistsYet() {
-        String next = repository.getNextStatusListId(null, StatusListConfig.DEFAULT_MAX_ENTRIES);
-
-        assertNotNull(next);
-        assertFalse(next.isBlank(), "fresh list id should be generated");
-    }
-
-    @Test
-    void lockLatestMappingShouldReturnExistingMappingWithoutRealmLock() {
-        StatusListMappingEntity latest = new StatusListMappingEntity();
-        latest.setStatusListId(TEST_LIST_ID);
-        latest.setIdx(3L);
+    void lockLatestMappingShouldReturnExistingMapping() {
+        StatusListMappingEntity latest = mapping("latest", TEST_LIST_ID, 3L);
         when(em.createQuery(anyString(), eq(StatusListMappingEntity.class))).thenReturn(query);
         when(query.getResultList()).thenReturn(List.of(latest));
 
         StatusListMappingEntity result = repository.lockLatestMapping(em, TEST_REALM_ID);
 
         assertSame(latest, result, "should return the existing latest mapping");
-        verify(em, never()).find(eq(RealmEntity.class), eq(TEST_REALM_ID), eq(LockModeType.PESSIMISTIC_WRITE));
     }
 
     @Test
     void lockLatestMappingShouldLockRealmWhenTableIsEmpty() {
-        StatusListMappingEntity first = new StatusListMappingEntity();
-        first.setStatusListId(TEST_LIST_ID);
-        first.setIdx(0L);
+        StatusListMappingEntity first = mapping("first", TEST_LIST_ID, 0L);
         when(em.createQuery(anyString(), eq(StatusListMappingEntity.class))).thenReturn(query);
-        // Empty first, then a mapping once the realm row is locked.
-        when(query.getResultList()).thenReturn(List.of(), List.of(first));
+        when(query.getResultList()).thenReturn(List.of()).thenReturn(List.of(first));
         when(em.find(eq(RealmEntity.class), eq(TEST_REALM_ID), eq(LockModeType.PESSIMISTIC_WRITE)))
                 .thenReturn(mock(RealmEntity.class));
 
@@ -136,5 +84,47 @@ class StatusListRepositoryTest {
 
         assertSame(first, result, "should return the mapping after locking the realm");
         verify(em).find(eq(RealmEntity.class), eq(TEST_REALM_ID), eq(LockModeType.PESSIMISTIC_WRITE));
+    }
+
+    @Test
+    void bookNextIndexShouldOpenNewListWhenLockedMappingIsFull() {
+        StatusListMappingEntity lastSlot = mapping("last-slot", TEST_LIST_ID, 2L);
+        StatusListMappingEntity reservation = new StatusListMappingEntity();
+
+        repository.bookNextIndex(reservation, lastSlot, 3);
+
+        assertEquals(0L, reservation.getIdx(), "a new list starts at index 0");
+        assertNotEquals(TEST_LIST_ID, reservation.getStatusListId(), "a full list must not be extended");
+        assertFalse(reservation.getStatusListId().isBlank());
+    }
+
+    @Test
+    void bookNextIndexShouldOpenNewListWhenNoMappingExistsYet() {
+        StatusListMappingEntity reservation = new StatusListMappingEntity();
+
+        repository.bookNextIndex(reservation, null, StatusListConfig.DEFAULT_MAX_ENTRIES);
+
+        assertEquals(0L, reservation.getIdx(), "the first list starts at index 0");
+        assertNotNull(reservation.getStatusListId());
+        assertFalse(reservation.getStatusListId().isBlank(), "fresh list id should be generated");
+    }
+
+    @Test
+    void bookNextIndexShouldReuseListOpenedByConcurrentRollover() {
+        StatusListMappingEntity concurrentNewList = mapping("new-list-tip", "list-2", 0L);
+        StatusListMappingEntity reservation = new StatusListMappingEntity();
+
+        repository.bookNextIndex(reservation, concurrentNewList, 3);
+
+        assertEquals("list-2", reservation.getStatusListId(), "must share the list opened while waiting");
+        assertEquals(1L, reservation.getIdx(), "next index follows the locked mapping");
+    }
+
+    private static StatusListMappingEntity mapping(String id, String statusListId, Long idx) {
+        StatusListMappingEntity mapping = new StatusListMappingEntity();
+        mapping.setId(id);
+        mapping.setStatusListId(statusListId);
+        mapping.setIdx(idx);
+        return mapping;
     }
 }

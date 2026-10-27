@@ -26,6 +26,7 @@ import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -87,6 +88,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
     StatusListProtocolMapper mapper;
     HashMap<String, Object> claims;
     StatusListRepository statusListRepository;
+    StatusListMappingEntity lockedLatest;
 
     @BeforeEach
     void setup() {
@@ -176,7 +178,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
     @Test
     void shouldMapSuccessfully_WhenStatusIsSent() throws Exception {
-        long idx = mockGetNextIndex();
+        long idx = stubNextIndex();
 
         // Act
         mapper.setClaim(claims, userSession);
@@ -207,11 +209,12 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         assertEquals("did:example:123456789", capturedEntity.getTokenId());
         assertEquals(MappingStatus.SUCCESS, capturedEntity.getStatus());
         verify(statusListRepository).save(capturedEntity);
+        verify(statusListRepository, times(1)).lockLatestMapping(any(), anyString());
     }
 
     @Test
     void shouldUseIssuedCredentialIdFromAuthenticatedAccessTokenAsMappingKey() {
-        mockGetNextIndex();
+        stubNextIndex();
         when(headers.getHeaderString(HttpHeaders.AUTHORIZATION))
                 .thenReturn("Bearer " + accessTokenWithIssuedCredentialId("issued-credential-1"));
 
@@ -225,7 +228,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
     @Test
     void shouldUseIssuedCredentialIdFromDpopAccessTokenAsMappingKey() {
-        mockGetNextIndex();
+        stubNextIndex();
         when(headers.getHeaderString(HttpHeaders.AUTHORIZATION))
                 .thenReturn("DPoP " + accessTokenWithIssuedCredentialId("issued-credential-1"));
 
@@ -240,7 +243,6 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
     void shouldMapSuccessfully_WhenSwitchingToNewList() {
         // Force running status list to be at max capacity to trigger creation of new list ID
         mockStatusListRepository(StatusListConfig.DEFAULT_MAX_ENTRIES);
-        mockGetNextIndex();
 
         // Act
         mapper.setClaim(claims, userSession);
@@ -252,6 +254,23 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
                 hasItem(containsString(String.format(
                         "Running status list has reached max entries (%d), generating new list ID",
                         StatusListConfig.DEFAULT_MAX_ENTRIES))));
+        verify(statusListRepository, times(1)).lockLatestMapping(any(), anyString());
+    }
+
+    @Test
+    void shouldExtendTheListReturnedByTheSingleLock() {
+        StatusListMappingEntity opened = new StatusListMappingEntity();
+        opened.setStatusListId("list-opened-while-waiting");
+        opened.setIdx(0L);
+        doReturn(opened).when(statusListRepository).lockLatestMapping(any(), anyString());
+
+        mapper.setClaim(claims, userSession);
+
+        var entityCaptor = ArgumentCaptor.forClass(StatusListMappingEntity.class);
+        verify(entityManager).persist(entityCaptor.capture());
+        assertEquals("list-opened-while-waiting", entityCaptor.getValue().getStatusListId());
+        assertEquals(1L, entityCaptor.getValue().getIdx());
+        verify(statusListRepository, times(1)).lockLatestMapping(any(), anyString());
     }
 
     @Test
@@ -320,7 +339,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
     @Test
     void shouldMap_WhenHttpStatusServerUrlIsUsed() {
         when(realm.getAttribute(StatusListConfig.STATUS_LIST_SERVER_URL)).thenReturn("http://example.com");
-        long idx = mockGetNextIndex();
+        long idx = stubNextIndex();
 
         mapper.setClaim(claims, userSession);
 
@@ -332,7 +351,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
     @Test
     void shouldNotMap_IfDbPersistenceFails() {
-        mockGetNextIndex();
+        stubNextIndex();
         doThrow(new PersistenceException("DB Error")).when(entityManager).persist(any());
 
         mapper.setClaim(claims, userSession);
@@ -343,7 +362,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
     @Test
     void shouldNotMap_IfDbCompletionFailsAfterPublishingStatus() {
-        mockGetNextIndex();
+        stubNextIndex();
         doThrow(new PersistenceException("DB Error")).when(statusListRepository).save(any());
 
         mapper.setClaim(claims, userSession);
@@ -354,7 +373,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
     @Test
     void shouldNotMap_WhenSendingStatusFails() throws Exception {
-        mockGetNextIndex();
+        stubNextIndex();
         when(realm.getAttribute(StatusListConfig.STATUS_LIST_MANDATORY)).thenReturn("false");
         when(headers.getHeaderString(HttpHeaders.AUTHORIZATION))
                 .thenReturn("Bearer " + accessTokenWithIssuedCredentialId("issued-credential-1"));
@@ -380,7 +399,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
     @Test
     void shouldContinueIssuance_WhenOptionalAndDbPersistenceFails() {
-        mockGetNextIndex();
+        stubNextIndex();
         lenient()
                 .when(realm.getAttribute(StatusListConfig.STATUS_LIST_MANDATORY))
                 .thenReturn("false");
@@ -396,7 +415,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
     @Test
     void shouldFailIssuance_WhenMandatoryAndDbPersistenceFails() {
-        mockGetNextIndex();
+        stubNextIndex();
         when(realm.getAttribute(StatusListConfig.STATUS_LIST_MANDATORY)).thenReturn("true");
         when(headers.getHeaderString(HttpHeaders.AUTHORIZATION))
                 .thenReturn("Bearer " + accessTokenWithIssuedCredentialId("issued-credential-1"));
@@ -410,7 +429,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
     @Test
     void shouldFailIssuance_WhenMandatoryAndSendingStatusFails() throws Exception {
-        mockGetNextIndex();
+        stubNextIndex();
         when(realm.getAttribute(StatusListConfig.STATUS_LIST_MANDATORY)).thenReturn("true");
         when(headers.getHeaderString(HttpHeaders.AUTHORIZATION))
                 .thenReturn("Bearer " + accessTokenWithIssuedCredentialId("issued-credential-1"));
@@ -426,7 +445,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
     @Test
     void shouldMarkMappingFailure_WhenStatusServerReturnsError() throws Exception {
-        mockGetNextIndex();
+        stubNextIndex();
         lenient()
                 .when(realm.getAttribute(StatusListConfig.STATUS_LIST_MANDATORY))
                 .thenReturn("false");
@@ -444,7 +463,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
     @Test
     void shouldMapStatusEvenWhenIdClaimIsNotString() {
-        mockGetNextIndex();
+        stubNextIndex();
         claims.put(Constants.ID_CLAIM_KEY, 1234L);
 
         mapper.setClaim(claims, userSession);
@@ -454,7 +473,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
     @Test
     void shouldMapStatusEvenWhenIdClaimIsMissing() {
-        mockGetNextIndex();
+        stubNextIndex();
         claims.remove(Constants.ID_CLAIM_KEY);
 
         mapper.setClaim(claims, userSession);
@@ -464,7 +483,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
     @Test
     void shouldRejectIssuance_WhenHolderIsAtConfiguredMax() {
-        mockGetNextIndex();
+        stubNextIndex();
         stubHolder("holder-1");
         stubMapperMax("1");
         when(headers.getHeaderString(HttpHeaders.AUTHORIZATION))
@@ -482,7 +501,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
     @Test
     void shouldFailClosed_WhenLimitIsConfiguredAndHolderCannotBeResolved() {
-        mockGetNextIndex();
+        stubNextIndex();
         stubMapperMax("1");
         when(headers.getHeaderString(HttpHeaders.AUTHORIZATION))
                 .thenReturn("Bearer " + accessTokenWithIssuedCredentialId("issued-credential-1"));
@@ -497,7 +516,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
     @Test
     void shouldFailClosed_WhenLimitIsConfiguredAndCredentialTypeCannotBeResolved() {
-        mockGetNextIndex();
+        stubNextIndex();
         stubHolder("holder-1");
         stubMapperMax("1");
         when(headers.getHeaderString(HttpHeaders.AUTHORIZATION))
@@ -513,7 +532,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
     @Test
     void shouldFailClosed_WhenLimitConfigurationIsInvalid() {
-        mockGetNextIndex();
+        stubNextIndex();
         stubHolder("holder-1");
         stubMapperMax("abc");
         when(headers.getHeaderString(HttpHeaders.AUTHORIZATION))
@@ -528,7 +547,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
     @Test
     void shouldAllowIssuance_WhenHolderIsBelowConfiguredMax() {
-        mockGetNextIndex();
+        stubNextIndex();
         stubHolder("holder-1");
         stubMapperMax("2");
         when(headers.getHeaderString(HttpHeaders.AUTHORIZATION))
@@ -546,7 +565,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
     @Test
     void shouldRevokeOldestAndContinue_WhenOverflowPolicyIsRevokeOldest() throws Exception {
-        mockGetNextIndex();
+        stubNextIndex();
         stubHolder("holder-1");
         stubMapperConfig("1", StatusListConfig.OVERFLOW_POLICY_REVOKE_OLDEST);
         when(headers.getHeaderString(HttpHeaders.AUTHORIZATION))
@@ -585,7 +604,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
     @Test
     void shouldReportLimitReached_WhenConcurrentIssuanceTakesFreedSlot() throws Exception {
-        mockGetNextIndex();
+        stubNextIndex();
         stubHolder("holder-1");
         stubMapperConfig("1", StatusListConfig.OVERFLOW_POLICY_REVOKE_OLDEST);
         when(headers.getHeaderString(HttpHeaders.AUTHORIZATION))
@@ -640,7 +659,7 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
 
     @Test
     void shouldKeepOldestRevoked_WhenRevokeOldestSucceedsButNewPublicationFails() throws Exception {
-        mockGetNextIndex();
+        stubNextIndex();
         stubHolder("holder-1");
         stubMapperConfig("1", StatusListConfig.OVERFLOW_POLICY_REVOKE_OLDEST);
         when(headers.getHeaderString(HttpHeaders.AUTHORIZATION))
@@ -704,11 +723,11 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
         setPrivateField(statusListRepository, "session", session);
         setPrivateField(mapper, "statusListRepository", statusListRepository);
 
-        var mapping = new StatusListMappingEntity();
-        mapping.setStatusListId(TEST_LIST_ID);
-        mapping.setIdx(maxIdx);
+        lockedLatest = new StatusListMappingEntity();
+        lockedLatest.setStatusListId(TEST_LIST_ID);
+        lockedLatest.setIdx(maxIdx);
 
-        lenient().doReturn(mapping).when(statusListRepository).lockLatestMapping(any(), anyString());
+        lenient().doReturn(lockedLatest).when(statusListRepository).lockLatestMapping(any(), anyString());
         lenient()
                 .doAnswer(invocation -> invocation.getArgument(0))
                 .when(statusListRepository)
@@ -757,11 +776,9 @@ class StatusListProtocolMapperTest extends MockKeycloakTest {
                         overflowPolicy));
     }
 
-    private long mockGetNextIndex() {
+    private long stubNextIndex() {
         long nextIndex = ThreadLocalRandom.current().nextLong(StatusListConfig.DEFAULT_MAX_ENTRIES - 1);
-
-        lenient().doReturn(nextIndex).when(statusListRepository).getNextIndex(any(), anyString());
-
+        lockedLatest.setIdx(nextIndex - 1);
         return nextIndex;
     }
 

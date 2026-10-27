@@ -48,37 +48,46 @@ public class StatusListRepository {
     }
 
     /**
-     * Get the next available index for the given status list ID, using a pessimistic lock to
-     * prevent race conditions. Must be run within a transaction.
+     * The locked mapping can take {@code latest.idx + 1} when that index is in {@code [0, maxEntries)}.
+     * A missing mapping has no list to extend.
      */
-    public Long getNextIndex(EntityManager em, String statusListId) {
-        String q = """
-                SELECT m FROM StatusListMappingEntity m
-                WHERE m.statusListId = :listId ORDER BY m.idx DESC
-                """;
+    public boolean hasRoom(StatusListMappingEntity latest, int maxEntries) {
+        if (latest == null) {
+            return false;
+        }
+        long nextIndex = latest.getIdx() + 1;
+        return nextIndex >= 0 && nextIndex < maxEntries;
+    }
 
-        TypedQuery<StatusListMappingEntity> query = em.createQuery(q, StatusListMappingEntity.class);
-        query.setParameter("listId", statusListId);
-        query.setMaxResults(1);
-        query.setLockMode(LockModeType.PESSIMISTIC_WRITE);
+    /**
+     * Writes the next list id and index onto {@code mapping} from {@code latest}, already locked by
+     * {@link #lockLatestMapping}. The next index is {@code latest.idx + 1}. When {@code latest} is
+     * missing or full, opens a new list at index {@code 0}. Does not take a lock.
+     */
+    public void bookNextIndex(StatusListMappingEntity mapping, StatusListMappingEntity latest, int maxEntries) {
+        if (!hasRoom(latest, maxEntries)) {
+            logger.debugf("Running status list has reached max entries (%d), generating new list ID", maxEntries);
+            mapping.setStatusListId(KeycloakModelUtils.generateId());
+            mapping.setIdx(0L);
+            return;
+        }
 
-        List<StatusListMappingEntity> max = query.getResultList();
-        return (max.isEmpty()) ? 0 : max.get(0).getIdx() + 1;
+        mapping.setStatusListId(latest.getStatusListId());
+        mapping.setIdx(latest.getIdx() + 1);
     }
 
     /**
      * Locks the latest mapping for the realm so list-id choice, quota check, and index reservation
      * share one serialized window. When the table is empty, {@code SELECT … FOR UPDATE} would lock
-     * nothing, so this takes {@code PESSIMISTIC_WRITE} on the existing Keycloak realm row and
-     * re-reads. Must run inside an open transaction.
+     * nothing, so this takes {@code PESSIMISTIC_WRITE} on the existing Keycloak realm row.
+     * Under the database default, READ COMMITTED, a waiter can be returned the row it waited on
+     * after a newer tip has committed, even when that row still has room. This reads once more
+     * and returns that tip. Must run inside an open transaction.
      */
     public StatusListMappingEntity lockLatestMapping(EntityManager em, String realmId) {
-        StatusListMappingEntity latest = findLatestMappingForUpdate(em, realmId);
-        if (latest != null) {
-            return latest;
+        if (findLatestMappingForUpdate(em, realmId) == null) {
+            lockRealmForFirstMapping(em, realmId);
         }
-
-        lockRealmForFirstMapping(em, realmId);
         return findLatestMappingForUpdate(em, realmId);
     }
 
@@ -86,7 +95,7 @@ public class StatusListRepository {
         String q = """
                 SELECT m FROM StatusListMappingEntity m
                 WHERE m.realmId = :realmId
-                ORDER BY m.createdTimestamp DESC
+                ORDER BY m.createdTimestamp DESC, m.id DESC
                 """;
 
         TypedQuery<StatusListMappingEntity> query = em.createQuery(q, StatusListMappingEntity.class);
@@ -96,7 +105,9 @@ public class StatusListRepository {
 
         List<StatusListMappingEntity> result = query.getResultList();
         StatusListMappingEntity latest = result.isEmpty() ? null : result.get(0);
-        logger.debug(latest);
+        logger.debugf(
+                "Locked latest status-list mapping for realm %s: listId=%s, idx=%s",
+                realmId, latest == null ? null : latest.getStatusListId(), latest == null ? null : latest.getIdx());
         return latest;
     }
 
@@ -105,19 +116,6 @@ public class StatusListRepository {
         if (realm == null) {
             throw new IllegalStateException("Cannot reserve a status-list index; realm not found: " + realmId);
         }
-    }
-
-    /**
-     * Identify the next status list ID from an already-locked latest mapping. Reuse it if it has not
-     * reached the maximum number of entries allowed per list, otherwise generate a new one.
-     */
-    public String getNextStatusListId(StatusListMappingEntity latest, int maxEntries) {
-        if (latest == null || latest.getIdx() + 1 >= maxEntries) {
-            logger.debugf("Running status list has reached max entries (%d), generating new list ID", maxEntries);
-            return KeycloakModelUtils.generateId();
-        }
-
-        return latest.getStatusListId();
     }
 
     /**
