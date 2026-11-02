@@ -18,6 +18,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.keycloak.OAuth2Constants;
@@ -162,7 +163,18 @@ final class Oid4vciTestClient {
 
     HttpResponse<String> revokeCredential(String bearerToken, String credentialId, String reason)
             throws IOException, InterruptedException {
-        Map<String, String> headers = bearerToken == null ? Map.of() : bearer(bearerToken);
+        return revokeCredential(bearerToken, credentialId, reason, null);
+    }
+
+    HttpResponse<String> revokeCredential(String bearerToken, String credentialId, String reason, String origin)
+            throws IOException, InterruptedException {
+        Map<String, String> headers = new LinkedHashMap<>();
+        if (bearerToken != null) {
+            headers.putAll(bearer(bearerToken));
+        }
+        if (origin != null) {
+            headers.put("Origin", origin);
+        }
         return postFormResponse(
                 realmEndpoint("/status-list/revoke"),
                 Map.of(
@@ -170,6 +182,16 @@ final class Oid4vciTestClient {
                         "credential_id", credentialId,
                         "reason", reason),
                 headers);
+    }
+
+    HttpResponse<String> revokePreflight(String origin) throws IOException, InterruptedException {
+        return send(HttpRequest.newBuilder()
+                .uri(URI.create(realmEndpoint("/status-list/revoke")))
+                .header("Origin", origin)
+                .header("Access-Control-Request-Method", "POST")
+                .header("Access-Control-Request-Headers", "authorization,content-type")
+                .method("OPTIONS", HttpRequest.BodyPublishers.noBody())
+                .build());
     }
 
     JsonNode issuedCredentialStatuses(String bearerToken) throws IOException, InterruptedException {

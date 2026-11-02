@@ -18,6 +18,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
+import org.keycloak.representations.idm.ClientRepresentation;
 import org.keycloak.representations.idm.RealmRepresentation;
 
 class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
@@ -47,6 +48,79 @@ class KeycloakStatusListFlowIT extends BaseKeycloakIntegrationTest {
         assertTrue(oid4vci.readJson(response).path("success").asBoolean(false));
         assertStatusListValue(credential, TokenStatus.INVALID.getCode());
         assertCredentialStatus(user.accessToken(), credential.id(), TokenStatus.INVALID.name());
+    }
+
+    @Test
+    void revokeCorsAllowsConfiguredOriginAndRejectsUnconfiguredOrigin() throws Exception {
+        String allowedOrigin = "https://revoke-frontend.example.test";
+        String disallowedOrigin = "https://untrusted.example.test";
+        ClientRepresentation client =
+                realm().clients().findByClientId(CLIENT_ID).get(0);
+        List<String> originalWebOrigins =
+                client.getWebOrigins() == null ? List.of() : new ArrayList<>(client.getWebOrigins());
+        client.setWebOrigins(List.of(allowedOrigin));
+        realm().clients().get(client.getId()).update(client);
+
+        try {
+            TestUser user = credentialHolder("revoke-cors");
+            IssuedCredentialFixture credential = oid4vci.issueCredential(user.username(), user.accessToken());
+
+            var rejectedPreflight = oid4vci.revokePreflight(disallowedOrigin);
+            assertEquals(200, rejectedPreflight.statusCode());
+            assertTrue(rejectedPreflight
+                    .headers()
+                    .firstValue("Access-Control-Allow-Origin")
+                    .isEmpty());
+
+            var rejectedRevoke =
+                    oid4vci.revokeCredential(user.accessToken(), credential.id(), "untrusted origin", disallowedOrigin);
+            assertEquals(403, rejectedRevoke.statusCode());
+            assertTrue(rejectedRevoke
+                    .headers()
+                    .firstValue("Access-Control-Allow-Origin")
+                    .isEmpty());
+            assertStatusListValue(credential, TokenStatus.VALID.getCode());
+
+            var allowedPreflight = oid4vci.revokePreflight(allowedOrigin);
+            assertEquals(200, allowedPreflight.statusCode());
+            assertEquals(
+                    allowedOrigin,
+                    allowedPreflight
+                            .headers()
+                            .firstValue("Access-Control-Allow-Origin")
+                            .orElseThrow());
+            assertTrue(allowedPreflight
+                    .headers()
+                    .firstValue("Access-Control-Allow-Methods")
+                    .orElseThrow()
+                    .contains("POST"));
+            assertTrue(allowedPreflight
+                    .headers()
+                    .firstValue("Access-Control-Allow-Headers")
+                    .orElseThrow()
+                    .toLowerCase()
+                    .contains("authorization"));
+
+            var allowedRevoke =
+                    oid4vci.revokeCredential(user.accessToken(), credential.id(), "allowed origin", allowedOrigin);
+            assertEquals(200, allowedRevoke.statusCode());
+            assertEquals(
+                    allowedOrigin,
+                    allowedRevoke
+                            .headers()
+                            .firstValue("Access-Control-Allow-Origin")
+                            .orElseThrow());
+            assertEquals(
+                    "true",
+                    allowedRevoke
+                            .headers()
+                            .firstValue("Access-Control-Allow-Credentials")
+                            .orElseThrow());
+            assertStatusListValue(credential, TokenStatus.INVALID.getCode());
+        } finally {
+            client.setWebOrigins(originalWebOrigins);
+            realm().clients().get(client.getId()).update(client);
+        }
     }
 
     @Test
