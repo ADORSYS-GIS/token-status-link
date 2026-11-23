@@ -1,5 +1,6 @@
 package io.github.adorsysgis.keycloakstatuslist.resource;
 
+import io.github.adorsysgis.keycloakstatuslist.config.StatusListConfig;
 import io.github.adorsysgis.keycloakstatuslist.service.CredentialRevocationService;
 import io.github.adorsysgis.keycloakstatuslist.service.RealmAsIssuerRegistrationService;
 import org.jboss.logging.Logger;
@@ -47,8 +48,16 @@ public class StatusListRealmResourceProviderFactory implements RealmResourceProv
                 registrationService.triggerBackgroundRegistration();
             } else if (event instanceof RealmModel.RealmPostCreateEvent realmEvent) {
                 RealmModel realm = realmEvent.getCreatedRealm();
-                logger.infof("New realm created: %s. Registering as issuer on status list server", realm.getName());
+                logger.infof("New realm created: %s. Scheduling issuer registration", realm.getName());
                 registrationService.triggerBackgroundRegistration(realm);
+            } else if (event instanceof RealmModel.RealmAttributeUpdateEvent attributeEvent
+                    && StatusListConfig.STATUS_LIST_ENABLED.equals(attributeEvent.getAttributeName())
+                    && Boolean.parseBoolean(attributeEvent.getAttributeValue())) {
+                RealmModel realm = attributeEvent.getRealm();
+                logger.infof(
+                        "Status list enabled for realm %s. Scheduling issuer registration",
+                        realm.getName());
+                registrationService.triggerBackgroundRegistration(realm.getId(), realm.getName());
             }
         });
     }
