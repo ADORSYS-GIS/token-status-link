@@ -54,9 +54,7 @@ public class StatusListRealmResourceProviderFactory implements RealmResourceProv
                     && StatusListConfig.STATUS_LIST_ENABLED.equals(attributeEvent.getAttributeName())
                     && Boolean.parseBoolean(attributeEvent.getAttributeValue())) {
                 RealmModel realm = attributeEvent.getRealm();
-                logger.infof(
-                        "Status list enabled for realm %s. Scheduling issuer registration",
-                        realm.getName());
+                logger.infof("Status list enabled for realm %s. Scheduling issuer registration", realm.getName());
                 registrationService.triggerBackgroundRegistration(realm.getId(), realm.getName());
             }
         });

@@ -44,6 +44,7 @@ public class RealmAsIssuerRegistrationService {
      * Per-realm registration state, keyed by realm {@link RealmModel#getId() id}
      */
     private final ConcurrentHashMap<String, RegistrationStatus> registrationStatuses = new ConcurrentHashMap<>();
+
     private final Set<String> pendingRegistrationTriggers = ConcurrentHashMap.newKeySet();
 
     public RealmAsIssuerRegistrationService(KeycloakSessionFactory factory) {
@@ -82,8 +83,7 @@ public class RealmAsIssuerRegistrationService {
     public void triggerBackgroundRegistration() {
         try {
             KeycloakModelUtils.runJobInTransaction(
-                    factory,
-                    session -> session.realms().getRealmsStream().forEach(realm -> {
+                    factory, session -> session.realms().getRealmsStream().forEach(realm -> {
                         if (new StatusListConfig(realm).isEnabled()) {
                             triggerBackgroundRegistration(realm.getId(), realm.getName());
                         } else {
@@ -197,8 +197,7 @@ public class RealmAsIssuerRegistrationService {
             long delayMs = BACKOFF_MULTIPLIER_MS * next.gateAttempts();
             logger.infof(
                     "Realm %s is not status-list enabled; checking configuration again in %d ms",
-                    attempt.realmName(),
-                    delayMs);
+                    attempt.realmName(), delayMs);
             scheduler.schedule(() -> runRegistrationAttempt(next), delayMs, TimeUnit.MILLISECONDS);
             return;
         }
@@ -215,8 +214,8 @@ public class RealmAsIssuerRegistrationService {
                 return;
             }
 
-            Attempt next = new Attempt(
-                    attempt.realmId(), attempt.realmName(), attempt.attempt() + 1, attempt.maxRetries(), 0);
+            Attempt next =
+                    new Attempt(attempt.realmId(), attempt.realmName(), attempt.attempt() + 1, attempt.maxRetries(), 0);
             long delayMs = BACKOFF_MULTIPLIER_MS * next.attempt();
             logger.infof("Scheduling registration retry for realm %s in %d ms", attempt.realmName(), delayMs);
             scheduler.schedule(() -> runRegistrationAttempt(next), delayMs, TimeUnit.MILLISECONDS);
