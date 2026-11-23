@@ -71,6 +71,7 @@ class StatusListRealmResourceProviderFactoryTest extends MockKeycloakTest {
         };
 
         lenient().when(session.realms()).thenReturn(realmProvider);
+        lenient().when(realmProvider.getRealm(TEST_REALM_ID)).thenReturn(realm);
         lenient().when(realmProvider.getRealmByName(TEST_REALM_NAME)).thenReturn(realm);
         lenient().when(realm.getAttribute(STATUS_LIST_ENABLED)).thenReturn("true");
         lenient().when(realm.getAttribute(STATUS_LIST_SERVER_URL)).thenReturn("http://localhost:8080");
@@ -113,6 +114,7 @@ class StatusListRealmResourceProviderFactoryTest extends MockKeycloakTest {
         RealmModel otherRealm = mock(RealmModel.class);
         lenient().when(otherRealm.getName()).thenReturn("other-realm");
         lenient().when(otherRealm.getId()).thenReturn("other-realm-id");
+        lenient().when(realmProvider.getRealm("other-realm-id")).thenReturn(otherRealm);
         lenient().when(otherRealm.getAttribute(STATUS_LIST_ENABLED)).thenReturn("true");
         lenient().when(otherRealm.getAttribute(STATUS_LIST_SERVER_URL)).thenReturn("http://localhost:8080");
         lenient().when(realmProvider.getRealmsStream()).thenReturn(Stream.of(realm, otherRealm));
