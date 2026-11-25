@@ -49,13 +49,13 @@ public class StatusListRealmResourceProviderFactory implements RealmResourceProv
             } else if (event instanceof RealmModel.RealmPostCreateEvent realmEvent) {
                 RealmModel realm = realmEvent.getCreatedRealm();
                 logger.infof("New realm created: %s. Scheduling issuer registration", realm.getName());
-                registrationService.triggerBackgroundRegistration(realm);
+                registrationService.triggerBackgroundRegistration(realm.getId());
             } else if (event instanceof RealmModel.RealmAttributeUpdateEvent attributeEvent
                     && StatusListConfig.STATUS_LIST_ENABLED.equals(attributeEvent.getAttributeName())
                     && Boolean.parseBoolean(attributeEvent.getAttributeValue())) {
                 RealmModel realm = attributeEvent.getRealm();
                 logger.infof("Status list enabled for realm %s. Scheduling issuer registration", realm.getName());
-                registrationService.triggerBackgroundRegistration(realm.getId(), realm.getName());
+                registrationService.triggerBackgroundRegistration(realm.getId());
             }
         });
     }
