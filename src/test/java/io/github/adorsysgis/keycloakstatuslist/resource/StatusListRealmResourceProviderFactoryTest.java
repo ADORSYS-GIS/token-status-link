@@ -101,7 +101,7 @@ class StatusListRealmResourceProviderFactoryTest extends MockKeycloakTest {
     }
 
     private void triggerBackground(long initialDelay, int maxRetries) {
-        registrationService.triggerBackgroundRegistration(realm, initialDelay, maxRetries);
+        registrationService.triggerBackgroundRegistration(realm.getId(), initialDelay, maxRetries);
     }
 
     /** Immediate trigger: the attempt runnable can be observed right away on the test thread. */
