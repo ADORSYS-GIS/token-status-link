@@ -78,10 +78,9 @@ public class RealmAsIssuerRegistrationService {
      */
     public void triggerBackgroundRegistration() {
         try {
-            KeycloakModelUtils.runJobInTransaction(
-                    factory,
-                    session -> session.realms().getRealmsStream().forEach(realm ->
-                            triggerBackgroundRegistration(realm.getId())));
+            KeycloakModelUtils.runJobInTransaction(factory, session -> session.realms()
+                    .getRealmsStream()
+                    .forEach(realm -> triggerBackgroundRegistration(realm.getId())));
         } catch (Exception e) {
             logger.errorf(e, "Failed to list realms for background status list registration");
         }
@@ -134,6 +133,10 @@ public class RealmAsIssuerRegistrationService {
         try {
             KeycloakModelUtils.runJobInTransaction(factory, session -> {
                 RealmModel realm = session.realms().getRealm(attempt.realmId());
+                if (realm == null) {
+                    logger.debugf("Realm %s is not available for status list registration yet", attempt.realmId());
+                    return;
+                }
                 session.getContext().setRealm(realm);
                 registerRealmAsIssuer(session, realm);
             });
