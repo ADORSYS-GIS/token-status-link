@@ -22,8 +22,8 @@ import org.keycloak.models.utils.KeycloakModelUtils;
  * Registers realms as "Issuers" on the external status list server.
  *
  * <p>Registration runs in the background so that Keycloak startup and request threads remain
- * responsive. Failures are retried with a linearly growing delay:
- * 1s, then 10s, 20s, 30s, and so on.
+ * responsive. The first attempt starts after 1s. Failed attempts are retried with a linearly
+ * growing delay: 10s, 20s, 30s, and so on.
  */
 public class RealmAsIssuerRegistrationService {
 
@@ -78,39 +78,41 @@ public class RealmAsIssuerRegistrationService {
      */
     public void triggerBackgroundRegistration() {
         try {
-            KeycloakModelUtils.runJobInTransaction(
-                    factory,
-                    session -> session.realms().getRealmsStream().forEach(this::triggerBackgroundRegistration));
+            KeycloakModelUtils.runJobInTransaction(factory, session -> session.realms()
+                    .getRealmsStream()
+                    .forEach(realm -> triggerBackgroundRegistration(realm.getId())));
         } catch (Exception e) {
             logger.errorf(e, "Failed to list realms for background status list registration");
         }
     }
 
     /**
-     * Triggers background registration for the given realm.
+     * Triggers background registration for the realm identified by its persistent ID.
      */
-    public void triggerBackgroundRegistration(RealmModel realm) {
-        triggerBackgroundRegistration(realm, DEFAULT_INITIAL_DELAY_MS, DEFAULT_MAX_RETRIES);
+    public void triggerBackgroundRegistration(String realmId) {
+        triggerBackgroundRegistration(realmId, DEFAULT_INITIAL_DELAY_MS, DEFAULT_MAX_RETRIES);
     }
 
     /**
-     * Triggers a background registration for the given realm. The first attempt runs after the
-     * given initial delay; failures are retried with a linearly growing delay,
-     * up to the given number of retries.
+     * Triggers a background registration for the given realm ID. The first attempt runs after the
+     * given initial delay; failures are retried with a linearly growing delay, up to the given
+     * number of retries.
      *
-     * @param realm the realm to register
+     * @param realmId the persistent ID of the realm to register
      * @param initialDelayMs delay before the first attempt
      * @param maxRetries maximum number of retries after the initial attempt
      */
-    public void triggerBackgroundRegistration(RealmModel realm, long initialDelayMs, int maxRetries) {
-        // Skip if the realm was already registered or registration was already started for the realm
-        if (registrationStatuses.putIfAbsent(realm.getId(), RegistrationStatus.RUNNING) != null) {
+    public void triggerBackgroundRegistration(String realmId, long initialDelayMs, int maxRetries) {
+        // Skip if registration is already completed or running for this realm.
+        if (registrationStatuses.putIfAbsent(realmId, RegistrationStatus.RUNNING) != null) {
             return;
         }
 
         // Schedule first attempt at registering the realm after `initialDelayMs`
         scheduler.schedule(
-                () -> runRegistrationAttempt(new Attempt(realm, 0, maxRetries)), initialDelayMs, TimeUnit.MILLISECONDS);
+                () -> runRegistrationAttempt(new Attempt(realmId, 0, maxRetries)),
+                initialDelayMs,
+                TimeUnit.MILLISECONDS);
     }
 
     /**
@@ -120,47 +122,48 @@ public class RealmAsIssuerRegistrationService {
      * while the retry budget lasts.
      */
     protected void runRegistrationAttempt(Attempt attempt) {
-        RealmModel realm = attempt.realm();
-
         // It is a no-op if the realm was already registered.
-        if (registrationStatuses.get(realm.getId()) == RegistrationStatus.COMPLETED) {
+        if (registrationStatuses.get(attempt.realmId()) == RegistrationStatus.COMPLETED) {
             return;
         }
 
         // Run registration in its own Keycloak session and transaction, detached from any
-        // request scope, on the background thread.
+        // request scope, on the background thread. Resolve the realm by ID because a model
+        // captured by RealmPostCreateEvent may be detached by the time this attempt runs.
         try {
             KeycloakModelUtils.runJobInTransaction(factory, session -> {
+                RealmModel realm = session.realms().getRealm(attempt.realmId());
+                if (realm == null) {
+                    logger.debugf("Realm %s is not available for status list registration yet", attempt.realmId());
+                    return;
+                }
                 session.getContext().setRealm(realm);
                 registerRealmAsIssuer(session, realm);
             });
         } catch (Exception e) {
-            logger.errorf(e, "Error during registration for realm %s: %s", realm.getName(), e.getMessage());
+            logger.errorf(e, "Error during registration for realm ID %s: %s", attempt.realmId(), e.getMessage());
         }
 
         // Schedule a new attempt if necessary
-        if (registrationStatuses.get(realm.getId()) == RegistrationStatus.RUNNING) {
+        if (registrationStatuses.get(attempt.realmId()) == RegistrationStatus.RUNNING) {
             if (attempt.attempt() >= attempt.maxRetries()) {
-                registrationStatuses.remove(realm.getId());
+                registrationStatuses.remove(attempt.realmId(), RegistrationStatus.RUNNING);
                 return;
             }
 
-            Attempt next = new Attempt(realm, attempt.attempt() + 1, attempt.maxRetries());
+            Attempt next = new Attempt(attempt.realmId(), attempt.attempt() + 1, attempt.maxRetries());
             long delayMs = BACKOFF_MULTIPLIER_MS * next.attempt();
-            logger.infof("Scheduling registration retry for realm %s in %d ms", realm.getName(), delayMs);
+            logger.infof("Scheduling registration retry for realm ID %s in %d ms", attempt.realmId(), delayMs);
             scheduler.schedule(() -> runRegistrationAttempt(next), delayMs, TimeUnit.MILLISECONDS);
         }
     }
 
-    /**
-     * Performs one registration attempt for the realm and records its outcome directly in the
-     * {@link #registrationStatuses} map: COMPLETED on success, and unchanged from RUNNING when
-     * it will be retried (realm disabled, missing key, unhealthy server or failed HTTP call).
-     */
+    /** Performs one registration attempt for a realm. */
     private void registerRealmAsIssuer(KeycloakSession session, RealmModel realm) {
         String realmName = realm.getName();
         StatusListConfig config = new StatusListConfig(realm);
         if (!config.isEnabled()) {
+            logger.debugf("Status list registration is disabled for realm %s", realmName);
             return;
         }
 
@@ -220,8 +223,7 @@ public class RealmAsIssuerRegistrationService {
     private record StatusListServiceAndKey(StatusListService service, JWK jwk) {}
 
     /**
-     * Progress marker threaded through the scheduler:
-     * which realm, which attempt no. (counted from 0), within which retry budget.
+     * Progress marker threaded through the scheduler: realm ID and retry budget.
      */
-    public record Attempt(RealmModel realm, int attempt, int maxRetries) {}
+    public record Attempt(String realmId, int attempt, int maxRetries) {}
 }

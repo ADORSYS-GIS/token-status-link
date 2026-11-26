@@ -2,12 +2,14 @@ package io.github.adorsysgis.keycloakstatuslist.resource;
 
 import static io.github.adorsysgis.keycloakstatuslist.config.StatusListConfig.STATUS_LIST_ENABLED;
 import static io.github.adorsysgis.keycloakstatuslist.config.StatusListConfig.STATUS_LIST_SERVER_URL;
+import static io.github.adorsysgis.keycloakstatuslist.config.StatusListConfig.STATUS_LIST_TOKEN_ISSUER_PREFIX;
 import static io.github.adorsysgis.keycloakstatuslist.service.RealmAsIssuerRegistrationService.BACKOFF_MULTIPLIER_MS;
 import static io.github.adorsysgis.keycloakstatuslist.service.RealmAsIssuerRegistrationService.DEFAULT_INITIAL_DELAY_MS;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doThrow;
@@ -71,6 +73,7 @@ class StatusListRealmResourceProviderFactoryTest extends MockKeycloakTest {
         };
 
         lenient().when(session.realms()).thenReturn(realmProvider);
+        lenient().when(realmProvider.getRealm(TEST_REALM_ID)).thenReturn(realm);
         lenient().when(realmProvider.getRealmByName(TEST_REALM_NAME)).thenReturn(realm);
         lenient().when(realm.getAttribute(STATUS_LIST_ENABLED)).thenReturn("true");
         lenient().when(realm.getAttribute(STATUS_LIST_SERVER_URL)).thenReturn("http://localhost:8080");
@@ -100,7 +103,7 @@ class StatusListRealmResourceProviderFactoryTest extends MockKeycloakTest {
     }
 
     private void triggerBackground(long initialDelay, int maxRetries) {
-        registrationService.triggerBackgroundRegistration(realm, initialDelay, maxRetries);
+        registrationService.triggerBackgroundRegistration(realm.getId(), initialDelay, maxRetries);
     }
 
     /** Immediate trigger: the attempt runnable can be observed right away on the test thread. */
@@ -113,6 +116,7 @@ class StatusListRealmResourceProviderFactoryTest extends MockKeycloakTest {
         RealmModel otherRealm = mock(RealmModel.class);
         lenient().when(otherRealm.getName()).thenReturn("other-realm");
         lenient().when(otherRealm.getId()).thenReturn("other-realm-id");
+        lenient().when(realmProvider.getRealm("other-realm-id")).thenReturn(otherRealm);
         lenient().when(otherRealm.getAttribute(STATUS_LIST_ENABLED)).thenReturn("true");
         lenient().when(otherRealm.getAttribute(STATUS_LIST_SERVER_URL)).thenReturn("http://localhost:8080");
         lenient().when(realmProvider.getRealmsStream()).thenReturn(Stream.of(realm, otherRealm));
@@ -130,13 +134,36 @@ class StatusListRealmResourceProviderFactoryTest extends MockKeycloakTest {
     }
 
     @Test
-    void testRealmPostCreateEventTriggersDefaultRegistration() throws StatusListException {
+    void testRealmPostCreateEventRegistersUsingPersistedRealm() throws StatusListException {
+        RealmModel detachedRealm = mock(RealmModel.class);
+        when(detachedRealm.getId()).thenReturn(TEST_REALM_ID);
+        when(detachedRealm.getName()).thenReturn(TEST_REALM_NAME);
+        lenient().when(detachedRealm.getAttribute(STATUS_LIST_ENABLED)).thenReturn("false");
+
         RealmModel.RealmPostCreateEvent event = mock(RealmModel.RealmPostCreateEvent.class);
-        when(event.getCreatedRealm()).thenReturn(realm);
+        when(event.getCreatedRealm()).thenReturn(detachedRealm);
 
         firePostInitEvent(event);
 
         // New realm registration is triggered with the default 1s initial delay
+        verify(recordingScheduler, times(1))
+                .schedule(any(Runnable.class), eq(DEFAULT_INITIAL_DELAY_MS), eq(TimeUnit.MILLISECONDS));
+        runScheduled(DEFAULT_INITIAL_DELAY_MS);
+        StatusListService service = constructed().get(0);
+        verify(service).registerIssuer(argThat(issuerId -> issuerId.endsWith("::" + TEST_REALM_NAME)), any());
+        verify(realm).setAttribute(eq(STATUS_LIST_TOKEN_ISSUER_PREFIX), anyString());
+        verify(detachedRealm, never()).setAttribute(eq(STATUS_LIST_TOKEN_ISSUER_PREFIX), anyString());
+    }
+
+    @Test
+    void testEnablingStatusListAttributeTriggersDefaultRegistration() throws StatusListException {
+        RealmModel.RealmAttributeUpdateEvent event = mock(RealmModel.RealmAttributeUpdateEvent.class);
+        when(event.getAttributeName()).thenReturn(STATUS_LIST_ENABLED);
+        when(event.getAttributeValue()).thenReturn("true");
+        when(event.getRealm()).thenReturn(realm);
+
+        firePostInitEvent(event);
+
         verify(recordingScheduler, times(1))
                 .schedule(any(Runnable.class), eq(DEFAULT_INITIAL_DELAY_MS), eq(TimeUnit.MILLISECONDS));
         runScheduled(DEFAULT_INITIAL_DELAY_MS);
@@ -226,6 +253,20 @@ class StatusListRealmResourceProviderFactoryTest extends MockKeycloakTest {
         lenient().when(realm.getAttribute(STATUS_LIST_ENABLED)).thenReturn("true");
         runScheduled(BACKOFF_MULTIPLIER_MS);
 
+        StatusListService service = constructed().get(0);
+        verify(service).registerIssuer(argThat(issuerId -> issuerId.endsWith("::" + TEST_REALM_NAME)), any());
+    }
+
+    @Test
+    void testRealmUnavailableAfterCreationIsResolvedOnRetry() throws StatusListException {
+        when(realmProvider.getRealm(TEST_REALM_ID)).thenReturn(null, realm);
+        triggerBackground(0L, 1);
+
+        runScheduled(0L);
+        verify(recordingScheduler, times(1))
+                .schedule(any(Runnable.class), eq(BACKOFF_MULTIPLIER_MS), eq(TimeUnit.MILLISECONDS));
+
+        runScheduled(BACKOFF_MULTIPLIER_MS);
         StatusListService service = constructed().get(0);
         verify(service).registerIssuer(argThat(issuerId -> issuerId.endsWith("::" + TEST_REALM_NAME)), any());
     }

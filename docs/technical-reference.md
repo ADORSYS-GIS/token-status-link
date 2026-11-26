@@ -220,10 +220,19 @@ instead of stalling user-facing requests.
 ### Registration (background)
 
 Realms are registered in the background on a dedicated thread (`status-list-registration`), so processes
-are never slowed down by the status list server. Registration is kicked off at startup and when a new realm
-is created. Failed registrations are retried with a linearly growing delay — 1s, then 10s, 20s, 30s — up to 3
-retries; a realm that runs out of retries simply waits for the next trigger. Each attempt makes its HTTP requests
-exactly once and uses the `status-list-registration-timeout` (default: 30s).
+are never slowed down by the status list server. Registration starts at Keycloak startup and when a realm is
+created. It also starts when an administrator enables the `status-list-enabled` realm attribute. Disabled realms
+are not registered. Failed registrations are retried with a linearly growing delay — 10s, 20s, 30s — up to 3 retries;
+a realm that runs out of retries waits for the next trigger. Each attempt makes its HTTP requests exactly once
+and uses the `status-list-registration-timeout` (default: 30s). The first registration attempt starts 1s after
+its trigger.
+
+Configure and activate the realm's final credential-signing key **before** setting
+`status-list-enabled=true` (or creating an already-enabled realm). The status list server binds an issuer to the
+first JWK registered for that issuer ID. This plugin registers through the server's create endpoint and treats
+`409 Conflict` as “already registered”; it cannot replace an existing JWK. If the active Keycloak signing key
+changes after registration, status publication can fail with `401` until the status list server updates that
+issuer's JWK. Support for key rotation is pending server-side.
 
 ## Proxy support
 
